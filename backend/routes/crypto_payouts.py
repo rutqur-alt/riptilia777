@@ -818,7 +818,8 @@ async def admin_update_crypto_payout_status(
         update_data["dispute_window_until"] = dispute_window.isoformat()
         
         usdt_amount = order.get("amount_usdt", 0)
-        usdt_from_merchant = order.get("usdt_from_merchant", usdt_amount)
+        # Use usdt_from_merchant from OFFER (original frozen amount), not from order
+        usdt_from_merchant = offer.get("usdt_from_merchant", order.get("usdt_from_merchant", usdt_amount)) if offer else order.get("usdt_from_merchant", usdt_amount)
         
         # Release frozen funds from merchant (frozen -> platform)
         await db.merchants.update_one(

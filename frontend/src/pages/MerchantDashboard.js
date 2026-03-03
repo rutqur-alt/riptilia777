@@ -1425,7 +1425,8 @@ function MerchantWithdrawalRequests() {
       if (filter === "active") {
         data = data.filter(r => r.status === "active" || r.status === "in_progress");
       } else if (filter === "completed") {
-        data = data.filter(r => r.status === "completed");
+        // "sold" status means the offer was successfully completed
+        data = data.filter(r => r.status === "completed" || r.status === "sold");
       } else if (filter === "cancelled") {
         data = data.filter(r => r.status === "cancelled");
       } else if (filter === "dispute") {
