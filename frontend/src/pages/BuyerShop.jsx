@@ -787,10 +787,6 @@ export default function BuyerShop() {
                   <span className="text-[#71717A]">Сумма к оплате</span>
                   <span className="text-white font-bold">{Math.round(selectedOperator.toPayRub || 0).toLocaleString()} RUB</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#71717A]">Курс</span>
-                  <span className="text-white">{selectedOperator.price_rub} RUB/USDT</span>
-                </div>
               </div>
 
               {selectedOperator.requisites?.length > 1 && (

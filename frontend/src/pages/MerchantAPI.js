@@ -437,35 +437,31 @@ async function createPayment(amount, paymentMethod, userId = null) {
           <div className="space-y-3">
             <div className="flex gap-3 items-start">
               <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">1</span>
-              <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">GET /payment-methods</code> — получите список способов оплаты</p>
+              <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /create</code> — создайте инвойс на сумму в RUB</p>
             </div>
             <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">2</span>
-              <p className="text-sm text-zinc-300">Покажите покупателю выбор способа оплаты <strong>на вашем сайте</strong></p>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">3</span>
-              <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /create</code> — создайте инвойс с выбранным <code className="bg-zinc-800 px-1 rounded">payment_method</code></p>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-sm font-bold shrink-0">4</span>
+              <span className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-sm font-bold shrink-0">2</span>
               <p className="text-sm text-zinc-300"><strong className="text-orange-400">window.open(payment_url, '_blank')</strong> — откройте страницу оплаты <strong>в новой вкладке</strong></p>
             </div>
             <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">5</span>
-              <p className="text-sm text-zinc-300">Покупатель видит реквизиты на <strong>нашем домене</strong>, оплачивает, закрывает вкладку</p>
+              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">3</span>
+              <p className="text-sm text-zinc-300">Покупатель выбирает оператора из списка (методы оплаты видны в карточках)</p>
             </div>
             <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">6</span>
-              <p className="text-sm text-zinc-300">Получите callback или проверяйте статус через <code className="bg-zinc-800 px-1 rounded">GET /status</code></p>
+              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">4</span>
+              <p className="text-sm text-zinc-300">Покупатель видит реквизиты, оплачивает, нажимает "Я оплатил"</p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">5</span>
+              <p className="text-sm text-zinc-300">Получите <strong>webhook</strong> или проверяйте статус через <code className="bg-zinc-800 px-1 rounded">GET /status</code></p>
             </div>
           </div>
           
           <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 mt-4">
             <p className="text-sm text-orange-300 font-medium">⚠️ Важно:</p>
             <ul className="text-sm text-zinc-400 mt-1 space-y-1">
-              <li>• Реквизиты <strong>НЕ передаются</strong> на ваш сайт — это для безопасности</li>
               <li>• <code className="bg-zinc-800 px-1 rounded">payment_url</code> всегда открывайте в <strong>новой вкладке</strong></li>
+              <li>• Покупатель выбирает оператора и метод оплаты на нашей странице</li>
               <li>• Чат для споров тоже на нашем домене</li>
             </ul>
           </div>
@@ -479,68 +475,37 @@ async function createPayment(amount, paymentMethod, userId = null) {
             <ExternalLink className="w-5 h-5 text-purple-400" />
             Пример UI: Выбор оператора
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Так выглядит страница выбора оператора, которую увидит покупатель</p>
+          <p className="text-sm text-zinc-400 mt-1">Покупатель выбирает оператора из списка. Методы оплаты видны в карточках.</p>
         </CardHeader>
         <CardContent>
-          <div className="bg-zinc-950 rounded-lg p-4 border border-zinc-800">
-            <div className="space-y-3">
-              {/* Header */}
-              <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
-                <span className="text-zinc-400 text-sm">Все методы оплаты ▼</span>
-                <div className="text-right">
-                  <div className="text-zinc-500 text-xs">Пополнение</div>
-                  <div className="text-emerald-400 font-bold">1 000 RUB</div>
-                </div>
-              </div>
-              
-              {/* Operators */}
-              <div className="text-xs text-zinc-500 flex justify-between">
-                <span>3 операторов</span>
-                <span>Лучшая цена сверху</span>
-              </div>
-              
-              {/* Operator Card */}
-              <div className="bg-zinc-800/50 rounded-lg p-3 border border-emerald-500/30">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-zinc-200 font-medium">👤 Пользователь Два</span>
-                      <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Лучшая цена</span>
-                    </div>
-                    <div className="text-xs text-zinc-500 mt-1">✓ 97%  •  70 сделок</div>
-                    <div className="flex gap-2 mt-2">
-                      <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Карта</span>
-                      <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">СБП</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-emerald-400 font-bold">1 003,58 RUB</div>
-                    <div className="text-xs text-zinc-500">+0.4%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Another Operator */}
-              <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="text-zinc-200 font-medium">👤 Пользователь Три</div>
-                    <div className="text-xs text-zinc-500 mt-1">✓ 96%  •  90 сделок</div>
-                    <div className="flex gap-2 mt-2">
-                      <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Карта</span>
-                      <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">СБП</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-zinc-300 font-bold">1 009,97 RUB</div>
-                    <div className="text-xs text-zinc-500">+1%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <img 
+            src="https://customer-assets.emergentagent.com/job_fbca4ceb-9112-496d-8675-a1b10145ddee/artifacts/wjkjx2ei_image.png"
+            alt="Выбор оператора"
+            className="rounded-lg border border-zinc-800 w-full"
+          />
           <p className="text-xs text-zinc-500 mt-3">
-            Покупатель выбирает оператора → нажимает → видит реквизиты для оплаты
+            Покупатель видит: никнейм, рейтинг, количество сделок, методы оплаты и сумму к оплате
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* UI Example - Select Payment Method */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Shield className="w-5 h-5 text-blue-400" />
+            Пример UI: Выбор способа оплаты
+          </CardTitle>
+          <p className="text-sm text-zinc-400 mt-1">После выбора оператора покупатель выбирает способ оплаты</p>
+        </CardHeader>
+        <CardContent>
+          <img 
+            src="https://customer-assets.emergentagent.com/job_fbca4ceb-9112-496d-8675-a1b10145ddee/artifacts/1niq0xge_image.png"
+            alt="Выбор способа оплаты"
+            className="rounded-lg border border-zinc-800 max-w-md mx-auto"
+          />
+          <p className="text-xs text-zinc-500 mt-3">
+            Покупатель выбирает СБП или Банковскую карту → подтверждает
           </p>
         </CardContent>
       </Card>
@@ -552,72 +517,16 @@ async function createPayment(amount, paymentMethod, userId = null) {
             <Shield className="w-5 h-5 text-orange-400" />
             Пример UI: Экран оплаты
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">После выбора оператора покупатель видит реквизиты</p>
+          <p className="text-sm text-zinc-400 mt-1">Покупатель видит реквизиты и переводит деньги</p>
         </CardHeader>
         <CardContent>
-          <div className="bg-zinc-950 rounded-lg p-4 border border-zinc-800">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Left side - Payment */}
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-red-400 text-sm cursor-pointer">✕ Отменить сделку</span>
-                </div>
-                
-                <div className="text-center py-4">
-                  <div className="text-zinc-400 text-sm">Переведите точную сумму</div>
-                  <div className="text-orange-400 text-sm mt-1">⏱️ Осталось: 29:56</div>
-                </div>
-                
-                <div className="bg-zinc-800 rounded-lg p-4 text-center">
-                  <div className="text-zinc-500 text-xs">Сумма к оплате</div>
-                  <div className="text-2xl font-bold text-white mt-1">1 009,98 RUB</div>
-                </div>
-                
-                <div className="bg-zinc-800 rounded-lg p-4">
-                  <div className="flex items-center gap-2 text-purple-400 mb-2">
-                    <span>⚡</span>
-                    <span className="font-medium">СБП</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <code className="text-white font-mono">+7 900 120 30 36</code>
-                    <button className="text-zinc-500 hover:text-white">📋</button>
-                  </div>
-                  <div className="text-zinc-500 text-sm mt-1">ВТБ</div>
-                </div>
-                
-                <button className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-medium">
-                  ✓ Я оплатил
-                </button>
-              </div>
-              
-              {/* Right side - Chat */}
-              <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
-                <div className="text-sm font-medium text-zinc-300 mb-2">💬 Сообщения</div>
-                <div className="text-xs text-zinc-500 mb-3">Оператор: user3</div>
-                
-                <div className="bg-zinc-900 rounded p-2 text-xs space-y-1">
-                  <div className="text-zinc-500">📋 Сделка #trd_f6880fd4</div>
-                  <div className="text-zinc-400">💰 Сумма: 1,010 ₽</div>
-                  <div className="text-zinc-400">📈 Курс: 79.0 ₽/USDT</div>
-                  <div className="text-zinc-400">⏱ Время: 30 минут</div>
-                  <div className="text-emerald-400 mt-2">🏦 РЕКВИЗИТЫ:</div>
-                  <div className="text-zinc-300">⚡ ВТБ</div>
-                  <div className="text-zinc-300">+7 900 120 30 36</div>
-                </div>
-                
-                <div className="mt-3">
-                  <input 
-                    type="text" 
-                    placeholder="Написать сообщение..." 
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-300"
-                    disabled
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <img 
+            src="https://customer-assets.emergentagent.com/job_fbca4ceb-9112-496d-8675-a1b10145ddee/artifacts/hmsjjefu_image.png"
+            alt="Экран оплаты"
+            className="rounded-lg border border-zinc-800 w-full"
+          />
           <p className="text-xs text-zinc-500 mt-3">
-            Покупатель переводит деньги по реквизитам → нажимает "Я оплатил" → оператор подтверждает → вы получаете webhook
+            Покупатель видит: таймер, сумму, реквизиты и чат с оператором. После оплаты нажимает "Я оплатил".
           </p>
         </CardContent>
       </Card>
