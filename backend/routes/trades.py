@@ -430,21 +430,26 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         merchant_receives_usdt = merchant_receives_rub / base_rate
         
         # Update trade with calculated amounts
+        commission_usdt = platform_fee_rub / base_rate
         await db.trades.update_one(
             {"id": trade_id},
             {"$set": {
                 "merchant_commission_percent": commission_rate,
                 "platform_fee_rub": platform_fee_rub,
                 "merchant_receives_rub": merchant_receives_rub,
-                "merchant_receives_usdt": merchant_receives_usdt
+                "merchant_receives_usdt": merchant_receives_usdt,
+                "merchant_commission": commission_usdt
             }}
         )
         
-        # Credit merchant balance
+        # Credit merchant balance and update commission paid
+        # Commission in USDT = platform_fee_rub / base_rate
+        commission_usdt = platform_fee_rub / base_rate
         await db.merchants.update_one(
             {"id": trade["merchant_id"]},
             {"$inc": {
-                "balance_usdt": merchant_receives_usdt
+                "balance_usdt": merchant_receives_usdt,
+                "total_commission_paid": commission_usdt
             }}
         )
         

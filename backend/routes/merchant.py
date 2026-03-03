@@ -67,7 +67,9 @@ async def get_merchant_dashboard(user: dict = Depends(get_current_user)):
     return {
         "merchant": merchant,
         "balance": merchant.get("balance", 0),
+        "balance_usdt": merchant.get("balance_usdt", 0),
         "balance_rub": merchant.get("balance_rub", 0),
+        "total_commission_paid": merchant.get("total_commission_paid", 0),
         "stats": {
             "total_trades": len(trades),
             "completed_trades": len(completed_trades),
