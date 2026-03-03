@@ -234,12 +234,9 @@ export default function BuyCrypto() {
                 <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
                   <div className="flex items-center gap-6 text-sm">
                     <div>
-                      <span className="text-[#71717A]">Лимиты: </span>
-                      <span className="text-white">{(offer.min_amount || 0).toFixed(2)} - {(offer.max_amount || 0).toFixed(2)} USDT</span>
-                    </div>
-                    <div>
-                      <span className="text-[#71717A]">Доступно: </span>
-                      <span className="text-[#10B981]">{(offer.available_amount || 0).toFixed(2)} USDT</span>
+                      <span className="text-[#71717A]">Сумма: </span>
+                      <span className="text-white">{(offer.amount_rub || 0).toLocaleString()} ₽</span>
+                      <span className="text-[#71717A] ml-1">({(offer.available_amount || 0).toFixed(2)} USDT)</span>
                     </div>
                   </div>
 

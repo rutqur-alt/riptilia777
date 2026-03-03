@@ -59,11 +59,20 @@ async def get_crypto_sell_offers():
             offer["amount"] = usdt_for_buyer
             offer["available_amount"] = usdt_for_buyer
             offer["rate"] = sell_rate
+            # Limits - show in both RUB and USDT
+            min_rub = offer.get("min_amount_rub", 0)
+            max_rub = offer.get("amount_rub", 0)  # Max is the full offer amount
+            offer["min_amount"] = round(min_rub / sell_rate, 2) if min_rub else 0
+            offer["max_amount"] = round(max_rub / sell_rate, 2) if max_rub else usdt_for_buyer
+            offer["min_amount_rub"] = min_rub
+            offer["max_amount_rub"] = max_rub
             result.append(offer)
         # Old format offers
         elif offer.get("available_amount", 0) > 0:
             offer["amount_usdt"] = offer.get("available_amount", 0)
             offer["sell_rate"] = offer.get("rate", sell_rate)
+            offer["min_amount"] = offer.get("min_amount", 0)
+            offer["max_amount"] = offer.get("max_amount", offer.get("available_amount", 0))
             result.append(offer)
     
     return result
