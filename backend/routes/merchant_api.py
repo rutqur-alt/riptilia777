@@ -248,8 +248,7 @@ async def create_invoice(data: CreateInvoiceRequest):
         "merchant_commission_percent": merchant_commission,
         "merchant_receives_rub": merchant_receives_rub,
         "status": "pending",
-        "expires_at": expires_at.isoformat(),
-        "payment_url": f"/shop/pay/{invoice_id}"
+        "expires_at": expires_at.isoformat()
     }
 
 
