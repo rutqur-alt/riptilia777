@@ -698,7 +698,12 @@ GET /api/v1/invoice/status?payment_id=inv_20250128_ABC123
             <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
               <span className="w-3 h-3 rounded-full bg-red-500"></span>
               <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">cancelled</code>
-              <span className="text-sm text-zinc-400 flex-1">Отмена (клиент отменил или таймаут 30 мин)</span>
+              <span className="text-sm text-zinc-400 flex-1">Отмена (клиент отменил или таймаут 30 мин после выбора оператора)</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
+              <span className="w-3 h-3 rounded-full bg-zinc-500"></span>
+              <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">expired</code>
+              <span className="text-sm text-zinc-400 flex-1">Истёк срок (клиент не выбрал оператора за 30 мин)</span>
             </div>
             <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
               <span className="w-3 h-3 rounded-full bg-orange-500"></span>
@@ -883,12 +888,12 @@ GET /api/v1/invoice/status?payment_id=inv_20250128_ABC123
                 </tr>
                 <tr className="border-b border-zinc-800/50">
                   <td className="py-3 px-3"><code className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded">cancelled</code></td>
-                  <td className="py-3 px-3 text-zinc-300">Отменён клиентом или по таймауту</td>
+                  <td className="py-3 px-3 text-zinc-300">Отменён (клиент не оплатил за 30 мин после выбора оператора)</td>
                   <td className="py-3 px-3 text-zinc-500">Ничего не делать</td>
                 </tr>
                 <tr className="border-b border-zinc-800/50">
                   <td className="py-3 px-3"><code className="bg-zinc-500/20 text-zinc-400 px-2 py-0.5 rounded">expired</code></td>
-                  <td className="py-3 px-3 text-zinc-300">Истёк срок ожидания</td>
+                  <td className="py-3 px-3 text-zinc-300">Истёк срок (клиент не выбрал оператора за 30 мин)</td>
                   <td className="py-3 px-3 text-zinc-500">Ничего не делать</td>
                 </tr>
                 <tr>
