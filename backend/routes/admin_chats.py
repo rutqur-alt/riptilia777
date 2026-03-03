@@ -433,7 +433,8 @@ async def get_user_chats(user: dict = Depends(require_role(["admin", "owner", "m
     query = {
         "type": "admin_user_chat",
         "created_by": user_id,
-        "left_staff": {"$ne": user_id}
+        "left_staff": {"$ne": user_id},
+        "archived": {"$ne": True}  # Exclude archived
     }
     
     chats = await db.unified_conversations.find(query, {"_id": 0}).sort("updated_at", -1).to_list(100)
@@ -458,7 +459,8 @@ async def get_invited_chats(user: dict = Depends(require_role(["admin", "owner",
     
     conv_query = {
         "staff_participants": user_id,
-        "left_staff": {"$ne": user_id}
+        "left_staff": {"$ne": user_id},
+        "archived": {"$ne": True}  # Exclude archived
     }
     
     conversations = await db.unified_conversations.find(conv_query, {"_id": 0}).sort("updated_at", -1).to_list(200)
@@ -913,9 +915,13 @@ async def get_all_disputes_with_chats(user: dict = Depends(require_role(["admin"
     
     disputes = []
     for trade in trades:
-        # Find conversation for this trade
+        # Find conversation for this trade (exclude archived)
         conv = await db.unified_conversations.find_one(
-            {"type": {"$in": ["p2p_trade", "p2p_dispute"]}, "related_id": trade["id"]},
+            {
+                "type": {"$in": ["p2p_trade", "p2p_dispute"]}, 
+                "related_id": trade["id"],
+                "archived": {"$ne": True}
+            },
             {"_id": 0, "id": 1, "status": 1}
         )
         
@@ -954,7 +960,8 @@ async def get_unified_support_tickets(user: dict = Depends(require_role(["admin"
     """Get support tickets from unified_conversations"""
     query = {
         "type": "support_ticket",
-        "status": {"$ne": "archived"}
+        "status": {"$ne": "archived"},
+        "archived": {"$ne": True}  # Exclude archived conversations
     }
     convs = await db.unified_conversations.find(query, {"_id": 0}).sort("updated_at", -1).to_list(100)
     

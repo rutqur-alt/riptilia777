@@ -826,7 +826,8 @@ async def admin_get_crypto_payout_conversations(
     convs = await db.unified_conversations.find(
         {
             "type": "crypto_order",
-            "status": {"$nin": ["completed", "cancelled", "archived"]}
+            "status": {"$nin": ["completed", "cancelled", "archived"]},
+            "archived": {"$ne": True}  # Exclude archived
         },
         {"_id": 0}
     ).sort("updated_at", -1).to_list(200)

@@ -235,7 +235,8 @@ export const fetchAllConversations = async (token, adminRole, activeCategory, se
     } catch (e) { console.error(e); }
   }
   
-  return allConvs;
+  // Filter out archived conversations (they should only appear in Archive section)
+  return allConvs.filter(c => !c.archived);
 };
 
 // Fetch messages for a conversation
