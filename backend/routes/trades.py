@@ -1396,13 +1396,44 @@ async def open_dispute(trade_id: str, reason: str = "", user: dict = Depends(get
         for pid in participants:
             await _create_trade_notification(
                 user_id=pid,
-                notif_type="trade_dispute",
+                notif_type="trade_disputed",
                 title="Спор открыт",
                 message=f"Открыт спор по сделке #{trade_id[:8]}",
-                link=f"/trader/sales"
+                link=f"/trader/sales/{trade_id}",
+                trade_id=trade_id
             )
     except Exception:
         pass
+    
+    # Create notification for MERCHANT about dispute
+    if trade.get("merchant_id"):
+        try:
+            await db.event_notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": trade["merchant_id"],
+                "type": "trade_disputed",
+                "title": "Спор по сделке",
+                "message": f"Открыт спор по сделке #{trade_id[:8]} на {trade.get('amount_usdt', 0):.2f} USDT",
+                "link": "/merchant/payments",
+                "reference_id": trade_id,
+                "reference_type": "trade_dispute",
+                "extra_data": {"reason": reason or "Не указана"},
+                "read": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            # Real-time WebSocket notification for merchant
+            await _ws_broadcast(f"user_{trade['merchant_id']}", {
+                "type": "new_notification",
+                "notification": {
+                    "id": str(uuid.uuid4()),
+                    "type": "trade_disputed",
+                    "title": "Спор по сделке",
+                    "message": f"Открыт спор по сделке #{trade_id[:8]}",
+                    "link": "/merchant/payments"
+                }
+            })
+        except Exception:
+            pass
     
     # Send webhook to merchant (DISPUTED)
     await send_merchant_webhook_on_trade(trade, "disputed", {
