@@ -192,7 +192,7 @@ export default function BuyerShop() {
         const mname = res.data.company_name || res.data.name || res.data.shop_name || 'Магазин';
         setMerchantId(mid);
         setMerchantName(mname);
-        setBalance({ balance_usdt: res.data.balance_usdt || 0, total_received: res.data.total_received || 0, total_transactions: res.data.total_transactions || 0 });
+        setBalance({ balance_rub: res.data.balance_rub || 0, total_transactions: res.data.total_transactions || 0 });
         setConnected(true);
         localStorage.setItem('shop_api_key', apiKey);
         localStorage.setItem('shop_api_secret', apiSecret);
@@ -217,9 +217,7 @@ export default function BuyerShop() {
       const res = await axios.get(`${API}/shop/merchant-info/${apiKey}`);
       if (res.data) {
         setBalance({
-          balance_usdt: res.data.balance_usdt || 0,
-          total_received: res.data.total_received || 0,
-          total_received_rub: res.data.total_received_rub || 0,
+          balance_rub: res.data.balance_rub || 0,
           total_transactions: res.data.total_transactions || 0
         });
       }
@@ -616,13 +614,8 @@ export default function BuyerShop() {
                 </Button>
               </div>
               <div className="text-4xl font-bold text-white mb-1 font-['JetBrains_Mono']">
-                {balance ? `${(balance.balance_usdt || 0).toFixed(2)} USDT` : '---'}
+                {balance ? `${(balance.balance_rub || 0).toLocaleString()} ₽` : '---'}
               </div>
-              {balance?.total_received_rub != null && balance.total_received_rub > 0 && (
-                <div className="text-sm text-[#71717A]">
-                  Всего пополнено: {(balance.total_received_rub || 0).toLocaleString()} ₽
-                </div>
-              )}
             </div>
 
             {/* Top-up Section */}
