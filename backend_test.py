@@ -221,8 +221,179 @@ class ReptiloidAPITester:
         
         if success:
             self.log(f"✅ Public operators endpoint responding")
-            if isinstance(response, list):
+            if isinstance(response, dict):
+                operators = response.get('operators', [])
+                self.log(f"   Found {len(operators)} operators")
+                if len(operators) >= 3:
+                    self.log("✅ Expected 3+ operators found for testing")
+                else:
+                    self.log(f"⚠️ Only {len(operators)} operators found, expected 3+")
+            elif isinstance(response, list):
                 self.log(f"   Found {len(response)} operators")
+            return True
+        
+        return success
+
+    def test_merchant_api_key_connection(self):
+        """Test merchant API key connection"""
+        api_key = "merch_sk_8581cf8f655c4f858511e26d1dc3f3f3"
+        
+        success, response = self.run_test(
+            "Merchant API Connection",
+            "GET",
+            f"shop/merchant-info/{api_key}",
+            200,
+            description="Test merchant API key connection"
+        )
+        
+        if success and isinstance(response, dict):
+            merchant_id = response.get('merchant_id')
+            company_name = response.get('company_name')
+            balance_usdt = response.get('balance_usdt', 0)
+            status = response.get('status')
+            
+            self.log(f"✅ Merchant connected - ID: {merchant_id}")
+            self.log(f"   Company: {company_name}")
+            self.log(f"   Balance: {balance_usdt} USDT")
+            self.log(f"   Status: {status}")
+            
+            if balance_usdt >= 500:
+                self.log("✅ Expected balance (500+ USDT) confirmed")
+            else:
+                self.log(f"⚠️ Balance is {balance_usdt} USDT, expected 500+")
+            
+            return True
+        
+        return success
+
+    def test_quick_payment_creation(self):
+        """Test quick payment creation for 1000 RUB"""
+        success, response = self.run_test(
+            "Quick Payment Creation",
+            "POST",
+            "shop/quick-payment",
+            200,
+            data={
+                "amount_rub": 1000,
+                "description": "Тест пополнения на 1000 RUB"
+            },
+            description="Create 1000 RUB payment"
+        )
+        
+        if success and isinstance(response, dict):
+            invoice_id = response.get('invoice_id')
+            amount_rub = response.get('amount_rub')
+            amount_usdt = response.get('amount_usdt')
+            payment_url = response.get('payment_url')
+            
+            self.log(f"✅ Payment created - ID: {invoice_id}")
+            self.log(f"   Amount: {amount_rub} RUB = {amount_usdt} USDT")
+            self.log(f"   Payment URL: {payment_url}")
+            
+            # Store invoice_id for further testing
+            self.test_invoice_id = invoice_id
+            return True
+        
+        return success
+
+    def test_operators_for_payment(self):
+        """Test operators available for 1000 RUB payment"""
+        success, response = self.run_test(
+            "Operators for Payment",
+            "GET",
+            "public/operators?amount_rub=1000",
+            200,
+            description="Get operators for 1000 RUB payment"
+        )
+        
+        if success and isinstance(response, dict):
+            operators = response.get('operators', [])
+            exchange_rate = response.get('exchange_rate')
+            
+            self.log(f"✅ Found {len(operators)} operators for 1000 RUB")
+            self.log(f"   Exchange rate: {exchange_rate}")
+            
+            # Check for expected 3 operators (user1, user2, user3)
+            trader_logins = [op.get('trader_login', '') for op in operators]
+            expected_traders = ['user1', 'user2', 'user3']
+            found_expected = [t for t in expected_traders if t in trader_logins]
+            
+            self.log(f"   Expected traders found: {found_expected}")
+            
+            if len(found_expected) >= 2:
+                self.log("✅ Expected test traders found")
+            else:
+                self.log(f"⚠️ Expected traders (user1, user2, user3) not found")
+            
+            # Check payment methods
+            for op in operators[:3]:  # Check first 3 operators
+                trader_login = op.get('trader_login', 'Unknown')
+                requisites = op.get('requisites', [])
+                payment_methods = [r.get('type') for r in requisites if r.get('type')]
+                
+                self.log(f"   {trader_login}: {payment_methods}")
+                
+                if 'card' in payment_methods or 'sbp' in payment_methods:
+                    self.log(f"   ✅ {trader_login} has expected payment methods")
+            
+            return True
+        
+        return success
+
+    def test_invoice_api_payment_methods(self):
+        """Test Invoice API payment methods endpoint"""
+        api_key = "merch_sk_8581cf8f655c4f858511e26d1dc3f3f3"
+        
+        success, response = self.run_test(
+            "Invoice API Payment Methods",
+            "GET",
+            "v1/invoice/payment-methods",
+            200,
+            headers={'X-Api-Key': api_key},
+            description="Get available payment methods via Invoice API"
+        )
+        
+        if success and isinstance(response, dict):
+            payment_methods = response.get('payment_methods', [])
+            
+            self.log(f"✅ Payment methods endpoint working")
+            self.log(f"   Available methods: {len(payment_methods)}")
+            
+            method_ids = [pm.get('id') for pm in payment_methods]
+            expected_methods = ['card', 'sbp']
+            
+            for method in expected_methods:
+                if method in method_ids:
+                    self.log(f"   ✅ {method} method available")
+                else:
+                    self.log(f"   ⚠️ {method} method not found")
+            
+            return True
+        
+        return success
+
+    def test_invoice_api_transactions(self):
+        """Test Invoice API transactions endpoint"""
+        api_key = "merch_sk_8581cf8f655c4f858511e26d1dc3f3f3"
+        
+        success, response = self.run_test(
+            "Invoice API Transactions",
+            "GET",
+            "v1/invoice/transactions?limit=10",
+            200,
+            headers={'X-Api-Key': api_key},
+            description="Get transaction history via Invoice API"
+        )
+        
+        if success and isinstance(response, dict):
+            data = response.get('data', {})
+            transactions = data.get('transactions', [])
+            total = data.get('total', 0)
+            
+            self.log(f"✅ Transactions endpoint working")
+            self.log(f"   Total transactions: {total}")
+            self.log(f"   Retrieved: {len(transactions)}")
+            
             return True
         
         return success
@@ -231,6 +402,9 @@ class ReptiloidAPITester:
         """Run all backend tests"""
         self.log("🚀 Starting Reptiloid-01 Backend API Tests")
         self.log(f"   Base URL: {self.base_url}")
+        
+        # Initialize test variables
+        self.test_invoice_id = None
         
         # Basic connectivity tests
         self.test_root_endpoint()
@@ -247,6 +421,19 @@ class ReptiloidAPITester:
         self.test_offers_endpoint()
         self.test_exchange_rate_endpoint()
         self.test_public_operators()
+        
+        # Merchant API tests (new)
+        self.log("\n" + "="*40)
+        self.log("🏪 Testing Merchant Shop API")
+        self.test_merchant_api_key_connection()
+        self.test_quick_payment_creation()
+        self.test_operators_for_payment()
+        
+        # Invoice API tests  
+        self.log("\n" + "="*40)
+        self.log("📝 Testing Invoice API")
+        self.test_invoice_api_payment_methods()
+        self.test_invoice_api_transactions()
         
         # Print summary
         self.log("\n" + "="*60)
