@@ -89,6 +89,26 @@ async def send_broadcast(
     if notifications:
         await db.notifications.insert_many(notifications)
     
+    # Also create event_notifications for the new notification system
+    event_notifications = []
+    for r in recipients:
+        event_notifications.append({
+            "id": str(uuid.uuid4()),
+            "user_id": r["id"],
+            "type": "broadcast",
+            "title": title or "Рассылка от администрации",
+            "message": content[:100] + ("..." if len(content) > 100 else ""),
+            "link": "/trader/messages" if r["type"] == "trader" else "/merchant/messages",
+            "reference_id": broadcast_id,
+            "reference_type": "broadcast",
+            "extra_data": {"priority": priority},
+            "read": False,
+            "created_at": now
+        })
+    
+    if event_notifications:
+        await db.event_notifications.insert_many(event_notifications)
+    
     # Log action
     await log_admin_action(user["id"], "broadcast_sent", "broadcast", broadcast_id, {
         "target": target,
