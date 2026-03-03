@@ -97,23 +97,30 @@ export default function MyMessagesPage() {
 
   const fetchConversations = async () => {
     try {
-      const response = await axios.get(`${API}/msg/conversations`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      // Only show support/admin messages AND crypto orders
-      const allConvs = response.data || [];
+      // Fetch both in parallel
+      const [convsResponse, broadcastsResponse] = await Promise.all([
+        axios.get(`${API}/msg/conversations`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${API}/notifications/broadcasts`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => ({ data: [] }))
+      ]);
+      
+      // Filter conversations
+      const allConvs = convsResponse.data || [];
       const filtered = allConvs.filter(c => 
         ['support_ticket', 'admin_message', 'admin_user_chat', 'crypto_order'].includes(c.type)
       );
       setConversations(filtered);
+      
+      // Set broadcasts
+      setBroadcasts(broadcastsResponse.data || []);
     } catch (error) {
       console.error('Error fetching conversations:', error);
     } finally {
       setLoading(false);
     }
-    
-    // Fetch broadcasts separately (always)
-    fetchBroadcasts();
   };
 
   const fetchBroadcasts = async () => {

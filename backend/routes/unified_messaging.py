@@ -231,16 +231,22 @@ async def get_user_conversations(user: dict = Depends(get_current_user)):
             }
             conversations.append(conv_entry)
     
-    # Sort all conversations: unread first, then by updated_at
+    # Sort all conversations: unread first, then by updated_at (newest first)
     def sort_key(x):
+        # Unread priority (higher = first)
         unread = x.get("unread_count") or 0
+        # Date timestamp
         date_str = x.get("updated_at") or x.get("created_at") or "1970-01-01"
         try:
-            date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if isinstance(date_str, str):
+                date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            else:
+                date = date_str
             timestamp = date.timestamp()
         except:
             timestamp = 0
-        return (-unread, -timestamp)  # Negative for descending order
+        # Sort: unread DESC, then timestamp DESC
+        return (-unread, -timestamp)
     
     conversations.sort(key=sort_key)
     
