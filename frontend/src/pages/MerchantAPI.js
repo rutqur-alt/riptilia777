@@ -609,10 +609,12 @@ app.post('/webhook', (req, res) => {
   "payment_id": "inv_20250128_ABC123",
   "payment_url": "${BASE_URL}/select-operator/inv_20250128_ABC123",
   "details": {
+    "type": "waiting",
+    "message": "Ожидание реквизитов. Откройте страницу оплаты.",
     "original_amount": 1500,
     "total_amount": 1507,           // С маркером для идентификации
     "marker": 7,
-    "amount_usdt": 15.50,
+    "amount_usdt": 19.23,
     "expires_at": "2025-01-28T12:30:00Z"
   }
 }`}
