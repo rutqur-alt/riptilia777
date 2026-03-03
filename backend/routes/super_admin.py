@@ -57,12 +57,12 @@ async def get_super_admin_overview(user: dict = Depends(require_admin_level(80))
         {"$group": {
             "_id": None,
             "total_usdt": {"$sum": "$amount_usdt"},
-            "total_rub": {"$sum": "$amount_rub"},
-            "total_commission": {"$sum": "$trader_commission"}
+            "total_rub": {"$sum": {"$ifNull": ["$client_amount_rub", "$amount_rub"]}},
+            "total_platform_fee_rub": {"$sum": {"$ifNull": ["$platform_fee_rub", 0]}}
         }}
     ]
     volume_result = await db.trades.aggregate(pipeline).to_list(1)
-    volumes = volume_result[0] if volume_result else {"total_usdt": 0, "total_rub": 0, "total_commission": 0}
+    volumes = volume_result[0] if volume_result else {"total_usdt": 0, "total_rub": 0, "total_platform_fee_rub": 0}
     
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     today_trades = await db.trades.count_documents({"created_at": {"$gte": today.isoformat()}})
@@ -93,7 +93,8 @@ async def get_super_admin_overview(user: dict = Depends(require_admin_level(80))
         "volumes": {
             "total_usdt": round(volumes.get("total_usdt", 0), 2),
             "total_rub": round(volumes.get("total_rub", 0), 2),
-            "total_commission": round(volumes.get("total_commission", 0), 4)
+            "total_commission": round(volumes.get("total_platform_fee_rub", 0), 2),
+            "total_commission_rub": round(volumes.get("total_platform_fee_rub", 0), 2)
         },
         "marketplace": {
             "shops": shops_count,
@@ -540,14 +541,14 @@ async def get_finances_overview(period: str = "7d", user: dict = Depends(require
         {"$match": {"status": "completed", "created_at": {"$gte": start_date.isoformat()}}},
         {"$group": {
             "_id": None,
-            "total_commission": {"$sum": "$trader_commission"},
+            "total_platform_fee_rub": {"$sum": {"$ifNull": ["$platform_fee_rub", 0]}},
             "total_volume_usdt": {"$sum": "$amount_usdt"},
-            "total_volume_rub": {"$sum": "$amount_rub"},
+            "total_volume_rub": {"$sum": {"$ifNull": ["$client_amount_rub", "$amount_rub"]}},
             "trade_count": {"$sum": 1}
         }}
     ]
     result = await db.trades.aggregate(pipeline).to_list(1)
-    totals = result[0] if result else {"total_commission": 0, "total_volume_usdt": 0, "total_volume_rub": 0, "trade_count": 0}
+    totals = result[0] if result else {"total_platform_fee_rub": 0, "total_volume_usdt": 0, "total_volume_rub": 0, "trade_count": 0}
     
     traders_balance = 0
     merchants_balance = 0
@@ -563,7 +564,8 @@ async def get_finances_overview(period: str = "7d", user: dict = Depends(require
     
     return {
         "period": period,
-        "commission_earned": round(totals.get("total_commission", 0), 4),
+        "commission_earned": round(totals.get("total_platform_fee_rub", 0), 2),
+        "commission_earned_rub": round(totals.get("total_platform_fee_rub", 0), 2),
         "volume_usdt": round(totals.get("total_volume_usdt", 0), 2),
         "volume_rub": round(totals.get("total_volume_rub", 0), 2),
         "trade_count": totals.get("trade_count", 0),

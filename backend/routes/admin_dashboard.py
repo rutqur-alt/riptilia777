@@ -44,7 +44,8 @@ async def get_analytics(period: str = "week", user: dict = Depends(require_role(
     
     total_volume = sum(t.get("amount_usdt", 0) for t in trades)
     total_trades = len(trades)
-    total_commission = sum(t.get("total_commission", 0) for t in trades)
+    total_commission_rub = sum(t.get("platform_fee_rub", 0) or 0 for t in trades)
+    total_turnover_rub = sum(t.get("client_amount_rub", 0) or t.get("amount_rub", 0) for t in trades)
     
     # Volume by day
     volume_by_day = {}
@@ -69,7 +70,9 @@ async def get_analytics(period: str = "week", user: dict = Depends(require_role(
         "period": period,
         "total_volume": round(total_volume, 2),
         "total_trades": total_trades,
-        "total_commission": round(total_commission, 4),
+        "total_commission": round(total_commission_rub, 2),
+        "total_commission_rub": round(total_commission_rub, 2),
+        "total_turnover_rub": round(total_turnover_rub, 2),
         "avg_trade_size": round(total_volume / total_trades, 2) if total_trades > 0 else 0,
         "volume_by_day": volume_by_day,
         "top_traders": top_traders_data

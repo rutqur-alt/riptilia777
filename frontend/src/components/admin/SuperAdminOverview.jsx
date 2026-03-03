@@ -131,7 +131,7 @@ export default function SuperAdminOverview() {
             </div>
             <div className="bg-[#0A0A0A] rounded-lg p-3">
               <div className="text-[#71717A] text-xs">Комиссия заработана</div>
-              <div className="text-[#10B981] font-bold text-lg">{data?.volumes?.total_commission?.toFixed(2) || 0} USDT</div>
+              <div className="text-[#10B981] font-bold text-lg">{data?.volumes?.total_commission?.toLocaleString() || 0} ₽</div>
             </div>
             <div className="bg-[#0A0A0A] rounded-lg p-3">
               <div className="text-[#71717A] text-xs">Всего сделок</div>
