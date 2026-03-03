@@ -1167,15 +1167,29 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
   const [loading, setLoading] = useState(true);
   const [trade, setTrade] = useState(null);
   const [openingDispute, setOpeningDispute] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
     if (open && tradeId) {
       fetchChat();
+      // Poll for new messages in disputes
+      const interval = setInterval(() => {
+        if (trade && ['dispute', 'disputed'].includes(trade.status)) {
+          fetchChat(true);
+        }
+      }, 5000);
+      return () => clearInterval(interval);
     }
-  }, [open, tradeId]);
+  }, [open, tradeId, trade?.status]);
 
-  const fetchChat = async () => {
-    setLoading(true);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const fetchChat = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await axios.get(`${API}/merchant/trades/${tradeId}/chat`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -1184,9 +1198,26 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
       setTrade(res.data.trade || null);
     } catch (error) {
       console.error(error);
-      toast.error("Не удалось загрузить чат");
+      if (!silent) toast.error("Не удалось загрузить чат");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !tradeId) return;
+    setSendingMessage(true);
+    try {
+      await axios.post(`${API}/merchant/disputes/${tradeId}/messages`, 
+        { content: newMessage.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewMessage('');
+      await fetchChat(true);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Ошибка отправки сообщения');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -1291,7 +1322,35 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
               </div>
             ))
           )}
+          <div ref={messagesEndRef} />
         </div>
+
+        {/* Message Input for Disputes */}
+        {trade && ['dispute', 'disputed'].includes(trade.status) && (
+          <div className="pt-3 border-t border-white/5">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                placeholder="Написать сообщение в спор..."
+                className="flex-1 px-4 py-2.5 bg-[#0A0A0A] border border-white/10 rounded-xl text-white text-sm placeholder-[#52525B] focus:outline-none focus:border-[#3B82F6]/50"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!newMessage.trim() || sendingMessage}
+                className="px-4 py-2.5 bg-[#3B82F6] hover:bg-[#2563EB] disabled:opacity-50 text-white rounded-xl transition-colors"
+              >
+                {sendingMessage ? (
+                  <Loader className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Open Dispute button */}
         {canOpenDispute && trade && !["dispute", "disputed", "completed", "cancelled"].includes(trade.status) && (
