@@ -1162,7 +1162,7 @@ function MerchantAnalytics() {
 }
 
 // ==================== CHAT HISTORY MODAL ====================
-function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDisputeOpened }) {
+function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDisputeOpened, isCryptoOrder = false }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [trade, setTrade] = useState(null);
@@ -1191,7 +1191,11 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
   const fetchChat = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await axios.get(`${API}/merchant/trades/${tradeId}/chat`, {
+      // Use different API for crypto orders (payouts)
+      const endpoint = isCryptoOrder 
+        ? `${API}/merchant/crypto-orders/${tradeId}/chat`
+        : `${API}/merchant/trades/${tradeId}/chat`;
+      const res = await axios.get(endpoint, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessages(res.data.messages || []);
@@ -1705,13 +1709,14 @@ function MerchantWithdrawalRequests() {
         </div>
       )}
 
-      {/* Chat History Modal */}
+      {/* Chat History Modal for Withdrawal Requests */}
       <ChatHistoryModal
         open={showChat}
         onClose={() => setShowChat(false)}
         tradeId={chatTradeId}
         token={token}
         canOpenDispute={false}
+        isCryptoOrder={true}
       />
     </div>
   );

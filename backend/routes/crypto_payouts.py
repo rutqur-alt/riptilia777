@@ -629,6 +629,75 @@ async def get_merchant_deal_details(order_id: str, user: dict = Depends(get_curr
     }
 
 
+
+@router.get("/merchant/crypto-orders/{order_id}/chat")
+async def get_merchant_crypto_order_chat(order_id: str, user: dict = Depends(get_current_user)):
+    """Get chat history for a crypto order (payout) - for merchant"""
+    if user.get("role") != "merchant":
+        raise HTTPException(status_code=403, detail="Только для мерчантов")
+    
+    # Find order by ID or offer ID
+    order = await db.crypto_orders.find_one(
+        {"$or": [
+            {"id": order_id, "merchant_id": user["id"]},
+            {"offer_id": order_id}
+        ]},
+        {"_id": 0}
+    )
+    
+    # Also check offers if no order found
+    if not order:
+        offer = await db.crypto_sell_offers.find_one({"id": order_id, "merchant_id": user["id"]}, {"_id": 0})
+        if offer:
+            # Find order by offer_id
+            order = await db.crypto_orders.find_one({"offer_id": order_id}, {"_id": 0})
+    
+    if not order:
+        # Return empty chat if no order yet
+        return {
+            "messages": [],
+            "trade": {"id": order_id, "status": "active", "buyer_nickname": "Клиент", "amount_rub": 0}
+        }
+    
+    # Find conversation
+    conv = await db.unified_conversations.find_one(
+        {"related_id": order["id"]},
+        {"_id": 0}
+    )
+    
+    messages = []
+    if conv:
+        raw_messages = await db.unified_messages.find(
+            {"conversation_id": conv["id"]},
+            {"_id": 0}
+        ).sort("created_at", 1).to_list(500)
+        
+        # Format messages for ChatHistoryModal
+        for msg in raw_messages:
+            messages.append({
+                "sender_role": msg.get("sender_role", "system"),
+                "sender_name": msg.get("sender_nickname", msg.get("sender_role", "Система")),
+                "text": msg.get("content", ""),
+                "content": msg.get("content", ""),
+                "created_at": msg.get("created_at")
+            })
+    
+    # Return in format expected by ChatHistoryModal
+    return {
+        "messages": messages,
+        "trade": {
+            "id": order["id"],
+            "status": order.get("status", "pending"),
+            "buyer_nickname": order.get("buyer_nickname", "Клиент"),
+            "client_nickname": order.get("buyer_nickname", "Клиент"),
+            "amount_rub": order.get("amount_rub", 0),
+            "client_amount_rub": order.get("amount_rub", 0),
+            "amount_usdt": order.get("amount_usdt", 0)
+        }
+    }
+
+
+
 # ==================== PAYOUT SETTINGS API ====================
 
 @router.get("/admin/payout-settings")
