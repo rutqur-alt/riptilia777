@@ -601,7 +601,7 @@ export default function PayPage() {
           <div className="bg-gradient-to-br from-[#7C3AED] to-[#6D28D9] rounded-2xl p-5 mb-4">
             <div className="text-white/70 text-sm mb-1">Сумма к оплате</div>
             <div className="text-3xl font-bold text-white font-['JetBrains_Mono'] mb-2">
-              {trade.amount_rub?.toLocaleString()} ₽
+              {Math.round(trade.amount_rub || 0).toLocaleString()} ₽
             </div>
             <div className="flex items-center gap-2 text-white/70 text-sm">
               <span>{trade.amount_usdt} USDT</span>
@@ -794,7 +794,7 @@ export default function PayPage() {
             <div className="bg-[#0A0A0A] rounded-xl p-4 space-y-3 mb-4">
               <div className="flex justify-between">
                 <span className="text-[#71717A]">Сумма</span>
-                <span className="text-white font-bold">{trade.amount_rub?.toLocaleString()} ₽</span>
+                <span className="text-white font-bold">{Math.round(trade.amount_rub || 0).toLocaleString()} ₽</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#71717A]">USDT</span>
@@ -911,7 +911,7 @@ export default function PayPage() {
             <div className="bg-[#0A0A0A] rounded-xl p-4 space-y-3">
               <div className="flex justify-between">
                 <span className="text-[#71717A]">Сумма</span>
-                <span className="text-white font-bold">{trade.amount_rub?.toLocaleString()} ₽</span>
+                <span className="text-white font-bold">{Math.round(trade.amount_rub || 0).toLocaleString()} ₽</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#71717A]">Продавец</span>

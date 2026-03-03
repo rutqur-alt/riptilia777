@@ -311,7 +311,7 @@ export default function TraderTradePage() {
               <div className="text-right">
                 <div className="text-[#71717A] text-sm">Получите</div>
                 <div className="text-2xl font-bold text-[#10B981] font-['JetBrains_Mono']">
-                  {trade.amount_rub?.toLocaleString()} ₽
+                  {Math.round(trade.amount_rub || 0).toLocaleString()} ₽
                 </div>
               </div>
             </div>
@@ -384,7 +384,7 @@ export default function TraderTradePage() {
                 <div className="bg-[#3B82F6]/10 rounded-xl p-3 mb-3">
                   <div className="flex items-center gap-2 text-[#3B82F6] text-sm">
                     <CreditCard className="w-4 h-4" />
-                    <span>Клиент оплатил! Проверьте {trade.amount_rub?.toLocaleString()} ₽</span>
+                    <span>Клиент оплатил! Проверьте {Math.round(trade.amount_rub || 0).toLocaleString()} ₽</span>
                   </div>
                 </div>
               )}

@@ -67,7 +67,7 @@ export default function PaymentCard({
           <div className="bg-[#0A0A0A] rounded-xl p-4 text-center">
             <div className="text-[#71717A] text-xs mb-1">Сумма к оплате</div>
             <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
-              {(trade.amount_rub || depositAmount).toLocaleString()} RUB
+              {Math.round(trade.amount_rub || depositAmount).toLocaleString()} RUB
             </div>
           </div>
 

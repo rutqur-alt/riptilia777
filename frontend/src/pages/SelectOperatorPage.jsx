@@ -393,7 +393,7 @@ export default function SelectOperatorPage() {
               <div>
                 <div className="text-[#71717A] text-xs mb-1">Пополнение счёта</div>
                 <div className="text-2xl font-bold text-white font-['JetBrains_Mono']">
-                  {depositAmount.toLocaleString()} ₽
+                  {Math.round(depositAmount).toLocaleString()} ₽
                 </div>
               </div>
               <div className="w-12 h-12 rounded-2xl bg-[#7C3AED]/10 flex items-center justify-center">
@@ -560,11 +560,11 @@ export default function SelectOperatorPage() {
                       {/* К оплате */}
                       <div className="md:col-span-2 text-right">
                         <div className="text-xl font-bold text-white font-['JetBrains_Mono']">
-                          {op.toPayRub.toLocaleString()} ₽
+                          {Math.round(op.toPayRub).toLocaleString()} ₽
                         </div>
                         {diff > 0 && (
                           <div className="text-xs text-[#52525B]">
-                            +{diff.toLocaleString()} ₽
+                            +{Math.round(diff).toLocaleString()} ₽
                           </div>
                         )}
                       </div>
@@ -592,11 +592,11 @@ export default function SelectOperatorPage() {
               <div className="bg-[#0A0A0A] rounded-xl p-4">
                 <div className="flex justify-between items-center">
                   <span className="text-[#71717A]">Сумма пополнения</span>
-                  <span className="text-white font-medium">{depositAmount.toLocaleString()} ₽</span>
+                  <span className="text-white font-medium">{Math.round(depositAmount).toLocaleString()} ₽</span>
                 </div>
                 <div className="flex justify-between items-center mt-2">
                   <span className="text-[#71717A]">К оплате</span>
-                  <span className="text-xl font-bold text-white">{selectedOperator?.toPayRub?.toLocaleString()} ₽</span>
+                  <span className="text-xl font-bold text-white">{Math.round(selectedOperator?.toPayRub || 0).toLocaleString()} ₽</span>
                 </div>
                 {selectedOperator?.commissionPercent !== 0 && (
                   <div className="flex justify-between items-center mt-1">
@@ -728,9 +728,9 @@ export default function SelectOperatorPage() {
                   <div className="text-[#71717A] text-xs mb-1">Сумма к оплате</div>
                   <div className="flex items-center justify-between">
                     <div className="text-2xl font-bold text-white font-['JetBrains_Mono']">
-                      {trade.amount_rub?.toLocaleString()} ₽
+                      {Math.round(trade.amount_rub || 0).toLocaleString()} ₽
                     </div>
-                    <Button variant="ghost" size="sm" onClick={() => copy(trade.amount_rub?.toString())} className="text-[#7C3AED]">
+                    <Button variant="ghost" size="sm" onClick={() => copy(Math.round(trade.amount_rub || 0).toString())} className="text-[#7C3AED]">
                       <Copy className="w-4 h-4" />
                     </Button>
                   </div>
@@ -878,7 +878,7 @@ export default function SelectOperatorPage() {
                   </div>
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-[#71717A]">Сумма</span>
-                    <span className="text-white font-medium">{trade.amount_rub?.toLocaleString()} ₽</span>
+                    <span className="text-white font-medium">{Math.round(trade.amount_rub || 0).toLocaleString()} ₽</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-[#71717A]">Оператор</span>
@@ -985,7 +985,7 @@ export default function SelectOperatorPage() {
           <div className="bg-[#121212] rounded-xl p-4 mt-6 text-left">
             <div className="flex justify-between text-sm mb-2">
               <span className="text-[#71717A]">Сумма</span>
-              <span className="text-white font-medium">{trade.amount_rub?.toLocaleString()} ₽</span>
+              <span className="text-white font-medium">{Math.round(trade.amount_rub || 0).toLocaleString()} ₽</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-[#71717A]">ID сделки</span>

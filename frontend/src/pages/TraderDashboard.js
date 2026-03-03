@@ -1068,11 +1068,11 @@ function TradingStats() {
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="text-[#71717A] text-sm mb-2">Общая сумма сделок</div>
           <div className="text-xl font-bold text-white">{(stats?.total_volume_usdt || 0).toFixed(2)} USDT</div>
-          <div className="text-sm text-[#71717A]">≈ {(stats?.total_volume_rub || 0).toLocaleString()} ₽</div>
+          <div className="text-sm text-[#71717A]">≈ {Math.round(stats?.total_volume_rub || 0).toLocaleString()} ₽</div>
         </div>
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="text-[#71717A] text-sm mb-2">Средний курс</div>
-          <div className="text-xl font-bold text-white">{(stats?.avg_rate || 0).toFixed(2)} ₽</div>
+          <div className="text-xl font-bold text-white">{Math.round(stats?.avg_rate || 0)} ₽</div>
         </div>
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="text-[#71717A] text-sm mb-2">Среднее время сделки</div>

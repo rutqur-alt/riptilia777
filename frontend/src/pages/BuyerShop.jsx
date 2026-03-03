@@ -573,7 +573,7 @@ export default function BuyerShop() {
                           </div>
                           <div>
                             <div className="text-white text-sm font-medium">
-                              {(tx.client_amount_rub || tx.amount_rub || 0).toLocaleString()} RUB
+                              {Math.round(tx.client_amount_rub || tx.amount_rub || 0).toLocaleString()} RUB
                             </div>
                             <div className="text-[#52525B] text-xs">
                               {tx.created_at ? new Date(tx.created_at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
@@ -647,7 +647,7 @@ export default function BuyerShop() {
                 <div className="bg-[#0A0A0A] rounded-xl p-4 mb-4">
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-[#71717A]">Сумма</span>
-                    <span className="text-white font-medium">{(trade.amount_rub || depositAmount).toLocaleString()} RUB</span>
+                    <span className="text-white font-medium">{Math.round(trade.amount_rub || depositAmount || 0).toLocaleString()} RUB</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-[#71717A]">Оператор</span>
@@ -693,7 +693,7 @@ export default function BuyerShop() {
               <div className="bg-[#0A0A0A] rounded-xl p-4 text-left mb-6">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Сумма</span>
-                  <span className="text-white">{(trade.amount_rub || depositAmount).toLocaleString()} RUB</span>
+                  <span className="text-white">{Math.round(trade.amount_rub || depositAmount || 0).toLocaleString()} RUB</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-[#71717A]">Оператор</span>
@@ -722,7 +722,7 @@ export default function BuyerShop() {
               <div className="bg-[#0A0A0A] rounded-xl p-4 mb-4">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Сумма</span>
-                  <span className="text-white">{(trade.amount_rub || depositAmount).toLocaleString()} RUB</span>
+                  <span className="text-white">{Math.round(trade.amount_rub || depositAmount || 0).toLocaleString()} RUB</span>
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Оператор</span>
