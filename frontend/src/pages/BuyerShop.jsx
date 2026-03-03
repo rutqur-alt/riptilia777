@@ -215,6 +215,7 @@ export default function BuyerShop() {
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
           total_received: res.data.total_received || 0,
+          total_received_rub: res.data.total_received_rub || 0,
           total_transactions: res.data.total_transactions || 0
         });
       }
@@ -583,9 +584,9 @@ export default function BuyerShop() {
               <div className="text-4xl font-bold text-white mb-1 font-['JetBrains_Mono']">
                 {balance ? `${(balance.balance_usdt || 0).toFixed(2)} USDT` : '---'}
               </div>
-              {balance?.total_received != null && (
+              {balance?.total_received_rub != null && balance.total_received_rub > 0 && (
                 <div className="text-sm text-[#71717A]">
-                  Всего получено: {(balance.total_received || 0).toFixed(2)} USDT
+                  Всего пополнено: {(balance.total_received_rub || 0).toLocaleString()} ₽
                 </div>
               )}
             </div>

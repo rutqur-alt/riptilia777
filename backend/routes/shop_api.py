@@ -43,13 +43,28 @@ async def get_merchant_info_by_api_key(api_key: str):
     # Count completed transactions
     total_txs = await db.merchant_invoices.count_documents({"merchant_id": merchant["id"], "status": "completed"})
     
-    # Sum completed amounts
+    # Sum completed amounts - используем ORIGINAL_AMOUNT (запрошенную сумму клиентом)
+    # Это виртуальный баланс тестового магазина
     pipeline = [
         {'$match': {'merchant_id': merchant['id'], 'status': 'completed'}},
-        {'$group': {'_id': None, 'total': {'$sum': '$amount_usdt'}}}
+        {'$group': {'_id': None, 'total_usdt': {'$sum': '$amount_usdt'}, 'total_rub': {'$sum': '$original_amount_rub'}}}
     ]
     agg = await db.merchant_invoices.aggregate(pipeline).to_list(1)
-    total_received = agg[0]['total'] if agg else 0
+    
+    if agg:
+        total_received_usdt = agg[0].get('total_usdt', 0) or 0
+        total_received_rub = agg[0].get('total_rub', 0) or 0
+    else:
+        total_received_usdt = 0
+        total_received_rub = 0
+    
+    # Баланс тестового магазина = запрошенные RUB конвертированные в USDT по текущему курсу
+    # Это то, что КЛИЕНТ запрашивал, а не сколько он заплатил с наценкой
+    settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    exchange_rate = settings.get("base_rate", 78.0) if settings else 78.0
+    
+    # Виртуальный баланс = сумма всех оригинальных запросов в RUB / курс
+    virtual_balance_usdt = round(total_received_rub / exchange_rate, 2) if exchange_rate > 0 else 0
     
     return {
         "merchant_id": merchant["id"],
@@ -57,8 +72,9 @@ async def get_merchant_info_by_api_key(api_key: str):
         "status": merchant.get("status"),
         "fee_model": "merchant_pays",
         "commission_rate": merchant.get("commission_rate", 3.0),
-        "balance_usdt": merchant.get("balance_usdt", 0),
-        "total_received": round(total_received, 4),
+        "balance_usdt": virtual_balance_usdt,  # Виртуальный баланс тестового магазина
+        "total_received": round(total_received_usdt, 4),  # Сумма USDT всех сделок
+        "total_received_rub": round(total_received_rub, 2),  # Сумма RUB всех запросов
         "total_transactions": total_txs
     }
 
