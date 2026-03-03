@@ -274,15 +274,31 @@ async def get_sidebar_badges(user: dict = Depends(get_current_user)):
     })
     trade_dispute = await db.notifications.count_documents({
         "user_id": user_id,
-        "type": "trade_dispute",
+        "type": {"$in": ["trade_dispute", "trade_disputed"]},
         "read": False
     })
+    
+    # Count unread event_notifications (new unified system)
+    event_notifications_count = await db.event_notifications.count_documents({
+        "user_id": user_id,
+        "read": False
+    })
+    
+    # Also count from old notifications as fallback
+    old_notifications_count = await db.notifications.count_documents({
+        "user_id": user_id,
+        "read": False
+    })
+    
+    # Use whichever is higher (to ensure we show all notifications)
+    combined_notifications = max(event_notifications_count, old_notifications_count)
 
     # Backward compatibility
     trade_payments = trade_payment
     trade_events = trade_message + trade_dispute
     
-    total = (
+    # Use combined notifications count as total for consistency
+    total = combined_notifications if combined_notifications > 0 else (
         active_trades
         + unread_messages
         + active_guarantor
@@ -314,6 +330,7 @@ async def get_sidebar_badges(user: dict = Depends(get_current_user)):
         "trade_payment": trade_payment,
         "trade_message": trade_message,
         "trade_dispute": trade_dispute,
+        "event_notifications": combined_notifications,
         # Backward compatibility
         "trade_payments": trade_payments,
         "trade_events": trade_events,

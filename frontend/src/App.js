@@ -234,7 +234,7 @@ function AuthNotificationDropdown({ badges, token, role, prefix }) {
     } catch (e) { console.error(e); }
   };
 
-  const total = localBadges.total || 0;
+  const total = localBadges.event_notifications || localBadges.total || 0;
   const items = buildNotificationList();
 
   const getDropdownPos = () => {

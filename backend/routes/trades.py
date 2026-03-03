@@ -1403,7 +1403,7 @@ async def open_dispute(trade_id: str, reason: str = "", user: dict = Depends(get
     
     await _ws_broadcast(f"trade_{trade_id}", {"type": "status_update", "status": "disputed", "trade_id": trade_id})
     
-    # Create notification for participants about dispute
+    # Create notification for participants about dispute (using event_notifications)
     try:
         participants = set()
         if trade.get("trader_id"):
@@ -1412,7 +1412,23 @@ async def open_dispute(trade_id: str, reason: str = "", user: dict = Depends(get
             participants.add(trade["buyer_id"])
         if user and user.get("id"):
             participants.discard(user["id"])
+        
         for pid in participants:
+            # Create in event_notifications (new system)
+            await db.event_notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": pid,
+                "type": "trade_disputed",
+                "title": "Спор по сделке",
+                "message": f"Открыт спор по сделке #{trade_id[:8]} на {trade.get('amount_usdt', 0):.2f} USDT",
+                "link": f"/trader/sales/{trade_id}",
+                "reference_id": trade_id,
+                "reference_type": "trade_dispute",
+                "extra_data": {"reason": reason or "Не указана"},
+                "read": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+            # Also create in old system for backward compatibility
             await _create_trade_notification(
                 user_id=pid,
                 notif_type="trade_disputed",
@@ -1421,6 +1437,17 @@ async def open_dispute(trade_id: str, reason: str = "", user: dict = Depends(get
                 link=f"/trader/sales/{trade_id}",
                 trade_id=trade_id
             )
+            # Real-time WebSocket notification
+            await _ws_broadcast(f"user_{pid}", {
+                "type": "new_notification",
+                "notification": {
+                    "id": str(uuid.uuid4()),
+                    "type": "trade_disputed",
+                    "title": "Спор по сделке",
+                    "message": f"Открыт спор по сделке #{trade_id[:8]}",
+                    "link": f"/trader/sales/{trade_id}"
+                }
+            })
     except Exception:
         pass
     
