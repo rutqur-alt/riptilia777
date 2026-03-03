@@ -101,19 +101,25 @@ async def get_trader_profile(user: dict = Depends(require_role(["trader"]))):
 @router.get("/traders/stats")
 async def get_trader_stats(user: dict = Depends(require_role(["trader"]))):
     """Get sales and purchases statistics for current trader"""
+    # Продажи (как трейдер)
     sales = await db.trades.find({"trader_id": user["id"], "status": "completed"}).to_list(1000)
     sales_count = len(sales)
     sales_volume = sum(t.get("amount_usdt", 0) for t in sales)
     
+    # Покупки (как покупатель)
     purchases = await db.trades.find({"buyer_id": user["id"], "buyer_type": "trader", "status": "completed"}).to_list(1000)
     purchases_count = len(purchases)
     purchases_volume = sum(t.get("amount_usdt", 0) for t in purchases)
+    
+    # Общее количество успешных сделок (продажи + покупки)
+    successful_trades = sales_count + purchases_count
     
     return {
         "salesCount": sales_count,
         "salesVolume": sales_volume,
         "purchasesCount": purchases_count,
-        "purchasesVolume": purchases_volume
+        "purchasesVolume": purchases_volume,
+        "successful_trades": successful_trades  # Для проверки доступа к покупке
     }
 
 

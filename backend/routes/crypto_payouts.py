@@ -259,10 +259,10 @@ async def buy_crypto(
     
     successful_trades = max(profile_trades, db_trades)
     
-    if successful_trades < 50:
+    if successful_trades < 20:
         raise HTTPException(
             status_code=403, 
-            detail=f"Необходимо минимум 50 успешных сделок. У вас: {successful_trades}"
+            detail=f"Необходимо минимум 20 успешных сделок. У вас: {successful_trades}"
         )
     
     offer_id = data.get("offer_id")

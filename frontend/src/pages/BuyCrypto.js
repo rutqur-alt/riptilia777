@@ -25,7 +25,7 @@ export default function BuyCrypto() {
   const [rulesText, setRulesText] = useState("");
   const [rulesAccepted, setRulesAccepted] = useState(false);
 
-  const MIN_TRADES_REQUIRED = 50;
+  const MIN_TRADES_REQUIRED = 20;
 
   useEffect(() => {
     fetchOffers();
