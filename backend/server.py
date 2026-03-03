@@ -139,6 +139,7 @@ from routes.admin_management import router as admin_management_router
 from routes.invoice_api import router as invoice_api_router
 from routes.referral import router as referral_router
 from routes.merchant_api import router as merchant_api_router
+from routes.event_notifications import router as event_notifications_router
 api_router.include_router(auth_router)
 api_router.include_router(traders_router)
 api_router.include_router(merchants_router)
@@ -174,6 +175,7 @@ api_router.include_router(admin_management_router)
 api_router.include_router(invoice_api_router)
 api_router.include_router(referral_router)
 api_router.include_router(merchant_api_router)
+api_router.include_router(event_notifications_router)
 from routes.shop_api import router as shop_api_router
 api_router.include_router(shop_api_router)
 

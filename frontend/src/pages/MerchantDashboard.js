@@ -23,6 +23,7 @@ import MerchantAPI from "./MerchantAPI";
 import MerchantDisputesPage from "./MerchantDisputesPage";
 import ShopChats from "./ShopChats";
 import MarketplaceGuarantorChat from "./MarketplaceGuarantorChat";
+import EventNotificationDropdown from "@/components/EventNotificationDropdown";
 
 export default function MerchantDashboard() {
   const { user, token, logout } = useAuth();
@@ -230,11 +231,13 @@ export default function MerchantDashboard() {
         {/* Balance Preview */}
         {!isPending && (
           <div className="p-4 border-b border-white/5">
-            <div className="text-[10px] text-[#52525B] uppercase tracking-wider mb-1">Баланс</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[10px] text-[#52525B] uppercase tracking-wider">Баланс</div>
+              <EventNotificationDropdown token={token} role="merchant" />
+            </div>
             <div className="text-xl font-bold text-white font-['JetBrains_Mono']">
               {(user?.balance_usdt || 0).toFixed(2)} <span className="text-[#F97316]">USDT</span>
             </div>
-            <NotificationDropdown badges={sidebarBadges} token={token} role="merchant" />
           </div>
         )}
 

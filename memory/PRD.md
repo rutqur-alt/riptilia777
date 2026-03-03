@@ -166,6 +166,39 @@ P2P криптовалютная биржа с интегрированным м
 - P2: Telegram уведомления для споров
 - P2: Улучшение мобильной адаптации
 - P2: Удалить устаревший merchant.py после миграции
+- P3: Стандартизация структуры директорий backend (`/api` vs `/routes`)
+
+## Централизованная система уведомлений (03.03.2026)
+
+### Реализовано:
+- ✅ **Backend API** (`/app/backend/routes/event_notifications.py`):
+  - `GET /event-notifications` - получение списка уведомлений
+  - `GET /event-notifications/unread-count` - количество непрочитанных
+  - `POST /event-notifications/mark-read` - отметка прочитанным (одно или все)
+  - `DELETE /event-notifications/{id}` - удаление уведомления
+
+- ✅ **Frontend компонент** (`/app/frontend/src/components/EventNotificationDropdown.jsx`):
+  - Кнопка в сайдбаре рядом с балансом (для трейдеров и мерчантов)
+  - Показывает "Нет событий" когда пусто
+  - Показывает "N событий" с красной точкой при наличии уведомлений
+  - Dropdown со списком уведомлений (иконки + заголовок + сообщение + время)
+  - Клик на уведомление → навигация + удаление из списка
+  - Кнопка "Прочитать всё" → очистка всех уведомлений
+
+### Типы событий:
+- **Торговля:** trade_created, trade_payment_sent, trade_completed, trade_cancelled
+- **Купить USDT:** payout_order_created, payout_order_completed, payout_order_cancelled
+- **Маркет:** marketplace_purchase, shop_new_order
+- **Финансы:** deposit_received, withdrawal_completed
+- **Сообщения:** new_message, broadcast
+- **Рефералы:** new_referral, referral_bonus
+- **Мерчант:** merchant_payment_received, merchant_withdrawal_completed
+
+### Триггеры уведомлений:
+- Создание сделки → уведомление трейдеру
+- Завершение/отмена сделки → уведомление обеим сторонам
+- Создание/завершение заказа на покупку USDT → уведомление покупателю
+- Новое сообщение в чате → уведомление получателю
 
 ## Рефакторинг (03.03.2026)
 - ✅ **BuyerShop.jsx разбит на компоненты** (1307 → 850 строк, -35%)

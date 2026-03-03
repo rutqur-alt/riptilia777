@@ -1,79 +1,79 @@
 <analysis>**original_problem_statement:**
-The initial request was to deploy a P2P cryptocurrency exchange platform named Reptiloid. The project evolved to include fixing bugs, implementing a secure merchant test shop, and overhauling payment logic.
+The initial request was to build a P2P cryptocurrency exchange platform named Reptiloid. The scope has since expanded to include:
+1.  **Complete Merchant API**: A production-ready API for merchants.
+2.  **Implement All Webhooks**: Server-to-server notifications for all critical payment status changes.
+3.  **Comprehensive API Documentation**: Detailed API documentation with examples.
+4.  **UI/UX Refinements (from user feedback):** This session focused on numerous UI/UX fixes, including:
+    *   Implementing a one-click purchase flow for traders buying USDT.
+    *   Fixing incorrect currency calculations and displays across the application.
+    *   Building a complete chat and resolution workflow for payout orders between traders and moderators.
+    *   Adding and fixing administrative features like order cancellation, user broadcasts, and search functionality.
+    *   Removing deprecated UI elements like Disputes tabs.
+5.  **New Major Feature: Centralized Notification System**: A new request to build a site-wide notification system (bell icon) that aggregates all important events (new messages, status changes, etc.) for users and merchants.
 
-The current and final set of user requirements are:
-1.  **Complete Merchant API**: Develop a full-featured, production-ready API for merchants. This includes:
-    *   An endpoint for merchants to fetch a list of available P2P traders/operators ().
-    *   Endpoints for creating invoices, getting payment requisites, and marking invoices as paid by the client.
-    *   Endpoints for managing disputes and allowing the merchant's clients to chat in disputes via the merchant's website ().
-    *   Ensuring the merchant's clients **never** leave the merchant's website to complete a payment. The entire flow must be handled via API.
-2.  **Implement All Webhooks**: The merchant's system must receive server-to-server notifications (webhooks) for all critical payment status changes:
-    *   : Invoice created.
-    *   : Client confirms payment.
-    *   : Trader confirms payment, funds credited.
-    *   : Payment cancelled.
-    *   : Payment expired.
-    *   : Dispute opened.
-3.  **Create Comprehensive API Documentation**: After implementing the API and webhooks, create a detailed API documentation file. This document must include:
-    *   All endpoints with request/response examples.
-    *   Instructions on generating HMAC signatures for security.
-    *   A full description of all webhook events and their data payloads.
-    *   Code examples for integration in PHP, Python, and Node.js.
-
-**User's preferred language**:
-Russian. The next agent MUST respond in Russian.
+**User's preferred language**: Russian. The next agent MUST respond in Russian.
 
 **what currently exists?**
-A full-stack P2P crypto exchange platform (React/FastAPI/MongoDB) is fully deployed and operational. Numerous bugs related to commission calculations, dashboard analytics, and UI displays have been fixed. A major refactoring of the  page was completed, breaking it down into smaller components. The core logic for trader commissions (reserving funds on offer creation and returning them on deletion) has been verified and corrected. The agent has just started implementing the user's latest request for a complete merchant API and webhook system. Some required backend files and functions have been created, but the new endpoints are not yet fully implemented or wired up.
+The platform is a functional full-stack P2P crypto exchange. Key features completed in this session include:
+-   **One-Click Purchase**: The Buy USDT page now features a one-click purchase flow, removing the previous amount selection modal.
+-   **Payout Order Workflow**: A complete workflow for  (payouts) is implemented. Traders can see these orders in their messages, mark them as paid, and chat with moderators. Moderators can see these chats, approve, or cancel orders from the admin panel.
+-   **Corrected Calculations**: The root cause of recurring currency calculation errors has been fixed. The system now consistently uses the up-to-date  from global settings when creating orders, ensuring traders and the platform see correct USDT amounts. Merchant fund freezing/unfreezing logic has also been corrected.
+-   **Broadcast System**: An admin-driven broadcast (Рассылка) system is functional. Admins can send messages to all users, traders, or merchants, and these messages now correctly appear in the respective users' message centers.
+-   **UI/UX Improvements**:
+    *   New messages are now always sorted to the top of the chat list and marked with a НОВОЕ (NEW) tag.
+    *   Admin panels have been improved with cross-status search and removal of unnecessary tabs (Споры).
+    *   The merchant dashboard now correctly displays completed payout requests and chat history.
 
 **Last working item**:
-*   **Last item agent was working:** The agent was in the initial phase of building out the complete merchant API and webhook system. This involved creating a , adding placeholder functions for new API endpoints in , and adding  calls to the trade completion logic in .
-*   **Status:** IN PROGRESS
+*   **Last item agent was working:** The user requested the implementation of a new, centralized notification system. The agent acknowledged the request, broke down the requirements, and confirmed understanding.
+*   **Status:** NOT STARTED
 *   **Agent Testing Done:** N
-*   **Which testing method agent to use?** backend testing agent. This is a large feature addition with multiple new API endpoints and critical backend logic changes. The testing agent should be used to create a new, comprehensive test suite covering all merchant API functionality and webhook triggers.
+*   **Which testing method agent to use?** both. The backend testing agent will be needed to verify that notifications are created for all specified events (new message, status change, etc.). The frontend testing agent will be needed to verify the UI of the notification bell, the dropdown list, the unread indicator, click navigation, and the read all functionality.
 *   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-*   None. Current work is feature development, not bug fixing.
+*   None. All issues raised during the session were resolved.
 
 **In progress Task List**:
-*   **Task 1 (P0): Complete Merchant API & Webhooks Implementation**
-    *   **Where to resume:** Continue building the features outlined in the user's plan.
-        1.  Implement the logic for the 5 missing API endpoints in :
-            *   : Fetch available traders based on amount.
-            *   : Get payment details for an invoice.
-            *   : Allow the merchant to signal that their client has paid.
-            *   : Programmatically open a dispute.
-            *   : Send and receive dispute chat messages.
-        2.  Integrate the  function from  into all relevant trade status transitions (, , ) within  and other relevant files. The  and  webhooks have been partially added but need verification.
-    *   **What will be achieved with this?** A fully functional, production-ready API for merchant integration.
-    *   **Status:** IN PROGRESS
-    *   **Should Test frontend/backend/both after fix?** Backend.
-    *   **Blocked on something:** None.
+*   None.
 
 **Upcoming and Future Tasks**
-*   **Upcoming Task (P0): Create Full API Documentation**
-    *   Once Task 1 is complete and tested, create a new documentation file (e.g., ).
-    *   This document must cover all points requested by the user: authentication, HMAC signatures, all endpoints with examples (including the new ones for operators and disputes), all webhook events with payloads, and code examples in PHP, Python, and Node.js.
-*   **Future Task (P1): Deprecate and Remove Old Merchant API**
-    *   The file  represents an old, insecure version of the API.
-    *   After the new  is complete and documented, all its functionality should be migrated (if any is missing) and the old file should be safely removed to avoid confusion and legacy code.
+*   **Upcoming Task (P0): Implement Centralized Notification System**
+    *   **Description:** Build the feature requested in the last user message.
+    *   **Backend:** Create a new collection ( seems appropriate) and logic to generate a notification document for every key event (new message, trade status change, new payout order, etc.) targeting the relevant user(s).
+    *   **Backend:** Create endpoints to fetch unread notifications for a user and to mark notifications as read (individually and all at once).
+    *   **Frontend:**
+        *   Implement a component (likely in the main sidebar) with a bell icon and an unread notification count.
+        *   On click, display a dropdown/modal listing all unread notifications.
+        *   Each notification in the list should be a link that navigates the user to the relevant page (e.g., a specific chat, a specific trade).
+        *   Clicking a notification should mark it as read and remove it from the list.
+        *   Implement a Прочитать всё (Read All) button.
+*   **Upcoming Task (P1): Implement  Webhook**
+    *   **Description:** A background task is needed to find trades/orders that have passed their payment time limit, update their status to , and trigger the corresponding webhook. This was carried over from the previous session and is still pending.
+*   **Future Task (P2): Re-evaluate Old Merchant API for Deprecation**
+    *   **Description:** The previous handoff suggested deleting . This agent correctly identified that this file is critical for the merchant dashboard UI. The task is now to investigate  and determine if *it* is the old, insecure API that should be deprecated or removed.
+*   **Future Task (P3): Standardize Backend Route Directories**
+    *   **Description:** Consolidate backend route files currently split between  and  into a single, consistent directory structure (e.g., ).
 
 **Completed work in this session**
-- **Commission Logic Overhaul:** Iteratively fixed the commission calculation logic across all dashboards (admin, merchant) to be , where  is fetched from .
-- **Merchant  Fix:** Corrected a bug where the  field for a merchant was not being incremented upon trade completion. The logic in  was updated to correctly increment this value.
-- **Dispute Chat Fix:** Enabled merchants to send messages in the dispute chat window by adding the necessary input field and backend logic handling.
-- **UI Number Formatting:** Rounded all long decimal numbers (balances, limits, etc.) to two decimal places across the application, primarily in , , and .
-- **Trader Commission Logic Verified:** Confirmed that trader commission (1%) is correctly reserved from their balance upon offer creation and is **not** incorrectly re-deducted from their main balance upon trade completion.
-- **Offer Deletion Logic Verified:** Confirmed that when a trader deletes an offer, the remaining unsold funds and the unused portion of the reserved commission are correctly refunded to their main balance. Added a success notification for this action.
-- ** Refactoring:** Refactored the massive  component (1300+ lines) into a main component and 10 smaller, manageable sub-components located in .
-- **Admin Password Change:** Changed the admin password to  at the user's request.
+-   **One-Click Buy USDT Flow Implemented:** Replaced the amount selection modal with a direct purchase confirmation dialog.
+-   **Payout Order Chat & Resolution Workflow:** Built the full flow for traders to chat with moderators about s, mark payments, and for moderators to complete or cancel transactions.
+-   **Root Cause Fix for Rate Calculations:** Corrected the logic in  to always use the current  from settings when creating an order, eliminating a recurring bug.
+-   **Merchant Balance Logic Fixed:** Corrected bugs that led to negative frozen balances for merchants, ensuring funds are correctly managed during order cancellation and completion.
+-   **Broadcasts Implemented for Users:** Admins can send broadcasts, which now correctly appear in the message centers for traders () and merchants ().
+-   **Message Sorting and NEW Tag:** Implemented frontend logic to sort new/unread messages to the top of the list and display a НОВОЕ tag.
+-   **Admin/Merchant UI Cleanup:** Removed the Споры (Disputes) tab and menu items from both admin and merchant dashboards.
+-   **Admin Search Enhancement:** Improved the search in the Выплаты panel to work across all statuses.
+-   **Chat Archiving Fixed:** Corrected the Leave Chat functionality for admins to properly archive the chat and remove it from the active list.
+-   **Merchant Chat History:** Fixed a bug preventing merchants from viewing the chat history for payout requests.
 
 **Earlier issues found/mentioned but not fixed**
 *   None.
 
 **Known issue recurrence from previous fork**
-*   None.
+*   **Issue:** Incorrect USDT amount calculations due to using stale exchange rates stored in offer documents.
+*   **Recurrence count:** High. This was a central theme of the session.
+*   **Status:** RESOLVED. The root cause was addressed by modifying  to always fetch the live  from the  collection when creating a . This should prevent recurrence.
 
 **Code Architecture**
 
@@ -82,76 +82,77 @@ A full-stack P2P crypto exchange platform (React/FastAPI/MongoDB) is fully deplo
 *   **Frontend:** React, Redux, Axios, Tailwind CSS
 *   **Backend:** FastAPI, Pydantic, Motor (async MongoDB)
 *   **Database:** MongoDB
-*   **Authentication:** JWT for platform users; Custom HMAC-based signature for the merchant API.
+*   **Authentication:** JWT for platform users; HMAC-SHA256 for merchant APIs.
 
 **key DB schema**
-*   **trades:** 
-*   **users:** 
-*   **settings:**  (Source for the official RUB/USDT exchange rate)
+*   **unified_conversations:** The  field is now used to hide chats from the active list.
+*   **crypto_orders:** The  is now reliably stored with the correct, current value upon creation.
+*   **traders/merchants:** The  field logic was corrected to prevent negative values.
+*   **notifications:** This collection was used for broadcasts. It will likely be extended or used as the basis for the new centralized notification system.
 
 **changes in tech stack**
 *   None.
 
 **All files of reference**
-*   : File to be expanded with new endpoints.
-*   : Core logic file where webhook triggers and commission updates need to be implemented/verified.
-*   : New helper service for sending webhook notifications.
-*   : Contains logic for trader offer management.
-*   : The refactored test shop.
-*   : Where dispute chat UI was fixed.
+*   : Heavily modified to fix the root cause of rate calculations and order cancellation logic.
+*   : Heavily modified to show  chats, add the I Paid button, display broadcasts, and sort new messages to the top.
+*   : Modified to fix display of completed orders, remove the Disputes tab, and correctly launch the chat history modal.
+*   : Modified to display broadcasts.
+*   : Modified to improve search/filtering and remove the Disputes tab.
+*   : Modified to correctly archive chats when an admin leaves.
+*   : Modified to implement the one-click purchase flow.
+*   : A new endpoint was added to fetch chat history for payout orders.
 
 **Areas that need refactoring**:
-*   The old merchant API  should be fully deprecated and removed. All merchant functionality should be consolidated into .
-*   The backend has inconsistent directory naming ( vs ). This should be standardized to  for clarity.
+*   The backend route directories ( vs ) should be standardized.
 
 **key api endpoints**
-*   **To be created:**
-    *   
-    *   
-    *   
-    *   
-    *   
-*   **Existing:**
-    *   
-    *    (to set the callback URL)
+*   : (New) Allows a trader to mark a payout order as paid.
+*   : (New) Allows a merchant to fetch chat history for a payout order.
+*   : (New) Allows a user/trader to fetch broadcasts.
+*   Multiple admin endpoints (, ) were updated to filter out archived chats.
+*   : The logic for  status was changed to return the offer to an  state.
 
 **Critical Info for New Agent**
-*   The user is highly detail-oriented. The final implementation of the merchant API and its documentation must be flawless and match the agreed-upon plan exactly.
-*   The correct commission calculation is . The  (e.g., 78.15) comes from the  collection in MongoDB, not from the trade's .
-*   The most important principle for the merchant integration is that the merchant's end-customer **never** gets redirected to the Reptiloid platform's domain. The entire experience must be handled via API calls from the merchant's backend and rendered on the merchant's own website.
+*   The highest priority is the new **centralized notification system**. This is a major feature request from the user.
+*   A recurring issue with incorrect currency calculations was fixed at its root by always fetching the current  from settings in . The agent must maintain this logic. Any new feature involving rates must follow this pattern.
+*   The plan from the previous handoff to delete  was **incorrect**. The file is essential for the merchant dashboard. The task to clean up old APIs should now focus on other potential legacy files like .
+*   The user's desired logic for order cancellation (offer returns to market, merchant funds remain frozen) is now correctly implemented.
 
 **documents and test reports created in this job**
-*   None. A new API documentation file needs to be created as part of the upcoming tasks.
+*   None.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** Asks if the merchant integration is real and can be used on a merchant's actual site. (COMPLETED - Agent confirmed it simulates the real API).
-2.  **User:** Requests a list of webhooks and clarification on what is needed for a full merchant integration. (COMPLETED - Agent provided a list).
-3.  **User:** Confirms the plan to add missing webhooks and create full API documentation, emphasizing that the client must stay on the merchant's site. (COMPLETED - Agent created a detailed plan).
-4.  **User:** Adds a requirement for the API to provide a list of operators and allow dispute chat via API, and asks for confirmation. (COMPLETED - Agent updated the plan).
-5.  **User:** Asks if the API is already complete or if it needs changes before documentation. (COMPLETED - Agent identified missing endpoints and webhooks).
-6.  **User:** Confirms the final plan to build the missing API endpoints, add all webhooks, and then write the documentation. (IN PROGRESS - Agent started implementation).
-7.  **User:** да, все правильно, начинай. (Yes, everything is correct, begin.) (IN PROGRESS).
-8.  **User:** да (yes) (COMPLETED).
-9.  **User:** Asks for the plan to add webhooks and create documentation, ensuring the user's client never leaves their site. (COMPLETED).
-10. **User:** Asks what is needed for a real integration and what webhooks are sent. (COMPLETED).
+1.  **User:** Asks to remove the Disputes tab from the admin panel and fix the Leave Chat functionality. (COMPLETED)
+2.  **User:** Reports that leaving a chat doesn't remove it from the active list. (COMPLETED)
+3.  **User:** Asks to verify that the Broadcast section works. (COMPLETED)
+4.  **User:** Points out that sent broadcasts don't appear for traders or merchants. (COMPLETED)
+5.  **User:** Asks for clarification on order cancellation logic and reports a negative frozen balance for the merchant. (COMPLETED)
+6.  **User:** Asks for all new messages to be sorted to the top of the list with a NEW tag. (COMPLETED)
+7.  **User:** Confirms the new message sorting logic is what they wanted. (COMPLETED)
+8.  **User:** Makes a major feature request for a centralized notification system (bell icon) that consolidates all events. (NOT STARTED)
+9.  **User:** Adds a requirement that the notification bell should have a red indicator when there are new events. (NOT STARTED)
+10. **User:** Да, все правильно. ... Могу начинать? (Yes, that's all correct. ... Can I start?) - User gives the go-ahead to start the notification system. (PENDING HUMAN ACTION - Agent needs to start work).
 
 **Project Health Check:**
-*   **Broken:** The merchant API is incomplete and lacks most of the required endpoints and webhooks for a production-ready integration.
-*   **Mocked:** The  page is a simulation of a merchant's website, intended for testing the merchant API.
+*   **Broken:** The centralized notification system is completely non-existent.
+*   **Mocked:** The  page serves as a test environment for the complex Merchant API.
 
 **3rd Party Integrations**
 *   None.
 
 **Testing status**
-*   **Testing agent used after significant changes:** NO (but recommended for the next steps).
+*   **Testing agent used after significant changes:** NO. The agent performed extensive manual testing via screenshots and some  commands, but did not use the testing agent.
 *   **Troubleshoot agent used after agent stuck in loop:** NO
-*   **Test files created:** None.
+*   **Test files created:** []
 *   **Known regressions:** None.
 
 **Credentials to test flow:**
 *   **Super Admin:**  / 
-*   **Merchant (ID: 222):**  / 
-*   **Trader (user1):**  / 
+*   **Trader 111:**  / 
+*   **Merchant 222:**  / 
 
 **What agent forgot to execute**
-*   The agent has started but is far from finishing the main task requested by the user: implementing the 5 missing merchant API endpoints and the full suite of webhooks. This is the highest priority for the next session.</analysis>
+*   The agent did not start the implementation for the last major user request: the centralized notification system.
+*   The  webhook implementation, carried over from the previous fork, remains pending.
+*   The task to standardize backend directories is also still pending.</analysis>

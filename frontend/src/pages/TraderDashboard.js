@@ -26,6 +26,7 @@ import TraderShop from "./TraderShop";
 import ShopChats from "./ShopChats";
 import MarketplaceGuarantorChat from "./MarketplaceGuarantorChat";
 import MyMessagesPage from "./MyMessagesPage";
+import EventNotificationDropdown from "@/components/EventNotificationDropdown";
 
 // Modularized components
 import TraderBalance from "@/components/trader/TraderBalance";
@@ -309,7 +310,7 @@ export default function TraderDashboard() {
           <div className="bg-gradient-to-br from-[#7C3AED]/20 to-[#A855F7]/10 border border-[#7C3AED]/30 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-[#A78BFA]">Баланс</span>
-              <NotificationDropdown badges={sidebarBadges} token={token} role="trader" />
+              <EventNotificationDropdown token={token} role="trader" />
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-white font-['JetBrains_Mono']">

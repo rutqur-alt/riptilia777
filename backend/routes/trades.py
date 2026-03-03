@@ -43,8 +43,9 @@ from models.schemas import TradeCreate, TradeResponse, MessageCreate, MessageRes
 router = APIRouter(tags=["trades"])
 
 
-async def _create_trade_notification(user_id: str, notif_type: str, title: str, message: str, link: str = None):
-    """Create a trade event notification"""
+async def _create_trade_notification(user_id: str, notif_type: str, title: str, message: str, link: str = None, trade_id: str = None):
+    """Create a trade event notification in both collections"""
+    # Legacy notifications collection
     await db.notifications.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user_id,
@@ -52,6 +53,20 @@ async def _create_trade_notification(user_id: str, notif_type: str, title: str, 
         "title": title,
         "message": message,
         "link": link,
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    # New event_notifications collection
+    await db.event_notifications.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "type": notif_type,
+        "title": title,
+        "message": message,
+        "link": link,
+        "reference_id": trade_id,
+        "reference_type": "trade",
+        "extra_data": {},
         "read": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     })
@@ -313,6 +328,16 @@ async def create_trade(data: TradeCreate):
             "client_pays_rub": data.client_pays_rub or round(amount_rub, 2),
             "expires_at": trade_doc["expires_at"]
         })
+    
+    # Create notification for trader about new trade
+    await _create_trade_notification(
+        data.trader_id,
+        "trade_created",
+        "Новая сделка",
+        f"Создана сделка на {data.amount_usdt:.2f} USDT ({round(amount_rub):,} ₽)",
+        f"/trader/sales/{trade_id}",
+        trade_id
+    )
     
     return trade_doc
 
@@ -661,6 +686,26 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         "completed_at": now
     })
     
+    # Create event notifications for both parties
+    if trade.get("trader_id"):
+        await _create_trade_notification(
+            trade["trader_id"], 
+            "trade_completed",
+            "Сделка завершена",
+            f"Сделка на {trade['amount_usdt']:.2f} USDT успешно завершена",
+            f"/trader/sales/{trade_id}",
+            trade_id
+        )
+    if trade.get("buyer_id") and trade.get("buyer_type") == "trader":
+        await _create_trade_notification(
+            trade["buyer_id"],
+            "trade_completed", 
+            "Сделка завершена",
+            f"Сделка на {trade['amount_usdt']:.2f} USDT успешно завершена",
+            f"/trader/purchases/{trade_id}",
+            trade_id
+        )
+    
     return {"status": "completed"}
 
 
@@ -776,6 +821,26 @@ async def cancel_trade(trade_id: str, user: dict = Depends(require_role(["trader
         "reason": "Клиент не оплатил в течение 30 минут",
         "cancelled_at": now.isoformat()
     })
+    
+    # Create event notifications for both parties
+    if trade.get("trader_id"):
+        await _create_trade_notification(
+            trade["trader_id"],
+            "trade_cancelled",
+            "Сделка отменена",
+            f"Сделка на {trade['amount_usdt']:.2f} USDT была отменена",
+            f"/trader/sales/{trade_id}",
+            trade_id
+        )
+    if trade.get("buyer_id") and trade.get("buyer_type") == "trader":
+        await _create_trade_notification(
+            trade["buyer_id"],
+            "trade_cancelled",
+            "Сделка отменена",
+            f"Сделка на {trade['amount_usdt']:.2f} USDT была отменена",
+            f"/trader/purchases/{trade_id}",
+            trade_id
+        )
     
     return {"status": "cancelled"}
 

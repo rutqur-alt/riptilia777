@@ -12,6 +12,23 @@ from core.database import db
 router = APIRouter(tags=["crypto"])
 
 
+async def _create_payout_notification(user_id: str, event_type: str, title: str, message: str, link: str = None, order_id: str = None):
+    """Create event notification for payout/crypto orders"""
+    await db.event_notifications.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "type": event_type,
+        "title": title,
+        "message": message,
+        "link": link,
+        "reference_id": order_id,
+        "reference_type": "crypto_order",
+        "extra_data": {},
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+
 # ==================== CRYPTO SELL OFFERS (ЗАЯВКИ НА ПРОДАЖУ КРИПТЫ) ====================
 
 @router.get("/crypto/sell-offers")
@@ -409,6 +426,16 @@ async def buy_crypto(
     }
     
     await db.unified_messages.insert_one(sys_msg)
+    
+    # Create event notification for buyer about order creation
+    await _create_payout_notification(
+        user["id"],
+        "payout_order_created",
+        "Заявка на покупку USDT",
+        f"Создана заявка на покупку {usdt_for_buyer:.2f} USDT за {rub_amount:.0f} ₽",
+        "/trader/messages",
+        order_id
+    )
     
     return {
         "status": "created",
@@ -1003,6 +1030,38 @@ async def admin_update_crypto_payout_status(
             "created_at": now_iso
         }
         await db.unified_messages.insert_one(sys_msg)
+    
+    # Create event notifications for relevant parties
+    amount_usdt = order.get("amount_usdt", 0)
+    amount_rub = order.get("amount_rub", 0)
+    
+    # Notify trader if assigned
+    if order.get("trader_id") and new_status in ["completed", "cancelled"]:
+        notif_type = f"payout_order_{new_status}"
+        notif_title = "Выплата завершена" if new_status == "completed" else "Выплата отменена"
+        notif_msg = f"Заказ на {amount_usdt:.2f} USDT {'успешно выполнен' if new_status == 'completed' else 'отменён'}"
+        await _create_payout_notification(
+            order["trader_id"],
+            notif_type,
+            notif_title,
+            notif_msg,
+            "/trader/messages",
+            order_id
+        )
+    
+    # Notify buyer
+    if order.get("buyer_id") and new_status in ["completed", "cancelled"]:
+        notif_type = f"payout_order_{new_status}"
+        notif_title = "Покупка USDT завершена" if new_status == "completed" else "Покупка USDT отменена"
+        notif_msg = f"Заказ на {amount_usdt:.2f} USDT {'успешно завершён' if new_status == 'completed' else 'отменён'}"
+        await _create_payout_notification(
+            order["buyer_id"],
+            notif_type,
+            notif_title,
+            notif_msg,
+            "/trader/messages",
+            order_id
+        )
     
     return {"status": "ok", "new_status": new_status}
 

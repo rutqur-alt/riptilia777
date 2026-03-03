@@ -18,6 +18,31 @@ async def _ws_broadcast(channel: str, data: dict):
     if ws_manager:
         await ws_manager.broadcast(channel, data)
 
+
+async def _create_message_notification(user_id: str, sender_name: str, conv_type: str, conv_id: str):
+    """Create event notification for new message"""
+    # Determine link based on conversation type
+    link = "/trader/messages"
+    if conv_type == "shop_chat":
+        link = "/trader/shop-chats"
+    elif conv_type == "marketplace_guarantor":
+        link = "/trader/my-purchases"
+    
+    await db.event_notifications.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "type": "new_message",
+        "title": "Новое сообщение",
+        "message": f"Сообщение от {sender_name}",
+        "link": link,
+        "reference_id": conv_id,
+        "reference_type": "message",
+        "extra_data": {"conv_type": conv_type},
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+
 router = APIRouter(tags=["messaging"])
 
 
@@ -287,6 +312,13 @@ async def send_message_to_conv(
     # Also broadcast to trade channel if this is a trade-related conversation
     if conv.get("type") in ["p2p_trade", "p2p_dispute"] and conv.get("related_id"):
         await _ws_broadcast(f"trade_{conv['related_id']}", {"type": "message", **msg})
+    
+    # Create event notifications for other participants
+    conv_type = conv.get("type", "private")
+    for p in all_participants:
+        p_id = p if isinstance(p, str) else p.get("user_id", "")
+        if p_id and p_id != user_id:
+            await _create_message_notification(p_id, sender_name, conv_type, conv_id)
     
     return msg
 
