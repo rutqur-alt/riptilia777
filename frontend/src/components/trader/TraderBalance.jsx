@@ -30,7 +30,7 @@ export default function TraderBalance() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // WebSocket: listen for new trades and trade status updates
+  // WebSocket: listen for new trades, trade status updates, and new notifications
   const onWsMessage = useCallback((data) => {
     if (data.type === "new_trade") {
       // New trade created for this trader - show notification and refresh
@@ -46,6 +46,9 @@ export default function TraderBalance() {
     } else if (data.type === "trade_resolved" || data.type === "status_update") {
       // Trade status changed - refresh
       fetchData();
+    } else if (data.type === "new_notification" && data.notification) {
+      // Real-time notification - add to list
+      setNotifications(prev => [data.notification, ...prev.slice(0, 4)]);
     }
   }, []);
 

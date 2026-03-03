@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { API } from "@/App";
+import { API, useAuth } from "@/App";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import { toast } from "sonner";
 import { 
   Bell, TrendingUp, DollarSign, CheckCircle, XCircle, AlertTriangle,
   MessageCircle, ShoppingBag, Package, Wallet, Users, ArrowUpRight,
@@ -131,12 +133,39 @@ const formatTimeAgo = (dateString) => {
 
 export default function EventNotificationDropdown({ token, role = "trader" }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
+  
+  // WebSocket handler for real-time notifications
+  const onWsMessage = useCallback((data) => {
+    if (data.type === "new_notification" && data.notification) {
+      // Add new notification to the top of the list
+      setNotifications(prev => [data.notification, ...prev]);
+      setUnreadCount(prev => prev + 1);
+      
+      // Show toast notification
+      toast.info(data.notification.title, {
+        description: data.notification.message,
+        duration: 5000,
+        action: data.notification.link ? {
+          label: "Открыть",
+          onClick: () => navigate(data.notification.link)
+        } : undefined
+      });
+    }
+  }, [navigate]);
+  
+  // Connect to WebSocket for real-time updates
+  useWebSocket(
+    user ? `/ws/user/${user.id}` : null,
+    onWsMessage,
+    { enabled: !!user }
+  );
   
   // Fetch notifications
   const fetchNotifications = async () => {
@@ -160,10 +189,10 @@ export default function EventNotificationDropdown({ token, role = "trader" }) {
     }
   };
   
-  // Initial fetch and polling
+  // Initial fetch and reduced polling (WebSocket handles real-time)
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 15000); // Poll every 15 sec
+    const interval = setInterval(fetchNotifications, 30000); // Poll every 30 sec as backup
     return () => clearInterval(interval);
   }, [token]);
   

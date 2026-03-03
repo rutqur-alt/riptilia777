@@ -16,6 +16,17 @@ import uuid
 from core.database import db
 from core.auth import get_current_user
 
+# WebSocket manager for real-time notifications
+try:
+    from routes.ws_routes import ws_manager
+except ImportError:
+    ws_manager = None
+
+async def _ws_broadcast(channel: str, data: dict):
+    """Broadcast message via WebSocket"""
+    if ws_manager:
+        await ws_manager.broadcast(channel, data)
+
 router = APIRouter(prefix="/event-notifications", tags=["event-notifications"])
 
 
@@ -107,6 +118,13 @@ async def create_event_notification(
     }
     
     await db.event_notifications.insert_one(notification)
+    
+    # Real-time notification via WebSocket
+    await _ws_broadcast(f"user_{user_id}", {
+        "type": "new_notification",
+        "notification": {k: v for k, v in notification.items() if k != "_id"}
+    })
+    
     return notification
 
 

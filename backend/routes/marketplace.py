@@ -13,6 +13,36 @@ from core.auth import get_current_user
 router = APIRouter(prefix="/marketplace", tags=["marketplace"])
 
 
+async def _create_marketplace_notification(user_id: str, event_type: str, title: str, message: str, link: str = None, purchase_id: str = None):
+    """Create event notification for marketplace events"""
+    try:
+        from routes.ws_routes import ws_manager
+    except ImportError:
+        ws_manager = None
+    
+    notification = {
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "type": event_type,
+        "title": title,
+        "message": message,
+        "link": link,
+        "reference_id": purchase_id,
+        "reference_type": "marketplace",
+        "extra_data": {},
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.event_notifications.insert_one(notification)
+    
+    # Real-time WebSocket notification
+    if ws_manager:
+        await ws_manager.broadcast(f"user_{user_id}", {
+            "type": "new_notification",
+            "notification": {k: v for k, v in notification.items() if k != "_id"}
+        })
+
+
 # ==================== SHOPS ====================
 
 @router.get("/shops")
@@ -377,6 +407,16 @@ async def buy_product(
                 "shop_stats.total_commission_paid": platform_commission
             }}
         )
+        
+        # Notify seller about instant purchase
+        await _create_marketplace_notification(
+            seller_id,
+            "shop_new_order",
+            "Новая покупка в магазине",
+            f"Куплен товар '{product['name']}' ({quantity} шт.) на {total_price:.2f} USDT",
+            "/trader/shop",
+            purchase_id
+        )
 
         return {
             "status": "success",
@@ -443,6 +483,16 @@ async def buy_product(
             "read": False,
             "created_at": now.isoformat()
         })
+        
+        # Create event notification for seller (real-time)
+        await _create_marketplace_notification(
+            seller_id,
+            "shop_new_order",
+            "Новый заказ через гаранта",
+            f"Заказ на '{product['name']}' ({quantity} шт.) - {total_price:.2f} USDT",
+            "/trader/shop",
+            purchase_id
+        )
 
         # Create guarantor chat
         conv_id = str(uuid.uuid4())
