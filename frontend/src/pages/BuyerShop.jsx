@@ -637,11 +637,14 @@ export default function BuyerShop() {
                 </Button>
               </div>
               <div className="text-4xl font-bold text-white mb-1 font-['JetBrains_Mono']">
-                {balance ? `${(balance.balance_usdt || 0).toFixed(2)} USDT` : '---'}
+                {balance ? `${((balance.balance_usdt || 0) * 78.5).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} RUB` : '---'}
               </div>
-              {balance?.total_received != null && (
-                <div className="text-sm text-[#71717A]">
-                  Всего получено: {(balance.total_received || 0).toFixed(2)} USDT
+              <div className="text-sm text-[#52525B]">
+                ≈ {balance ? (balance.balance_usdt || 0).toFixed(2) : '0'} USDT
+              </div>
+              {balance?.total_received_rub != null && balance.total_received_rub > 0 && (
+                <div className="text-sm text-[#71717A] mt-1">
+                  Всего получено: {(balance.total_received_rub || 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} RUB
                 </div>
               )}
             </div>

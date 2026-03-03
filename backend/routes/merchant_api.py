@@ -80,13 +80,17 @@ async def authenticate(data: AuthRequest):
             }.get(error, "Ошибка авторизации")
         })
     
+    # Get exchange rate
+    payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
+    
     # Get stats
     completed = await db.trades.count_documents({
         "merchant_id": data.merchant_id, 
         "status": "completed"
     })
     
-    # Sum of completed amounts (amount_rub that merchant received)
+    # Sum of completed amounts (merchant_receives_rub)
     pipeline = [
         {"$match": {"merchant_id": data.merchant_id, "status": "completed"}},
         {"$group": {"_id": None, "total_rub": {"$sum": "$merchant_receives_rub"}}}
@@ -94,15 +98,20 @@ async def authenticate(data: AuthRequest):
     agg = await db.trades.aggregate(pipeline).to_list(1)
     total_received = agg[0]["total_rub"] if agg else 0
     
+    balance_usdt = merchant.get("balance_usdt", 0)
+    balance_rub = round(balance_usdt * base_rate, 2)
+    
     return {
         "success": True,
         "merchant_id": merchant["id"],
         "merchant_name": merchant.get("merchant_name") or merchant.get("login"),
-        "balance_usdt": round(merchant.get("balance_usdt", 0), 2),
-        "commission_rate": merchant.get("commission_rate", 3.0),
+        "balance_usdt": round(balance_usdt, 2),
+        "balance_rub": balance_rub,
+        "commission_rate": merchant.get("commission_rate", 10.0),
         "total_received_rub": round(total_received, 2),
         "transactions_count": completed,
-        "status": merchant.get("status")
+        "status": merchant.get("status"),
+        "exchange_rate": base_rate
     }
 
 
@@ -160,10 +169,11 @@ async def create_invoice(data: CreateInvoiceRequest):
     # amount_usdt = amount_rub / base_rate (базовый курс)
     amount_usdt = round(data.amount_rub / base_rate, 4)
     
-    # Комиссия мерчанта (что он заплатит площадке)
-    merchant_commission = merchant.get("commission_rate", 3.0)
-    merchant_fee_rub = round(data.amount_rub * merchant_commission / 100, 2)
-    merchant_receives_rub = data.amount_rub - merchant_fee_rub
+    # Комиссия мерчанта (что площадка заберёт)
+    # Мерчант получает: amount_rub - (amount_rub * commission%)
+    merchant_commission = merchant.get("commission_rate", 10.0)  # По умолчанию 10%
+    platform_fee_rub = round(data.amount_rub * merchant_commission / 100, 2)
+    merchant_receives_rub = data.amount_rub - platform_fee_rub
     merchant_receives_usdt = round(merchant_receives_rub / base_rate, 4)
     
     # 5. Generate invoice ID
@@ -186,7 +196,7 @@ async def create_invoice(data: CreateInvoiceRequest):
         
         # Комиссии
         "merchant_commission_percent": merchant_commission,
-        "merchant_fee_rub": merchant_fee_rub,
+        "platform_fee_rub": platform_fee_rub,
         "merchant_receives_rub": merchant_receives_rub,
         "merchant_receives_usdt": merchant_receives_usdt,
         
@@ -309,7 +319,11 @@ async def get_balance(data: BalanceRequest):
     if error:
         raise HTTPException(status_code=401, detail={"success": False, "error": error})
     
-    # Stats
+    # Get exchange rate
+    payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
+    
+    # Stats - считаем merchant_receives_rub
     pipeline = [
         {"$match": {"merchant_id": data.merchant_id, "status": "completed"}},
         {"$group": {
@@ -322,12 +336,17 @@ async def get_balance(data: BalanceRequest):
     agg = await db.trades.aggregate(pipeline).to_list(1)
     stats = agg[0] if agg else {"total_rub": 0, "total_usdt": 0, "count": 0}
     
+    balance_usdt = merchant.get("balance_usdt", 0)
+    balance_rub = round(balance_usdt * base_rate, 2)
+    
     return {
         "success": True,
-        "balance_usdt": round(merchant.get("balance_usdt", 0), 4),
+        "balance_usdt": round(balance_usdt, 4),
+        "balance_rub": balance_rub,
         "total_received_rub": round(stats.get("total_rub", 0), 2),
         "total_received_usdt": round(stats.get("total_usdt", 0), 4),
-        "transactions_count": stats.get("count", 0)
+        "transactions_count": stats.get("count", 0),
+        "exchange_rate": base_rate
     }
 
 
