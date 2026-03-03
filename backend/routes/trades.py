@@ -413,12 +413,38 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         )
     # If merchant trade, transfer to merchant
     elif trade.get("merchant_id"):
-        merchant_receives = trade["amount_usdt"] - trade.get("merchant_commission", 0)
+        # Get merchant's commission rate
+        merchant = await db.merchants.find_one({"id": trade["merchant_id"]}, {"_id": 0})
+        commission_rate = merchant.get("commission_rate", 10.0) if merchant else 10.0
+        
+        # Calculate what merchant receives: client_amount - commission%
+        client_amount_rub = trade.get("client_amount_rub") or trade.get("amount_rub", 0)
+        
+        # Get base exchange rate
+        payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+        base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
+        
+        # Merchant receives: client_amount_rub - commission%
+        merchant_receives_rub = client_amount_rub * (100 - commission_rate) / 100
+        platform_fee_rub = client_amount_rub * commission_rate / 100
+        merchant_receives_usdt = merchant_receives_rub / base_rate
+        
+        # Update trade with calculated amounts
+        await db.trades.update_one(
+            {"id": trade_id},
+            {"$set": {
+                "merchant_commission_percent": commission_rate,
+                "platform_fee_rub": platform_fee_rub,
+                "merchant_receives_rub": merchant_receives_rub,
+                "merchant_receives_usdt": merchant_receives_usdt
+            }}
+        )
+        
+        # Credit merchant balance
         await db.merchants.update_one(
             {"id": trade["merchant_id"]},
             {"$inc": {
-                "balance_usdt": merchant_receives,
-                "total_commission_paid": trade.get("merchant_commission", 0)
+                "balance_usdt": merchant_receives_usdt
             }}
         )
         

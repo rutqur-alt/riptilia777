@@ -1245,7 +1245,7 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
                 {trade.buyer_nickname || trade.client_nickname || "Клиент"}
               </div>
               <div className="text-xs text-[#71717A]">
-                {trade.amount || trade.amount_usdt} {trade.currency || "USDT"} • {(trade.fiat_amount || trade.amount_rub || 0).toFixed(2)} ₽
+                {(trade.client_amount_rub || trade.amount_rub || 0).toLocaleString("ru-RU", {maximumFractionDigits: 0})} ₽
               </div>
             </div>
             <div className="text-xs text-[#52525B]">
@@ -1791,7 +1791,7 @@ function MerchantPayments() {
                       {payment.client_nickname || "Клиент"}
                     </div>
                     <div className="text-sm text-[#71717A]">
-                      {payment.amount || payment.amount_usdt || "—"} {payment.currency || "USDT"} • {(payment.fiat_amount || payment.amount_rub) ? (payment.fiat_amount || payment.amount_rub).toFixed(2) : "—"} ₽
+                      {(payment.client_amount_rub || payment.amount_rub || 0).toLocaleString("ru-RU", {maximumFractionDigits: 0})} ₽
                     </div>
                     <div className="text-xs text-[#52525B]">
                       {new Date(payment.created_at).toLocaleString("ru-RU")}

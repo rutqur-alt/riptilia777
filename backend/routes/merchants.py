@@ -206,12 +206,17 @@ async def change_merchant_password(data: dict, user: dict = Depends(require_role
 
 @router.get("/merchants/payments")
 async def get_merchant_payments(limit: int = 50, user: dict = Depends(require_role(["merchant"]))):
-    """Get merchant payment links/history"""
-    payments = await db.payment_links.find(
+    """Get merchant payment history from trades"""
+    # Get trades for this merchant
+    trades = await db.trades.find(
         {"merchant_id": user["id"]},
-        {"_id": 0}
+        {"_id": 0, "id": 1, "client_amount_rub": 1, "amount_rub": 1, 
+         "client_pays_rub": 1, "merchant_receives_rub": 1, "merchant_receives_usdt": 1,
+         "status": 1, "created_at": 1, "completed_at": 1, "client_nickname": 1,
+         "trader_login": 1, "payment_link_id": 1}
     ).sort("created_at", -1).limit(limit).to_list(limit)
-    return payments
+    
+    return trades
 
 
 @router.get("/merchants/api-key")

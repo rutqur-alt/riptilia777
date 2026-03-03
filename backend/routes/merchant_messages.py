@@ -219,12 +219,13 @@ async def get_merchant_trades(
         t["conversation_id"] = conv["id"] if conv else None
         t["client_nickname"] = t.get("buyer_nickname") if type == "sell" else t.get("seller_nickname")
         # Map amount fields for frontend compatibility
+        # Use client_amount_rub (requested amount) instead of amount_rub (paid amount)
         if not t.get("amount"):
-            t["amount"] = t.get("amount_usdt", 0)
+            t["amount"] = t.get("client_amount_rub") or t.get("amount_rub", 0)
         if not t.get("fiat_amount"):
-            t["fiat_amount"] = t.get("amount_rub") or t.get("total_rub", 0)
+            t["fiat_amount"] = t.get("client_amount_rub") or t.get("amount_rub") or t.get("total_rub", 0)
         if not t.get("currency"):
-            t["currency"] = t.get("crypto", "USDT")
+            t["currency"] = "RUB"  # Show in RUB, not USDT
         trades.append(t)
     
     # From crypto_orders collection (withdrawal requests)
