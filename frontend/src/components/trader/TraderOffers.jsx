@@ -152,7 +152,8 @@ export default function TraderOffers() {
       }
       fetchOffers();
     } catch (error) {
-      toast.error("Ошибка удаления");
+      const errorMsg = error.response?.data?.detail || "Ошибка удаления";
+      toast.error(errorMsg, { duration: 5000 });
     }
   };
 

@@ -530,6 +530,18 @@ async def delete_offer(offer_id: str, user: dict = Depends(require_role(["trader
     if offer["trader_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Это не ваше объявление")
     
+    # Check for active trades on this offer
+    active_trades = await db.trades.count_documents({
+        "offer_id": offer_id,
+        "status": {"$in": ["pending", "paid", "dispute", "disputed"]}
+    })
+    
+    if active_trades > 0:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Невозможно закрыть объявление: есть {active_trades} активных сделок. Завершите все сделки перед закрытием."
+        )
+    
     # Calculate refund
     available_usdt = offer.get("available_usdt", 0)
     reserved_commission = offer.get("reserved_commission", 0)
