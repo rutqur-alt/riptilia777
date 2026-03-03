@@ -23,6 +23,15 @@ export default function BuyCrypto() {
   const [buyingOfferId, setBuyingOfferId] = useState(null);
 
   const MIN_TRADES_REQUIRED = 20;
+  
+  // Check if user is blocked from buying (merchant or admin)
+  const isBlockedFromBuying = () => {
+    if (!user) return false;
+    if (user.role === "merchant") return true;
+    const adminRoles = ["admin", "owner", "mod_p2p", "mod_marketplace", "mod_support", "super_admin"];
+    if (adminRoles.includes(user.admin_role) || adminRoles.includes(user.role)) return true;
+    return false;
+  };
 
   useEffect(() => {
     fetchOffers();
@@ -65,6 +74,7 @@ export default function BuyCrypto() {
 
   const canBuyCrypto = () => {
     if (!isAuthenticated) return false;
+    if (isBlockedFromBuying()) return false;
     if (user?.role !== "trader") return false;
     if (!userStats) return false;
     return (userStats.successful_trades || 0) >= MIN_TRADES_REQUIRED;
@@ -74,6 +84,11 @@ export default function BuyCrypto() {
   const handleBuyClick = (offer) => {
     if (!isAuthenticated) {
       navigate("/auth");
+      return;
+    }
+    
+    if (isBlockedFromBuying()) {
+      toast.error("Покупка USDT недоступна для вашего типа аккаунта");
       return;
     }
     
@@ -153,6 +168,19 @@ export default function BuyCrypto() {
           </p>
         </div>
       </div>
+      
+      {/* Block Warning for merchants/admins */}
+      {isAuthenticated && isBlockedFromBuying() && (
+        <div className="bg-[#EF4444]/10 border-b border-[#EF4444]/20">
+          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-[#EF4444] flex-shrink-0" />
+            <p className="text-sm text-[#EF4444]">
+              <span className="font-medium">Покупка USDT недоступна</span> для {user?.role === "merchant" ? "мерчантов" : "администрации"}. 
+              Эта функция доступна только для обычных трейдеров.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
@@ -224,9 +252,13 @@ export default function BuyCrypto() {
 
                     <Button 
                       onClick={() => handleBuyClick(offer)}
-                      disabled={isLoading}
-                      className="bg-[#10B981] hover:bg-[#059669] text-white px-8 py-3 text-lg h-14"
-                      title="Купить всю сумму">
+                      disabled={isLoading || isBlockedFromBuying()}
+                      className={`px-8 py-3 text-lg h-14 ${
+                        isBlockedFromBuying() 
+                          ? "bg-[#3F3F46] text-[#71717A] cursor-not-allowed" 
+                          : "bg-[#10B981] hover:bg-[#059669] text-white"
+                      }`}
+                      title={isBlockedFromBuying() ? "Покупка недоступна для вашего типа аккаунта" : "Купить всю сумму"}>
                       {isLoading ? (
                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       ) : (

@@ -269,6 +269,15 @@ async def buy_crypto(
     user: dict = Depends(get_current_user)
 ):
     """Buy crypto from a sell offer (trader only, 50+ trades required)"""
+    # Block merchants
+    if user.get("role") == "merchant":
+        raise HTTPException(status_code=403, detail="Мерчантам покупка USDT недоступна")
+    
+    # Block admin/staff
+    admin_roles = ["admin", "owner", "mod_p2p", "mod_marketplace", "mod_support", "super_admin"]
+    if user.get("admin_role") in admin_roles or user.get("role") in admin_roles:
+        raise HTTPException(status_code=403, detail="Администрации покупка USDT недоступна")
+    
     if user.get("role") != "trader":
         raise HTTPException(status_code=403, detail="Только для трейдеров")
     
