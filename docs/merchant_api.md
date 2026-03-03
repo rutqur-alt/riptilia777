@@ -766,6 +766,9 @@ def verify_webhook(payload: dict, api_secret: str) -> bool:
 ```
 
 #### cancelled
+
+Отправляется при отмене сделки (вручную или автоматически по таймауту).
+
 ```json
 {
     "event": "cancelled",
@@ -775,11 +778,26 @@ def verify_webhook(payload: dict, api_secret: str) -> bool:
     "amount_rub": 1000,
     "timestamp": "...",
     "trade_id": "trd_...",
-    "reason": "Клиент не оплатил в течение 30 минут",
+    "reason": "auto_timeout",
+    "cancel_reason": "Клиент не оплатил в течение 30 минут",
     "cancelled_at": "...",
+    "cancelled_by": "system",
     "sign": "..."
 }
 ```
+
+**Возможные значения `reason`:**
+| Значение | Описание |
+|----------|----------|
+| `auto_timeout` | Автоматическая отмена — клиент не нажал "Оплатил" в течение 30 минут |
+| `buyer_cancelled` | Клиент сам отменил сделку |
+| `seller_cancelled` | Оператор отменил сделку |
+| `admin_cancelled` | Администратор отменил сделку |
+
+**Поля:**
+- `reason` — краткий код причины отмены
+- `cancel_reason` — человекочитаемое описание причины
+- `cancelled_by` — кто отменил: `system`, `buyer`, `seller`, `admin`
 
 #### disputed
 ```json

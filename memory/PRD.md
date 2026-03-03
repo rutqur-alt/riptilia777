@@ -257,9 +257,21 @@ Endpoint `/api/notifications/sidebar-badges` использовал `max(event_n
   2. Суммирование из обеих коллекций (event_notifications + notifications)
   3. "Mark all as read" очищает обе системы
 
+## Вебхук cancelled при auto_timeout (03.03.2026)
+
+### Реализовано:
+- ✅ **Backend** (`/app/backend/server.py`):
+  - Функция `auto_cancel_expired_trades()` теперь отправляет вебхук мерчанту при автоматической отмене
+  - Вебхук отправляется только для сделок с `merchant_id`
+  - Payload: `reason: "auto_timeout"`, `cancel_reason`, `cancelled_by: "system"`
+
+- ✅ **Документация** (`/app/docs/merchant_api.md`):
+  - Обновлена секция вебхука `cancelled`
+  - Добавлена таблица возможных значений `reason`: `auto_timeout`, `buyer_cancelled`, `seller_cancelled`, `admin_cancelled`
+
 ## Следующие задачи (Backlog)
-- P1: Реализовать вебхук `expired` (автоматическое истечение сделок)
+- P2: Telegram уведомления для споров
+- P2: Улучшение мобильной адаптации
 - P2: Deprecate старый merchant_api.py после миграции
 - P3: Стандартизация структуры директорий backend (`/api` vs `/routes`)
 - P3: Миграция данных из `notifications` в `event_notifications`
-

@@ -567,6 +567,9 @@ async def startup():
 
 async def auto_cancel_expired_trades():
     """Background task to auto-cancel trades that have been pending for 30+ minutes"""
+    # Import webhook sender
+    from routes.merchant_api import send_merchant_webhook
+    
     while True:
         try:
             # Get system settings for timeout
@@ -583,13 +586,15 @@ async def auto_cancel_expired_trades():
                 "created_at": {"$lt": cutoff_time.isoformat()}
             }).to_list(100)
             
+            cancelled_at = datetime.now(timezone.utc).isoformat()
+            
             for trade in expired_trades:
                 # Cancel the trade
                 await db.trades.update_one(
                     {"id": trade["id"]},
                     {"$set": {
                         "status": "cancelled",
-                        "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                        "cancelled_at": cancelled_at,
                         "cancel_reason": "auto_timeout_no_payment",
                         "cancelled_by": "system"
                     }}
@@ -601,6 +606,25 @@ async def auto_cancel_expired_trades():
                         {"id": trade["offer_id"]},
                         {"$inc": {"available_usdt": trade["amount_usdt"]}}
                     )
+                
+                # Send webhook to merchant (CANCELLED - auto timeout)
+                if trade.get("merchant_id"):
+                    try:
+                        await send_merchant_webhook(
+                            merchant_id=trade["merchant_id"],
+                            payment_id=trade.get("invoice_id") or trade["id"],
+                            status="cancelled",
+                            extra_data={
+                                "trade_id": trade["id"],
+                                "amount_rub": trade.get("amount_rub", 0),
+                                "reason": f"auto_timeout",
+                                "cancel_reason": f"Клиент не оплатил в течение {timeout_minutes} минут",
+                                "cancelled_at": cancelled_at,
+                                "cancelled_by": "system"
+                            }
+                        )
+                    except Exception as webhook_err:
+                        print(f"[AUTO-CANCEL] Webhook error for trade {trade['id']}: {webhook_err}")
                 
                 print(f"[AUTO-CANCEL] Trade {trade['id']} cancelled - buyer didn't pay in {timeout_minutes} minutes")
             
