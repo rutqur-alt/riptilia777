@@ -220,7 +220,7 @@ export default function GuarantDealPage() {
           <div className="flex items-center justify-between p-4 bg-[#0A0A0A] rounded-xl mb-4">
             <span className="text-[#A1A1AA]">Сумма сделки</span>
             <span className="text-2xl font-bold text-[#10B981] font-['JetBrains_Mono']">
-              {deal.amount} {deal.currency}
+              {parseFloat(deal.amount || 0).toFixed(2)} {deal.currency}
             </span>
           </div>
 
@@ -228,7 +228,7 @@ export default function GuarantDealPage() {
           <div className="flex items-center justify-between p-4 bg-[#0A0A0A] rounded-xl mb-4">
             <span className="text-[#A1A1AA]">Комиссия сервиса (5%)</span>
             <span className="text-[#F59E0B] font-['JetBrains_Mono']">
-              {deal.commission} {deal.currency}
+              {parseFloat(deal.commission || 0).toFixed(2)} {deal.currency}
             </span>
           </div>
 
@@ -345,7 +345,7 @@ export default function GuarantDealPage() {
               ) : (
                 <>
                   <Lock className="w-5 h-5 mr-2" />
-                  Оплатить {deal.amount} {deal.currency}
+                  Оплатить {parseFloat(deal.amount || 0).toFixed(2)} {deal.currency}
                 </>
               )}
             </Button>

@@ -325,7 +325,7 @@ export default function BuyerTradePage() {
               <div>
                 <div className="text-[#71717A] text-sm">Покупаете</div>
                 <div className="text-3xl font-bold text-[#10B981] font-['JetBrains_Mono']">
-                  {trade.amount_usdt} USDT
+                  {(trade.amount_usdt || 0).toFixed(2)} USDT
                 </div>
               </div>
               <div className="text-right">
@@ -339,7 +339,7 @@ export default function BuyerTradePage() {
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
               <div>
                 <div className="text-[#52525B] text-xs">Курс</div>
-                <div className="text-white">{trade.price_rub} ₽/USDT</div>
+                <div className="text-white">{(trade.price_rub || 0).toFixed(2)} ₽/USDT</div>
               </div>
               <div>
                 <div className="text-[#52525B] text-xs">Продавец</div>

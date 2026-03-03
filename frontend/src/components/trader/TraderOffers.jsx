@@ -363,9 +363,9 @@ export default function TraderOffers() {
                     </div>
                   )}
                   <div className="flex gap-4 text-sm text-[#A1A1AA] flex-wrap">
-                    <span>{"\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E: "}<span className="text-white font-medium">{offer.available_usdt || offer.amount_usdt}</span> / {offer.amount_usdt} USDT</span>
-                    <span className="text-[#52525B] hidden sm:inline">{"\u2022"}</span>
-                    <span>{"\u041B\u0438\u043C\u0438\u0442: "}{offer.min_amount || 1} - {offer.max_amount || offer.amount_usdt} USDT</span>
+                    <span>{"Доступно: "}<span className="text-white font-medium">{(offer.available_usdt || offer.amount_usdt || 0).toFixed(2)}</span> / {(offer.amount_usdt || 0).toFixed(2)} USDT</span>
+                    <span className="text-[#52525B] hidden sm:inline">{"•"}</span>
+                    <span>{"Лимит: "}{(offer.min_amount || 1).toFixed(2)} - {(offer.max_amount || offer.amount_usdt || 0).toFixed(2)} USDT</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {offer.payment_details?.map((detail) => (
