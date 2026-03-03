@@ -1,6 +1,15 @@
 """
 Merchant routes - Merchant shop and product management
 Routes for merchant-specific shop operations
+
+DEPRECATION NOTICE:
+This module contains legacy endpoints that are used by the merchant dashboard UI.
+For external merchant integrations, use merchant_api.py (/merchant/v1/*) instead,
+which provides secure HMAC-signed API authentication.
+
+Endpoints to be migrated:
+- /merchant/dashboard -> use /merchant/v1/auth for balance info
+- /merchant/analytics -> use /merchant/v1/transactions for history
 """
 from fastapi import APIRouter, HTTPException, Depends, Body
 from datetime import datetime, timezone

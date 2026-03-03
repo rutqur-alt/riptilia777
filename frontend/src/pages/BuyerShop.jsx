@@ -6,13 +6,25 @@ import { toast } from 'sonner';
 import { API } from '@/App';
 import axios from 'axios';
 import {
-  Wallet, Settings, Store, CreditCard, Smartphone, QrCode, Phone,
-  CheckCircle, Copy, AlertTriangle, Shield, MessageCircle, Timer,
-  RefreshCw, Send, Loader2, Check, User, ChevronDown, Clock,
-  ArrowRight, Eye, EyeOff, Save, Plug, History, X, ExternalLink
+  CheckCircle, Copy, AlertTriangle, Shield, Timer,
+  RefreshCw, Loader2, Check, Clock, X, History,
+  CreditCard, Smartphone, Phone, QrCode
 } from 'lucide-react';
-import { PAYMENT_METHODS, getPaymentMethod, PAYMENT_METHOD_OPTIONS } from '@/config/paymentMethods';
+import { PAYMENT_METHODS, getPaymentMethod } from '@/config/paymentMethods';
 
+// Import modular components
+import {
+  ShopHeader,
+  ApiConnectionForm,
+  BalanceCard,
+  TopUpForm,
+  OperatorSelector,
+  PaymentCard,
+  ChatPanel,
+  SettingsDialog
+} from './shop';
+
+// Helper functions
 const getRequisiteIcon = (type) => {
   switch (type) {
     case "card": return CreditCard;
@@ -35,6 +47,28 @@ const getRequisiteLabel = (type) => {
 
 const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
+const getStatusBadge = (status) => {
+  const styles = {
+    completed: "bg-green-500/10 text-green-400",
+    pending: "bg-yellow-500/10 text-yellow-400",
+    paid: "bg-blue-500/10 text-blue-400",
+    disputed: "bg-orange-500/10 text-orange-400",
+    cancelled: "bg-zinc-500/10 text-zinc-400"
+  };
+  const labels = {
+    completed: "Завершено",
+    pending: "Ожидание",
+    paid: "Оплачено",
+    disputed: "Спор",
+    cancelled: "Отменено"
+  };
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs ${styles[status] || styles.pending}`}>
+      {labels[status] || status}
+    </span>
+  );
+};
+
 export default function BuyerShop() {
   // === API Connection ===
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('shop_api_key') || '');
@@ -55,8 +89,8 @@ export default function BuyerShop() {
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [activeInvoice, setActiveInvoice] = useState(null);
 
-  // === Operator selection (stak) ===
-  const [step, setStep] = useState('idle'); // idle, select_operator, payment, waiting, completed, disputed
+  // === Operator selection ===
+  const [step, setStep] = useState('idle');
   const [operators, setOperators] = useState([]);
   const [filteredOperators, setFilteredOperators] = useState([]);
   const [selectedFilter, setSelectedFilter] = useState('all');
@@ -86,14 +120,11 @@ export default function BuyerShop() {
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // ========== Auto-connect on mount ==========
+  // ========== Effects ==========
   useEffect(() => {
-    if (apiKey && !connected) {
-      connectApi(true);
-    }
+    if (apiKey && !connected) connectApi(true);
   }, []);
 
-  // ========== Timer for pending trade ==========
   useEffect(() => {
     if (trade?.status === "pending" && trade?.expires_at) {
       const timer = setInterval(() => {
@@ -105,76 +136,73 @@ export default function BuyerShop() {
     }
   }, [trade]);
 
-  // ========== Dispute countdown ==========
   useEffect(() => {
-    if (trade?.status === "paid" && trade?.paid_at) {
+    if (trade?.paid_at) {
       const updateDispute = () => {
-        const paidTime = new Date(trade.paid_at);
-        const now = new Date();
-        const minutesPassed = (now - paidTime) / 60000;
-        if (minutesPassed >= 10) {
+        const paidAt = new Date(trade.paid_at);
+        const diff = Math.floor((new Date() - paidAt) / 1000);
+        if (diff >= 600) {
           setCanDispute(true);
-          setDisputeCountdown(null);
+          setDisputeCountdown(0);
         } else {
           setCanDispute(false);
-          setDisputeCountdown(Math.max(0, Math.ceil((10 - minutesPassed) * 60)));
+          setDisputeCountdown(600 - diff);
         }
       };
       updateDispute();
       const i = setInterval(updateDispute, 1000);
       return () => clearInterval(i);
     }
-  }, [trade]);
+  }, [trade?.paid_at]);
 
-  // ========== Fetch messages ==========
   useEffect(() => {
-    if (trade && !["completed", "cancelled"].includes(trade.status)) {
+    if (trade && ["payment", "waiting", "disputed"].includes(step)) {
       fetchMessages();
-      const i = setInterval(fetchMessages, 3000);
+      const i = setInterval(fetchMessages, 5000);
       return () => clearInterval(i);
     }
-  }, [trade]);
+  }, [trade, step]);
 
-  // ========== Poll trade status ==========
   useEffect(() => {
-    if (trade && !["completed", "cancelled"].includes(trade.status)) {
+    if (trade && step === "waiting") {
       const poll = setInterval(async () => {
         try {
           const res = await axios.get(`${API}/trades/${trade.id}/public`);
-          if (res.data.status !== trade.status) {
-            setTrade(res.data);
-            if (res.data.status === "completed") {
-              setStep("completed");
-              toast.success("Оплата зачислена!");
-              loadBalance();
-            } else if (res.data.status === "disputed") {
-              setStep("disputed");
-            }
+          setTrade(res.data);
+          if (res.data.status === "completed") {
+            setStep("completed");
+            toast.success("Оплата зачислена!");
+            loadBalance();
+            clearInterval(poll);
+          } else if (res.data.status === "disputed") {
+            setStep("disputed");
+          } else if (res.data.status === "cancelled") {
+            resetFlow();
+            toast.info("Сделка отменена");
           }
         } catch (e) { }
-      }, 5000);
+      }, 3000);
       return () => clearInterval(poll);
     }
-  }, [trade]);
+  }, [trade, step]);
 
-  // ========== Scroll messages ==========
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ========== Filter operators ==========
   useEffect(() => {
+    if (!operators.length) return;
     if (selectedFilter === "all") {
       setFilteredOperators(operators);
     } else {
-      setFilteredOperators(operators.filter(op =>
+      const filtered = operators.filter(op =>
         op.requisites?.some(r => r.type === selectedFilter)
-      ));
+      );
+      setFilteredOperators(filtered);
     }
   }, [selectedFilter, operators]);
 
-  // ========== API FUNCTIONS ==========
-
+  // ========== API Functions ==========
   const connectApi = async (silent = false) => {
     if (!apiKey || !apiSecret || !merchantId) {
       if (!silent) toast.error('Заполните все поля');
@@ -182,7 +210,6 @@ export default function BuyerShop() {
     }
     setConnecting(true);
     try {
-      // Use new secure auth endpoint
       const res = await axios.post(`${API}/merchant/v1/auth`, {
         api_key: apiKey,
         api_secret: apiSecret,
@@ -193,8 +220,8 @@ export default function BuyerShop() {
         setMerchantName(res.data.merchant_name || 'Магазин');
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
-          total_client_rub: res.data.total_client_rub || 0,  // Баланс клиента
-          total_received_rub: res.data.total_received_rub || 0,  // Баланс мерчанта
+          total_client_rub: res.data.total_client_rub || 0,
+          total_received_rub: res.data.total_received_rub || 0,
           transactions_count: res.data.transactions_count || 0
         });
         setConnected(true);
@@ -226,8 +253,8 @@ export default function BuyerShop() {
       if (res.data.success) {
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
-          total_client_rub: res.data.total_client_rub || 0,  // Баланс клиента
-          total_received_rub: res.data.total_received_rub || 0,  // Баланс мерчанта
+          total_client_rub: res.data.total_client_rub || 0,
+          total_received_rub: res.data.total_received_rub || 0,
           transactions_count: res.data.transactions_count || 0
         });
       }
@@ -252,7 +279,7 @@ export default function BuyerShop() {
     finally { setLoadingHistory(false); }
   };
 
-  const createTopUp = async () => {
+  const startTopUp = async () => {
     const numAmount = parseInt(amount);
     if (!numAmount || numAmount < 100) {
       toast.error('Минимальная сумма 100 рублей');
@@ -261,7 +288,6 @@ export default function BuyerShop() {
 
     setTopUpLoading(true);
     try {
-      // Create invoice via secure API
       const res = await axios.post(`${API}/merchant/v1/invoice/create`, {
         api_key: apiKey,
         api_secret: apiSecret,
@@ -273,11 +299,10 @@ export default function BuyerShop() {
       if (res.data.success) {
         setActiveInvoice({
           ...res.data,
-          client_amount_rub: numAmount,  // Сумма пополнения клиента
+          client_amount_rub: numAmount,
           merchant_receives_rub: res.data.merchant_receives_rub
         });
         setDepositAmount(numAmount);
-        // Load operators for this invoice
         await loadOperators(res.data.invoice_id, numAmount);
       }
     } catch (e) {
@@ -290,8 +315,6 @@ export default function BuyerShop() {
   const loadOperators = async (invoiceId, amountRub) => {
     try {
       const invRes = await axios.get(`${API}/shop/pay/${invoiceId}`);
-      const inv = invRes.data.order;
-
       const params = new URLSearchParams();
       if (amountRub) params.set("amount_rub", amountRub);
 
@@ -324,7 +347,6 @@ export default function BuyerShop() {
 
   const openOperatorDialog = (operator) => {
     setSelectedOperator(operator);
-    // Auto-select first requisite if available
     if (operator.requisites?.length > 0) {
       setSelectedRequisite(operator.requisites[0]);
     } else {
@@ -352,9 +374,6 @@ export default function BuyerShop() {
       const invRes = await axios.get(`${API}/shop/pay/${activeInvoice.invoice_id}`);
       const inv = invRes.data.order;
 
-      // Рассчитываем суммы:
-      // client_amount_rub = сумма пополнения клиента (1000)
-      // client_pays_rub = сумма к оплате (зависит от курса трейдера)
       const clientAmountRub = activeInvoice.client_amount_rub || depositAmount;
       const clientPaysRub = Math.round(inv.amount_usdt * selectedOperator.price_rub * 100) / 100;
 
@@ -367,7 +386,6 @@ export default function BuyerShop() {
         requisite_ids: [requisiteToUse.id],
         buyer_type: "client",
         merchant_id: merchantId || null,
-        // New amount tracking
         client_amount_rub: clientAmountRub,
         client_pays_rub: clientPaysRub,
         merchant_receives_rub: activeInvoice.merchant_receives_rub,
@@ -449,20 +467,22 @@ export default function BuyerShop() {
   const resetFlow = () => {
     setStep('idle');
     setTrade(null);
-    setSavedRequisite(null);
     setActiveInvoice(null);
-    setOperators([]);
-    setFilteredOperators([]);
+    setSelectedOperator(null);
+    setSelectedRequisite(null);
     setMessages([]);
     setAmount('');
-    loadBalance();
+    setCanDispute(false);
+    setDisputeCountdown(null);
   };
 
   const getDisplayRequisite = () => {
-    return trade?.requisites?.[0] || savedRequisite || null;
+    return trade?.requisites?.[0] || savedRequisite;
   };
 
   const disconnectApi = () => {
+    setConnected(false);
+    setBalance(null);
     localStorage.removeItem('shop_api_key');
     localStorage.removeItem('shop_api_secret');
     localStorage.removeItem('shop_merchant_id');
@@ -471,237 +491,56 @@ export default function BuyerShop() {
     setApiSecret('');
     setMerchantId('');
     setMerchantName('');
-    setConnected(false);
-    setBalance(null);
-    setTransactions([]);
-    resetFlow();
     toast.success('Отключено');
   };
 
-  const quickAmounts = [500, 1000, 2000, 5000, 10000];
-
-  const getStatusBadge = (status) => {
-    const configs = {
-      pending: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', label: 'Ожидание' },
-      active: { bg: 'bg-blue-500/10', text: 'text-blue-400', label: 'Активный' },
-      paid: { bg: 'bg-blue-500/10', text: 'text-blue-400', label: 'Оплачен' },
-      completed: { bg: 'bg-green-500/10', text: 'text-green-400', label: 'Завершён' },
-      cancelled: { bg: 'bg-red-500/10', text: 'text-red-400', label: 'Отменён' },
-      expired: { bg: 'bg-zinc-500/10', text: 'text-zinc-400', label: 'Истёк' },
-      disputed: { bg: 'bg-orange-500/10', text: 'text-orange-400', label: 'Спор' },
-      dispute: { bg: 'bg-orange-500/10', text: 'text-orange-400', label: 'Спор' },
-      waiting_requisites: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', label: 'Ожидание' }
-    };
-    const c = configs[status] || configs.pending;
-    return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label}</span>;
-  };
-
-  // ========================================
-  // ============= RENDER =================
-  // ========================================
-
+  // ========== Render ==========
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
-      {/* ========== HEADER ========== */}
-      <header className="sticky top-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-xl border-b border-white/5">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C3AED] to-[#10B981] flex items-center justify-center">
-              <Store className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-lg">{connected ? merchantName : 'Магазин'}</h1>
-              <div className="flex items-center gap-1.5">
-                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
-                <span className="text-xs text-[#71717A]">{connected ? 'Подключено' : 'Не подключено'}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {connected && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowHistory(!showHistory);
-                  if (!showHistory) loadTransactions();
-                }}
-                className="text-[#71717A] hover:text-white"
-                data-testid="history-btn"
-                title="История транзакций"
-              >
-                <History className="w-4 h-4" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSettings(!showSettings)}
-              className="text-[#71717A] hover:text-white"
-              data-testid="settings-btn"
-              title="Настройки"
-            >
-              <Settings className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </header>
+      <ShopHeader
+        connected={connected}
+        merchantName={merchantName}
+        showHistory={showHistory}
+        setShowHistory={setShowHistory}
+        showSettings={showSettings}
+        setShowSettings={setShowSettings}
+        loadTransactions={loadTransactions}
+      />
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-
-        {/* ========== NOT CONNECTED STATE ========== */}
+        {/* Not Connected */}
         {!connected && (
-          <div className="bg-[#121212] border border-white/10 rounded-2xl p-6 max-w-md mx-auto">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto bg-gradient-to-br from-[#7C3AED] to-[#10B981] rounded-2xl flex items-center justify-center mb-4">
-                <Plug className="w-8 h-8 text-white" />
-              </div>
-              <h2 className="text-xl font-bold text-white mb-1">Подключение к магазину</h2>
-              <p className="text-[#71717A] text-sm">Введите данные API для начала работы</p>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-[#71717A] mb-1.5 block">Merchant ID</label>
-                <Input
-                  type="text"
-                  placeholder="Введите Merchant ID"
-                  value={merchantId}
-                  onChange={(e) => setMerchantId(e.target.value)}
-                  className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
-                  data-testid="merchant-id-input"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-[#71717A] mb-1.5 block">API Key</label>
-                <Input
-                  type="text"
-                  placeholder="Введите API ключ"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
-                  data-testid="api-key-input"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-[#71717A] mb-1.5 block">API Secret</label>
-                <div className="relative">
-                  <Input
-                    type={showSecret ? 'text' : 'password'}
-                    placeholder="Введите API Secret"
-                    value={apiSecret}
-                    onChange={(e) => setApiSecret(e.target.value)}
-                    className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B] pr-10"
-                    data-testid="api-secret-input"
-                  />
-                  <button
-                    onClick={() => setShowSecret(!showSecret)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#52525B] hover:text-white"
-                  >
-                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <Button
-                onClick={() => connectApi(false)}
-                disabled={connecting || !apiKey || !apiSecret || !merchantId}
-                className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-xl"
-                data-testid="connect-btn"
-              >
-                {connecting ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    <Plug className="w-4 h-4 mr-2" />
-                    Подключить
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
+          <ApiConnectionForm
+            merchantId={merchantId}
+            setMerchantId={setMerchantId}
+            apiKey={apiKey}
+            setApiKey={setApiKey}
+            apiSecret={apiSecret}
+            setApiSecret={setApiSecret}
+            showSecret={showSecret}
+            setShowSecret={setShowSecret}
+            connecting={connecting}
+            connectApi={connectApi}
+          />
         )}
 
-        {/* ========== CONNECTED: BALANCE + TOPUP ========== */}
+        {/* Connected - Idle State */}
         {connected && step === 'idle' && (
           <>
-            {/* Balance Card */}
-            <div className="bg-gradient-to-br from-[#7C3AED]/20 to-[#10B981]/20 border border-[#7C3AED]/20 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[#A1A1AA] text-sm">Баланс</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={loadBalance}
-                  disabled={loadingBalance}
-                  className="text-[#71717A] hover:text-white p-1"
-                >
-                  <RefreshCw className={`w-4 h-4 ${loadingBalance ? 'animate-spin' : ''}`} />
-                </Button>
-              </div>
-              <div className="text-4xl font-bold text-white mb-1 font-['JetBrains_Mono']">
-                {balance ? `${(balance.total_client_rub || 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} RUB` : '---'}
-              </div>
-              <div className="text-sm text-[#52525B]">
-                Баланс клиента на сайте
-              </div>
-            </div>
+            <BalanceCard
+              balance={balance?.total_client_rub}
+              loadingBalance={loadingBalance}
+              fetchBalance={loadBalance}
+            />
 
-            {/* Top-up Section */}
-            <div className="bg-[#121212] border border-white/5 rounded-2xl p-6">
-              <h2 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-[#10B981]" />
-                Пополнить баланс
-              </h2>
+            <TopUpForm
+              amount={amount}
+              setAmount={setAmount}
+              topUpLoading={topUpLoading}
+              startTopUp={startTopUp}
+            />
 
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-[#71717A] mb-2 block">Сумма в рублях</label>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      placeholder="Введите сумму"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      className="bg-[#0A0A0A] border-white/10 h-14 text-2xl text-center pr-12 text-white placeholder:text-[#52525B] font-['JetBrains_Mono']"
-                      min="100"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#52525B] text-lg">RUB</span>
-                  </div>
-                </div>
-
-                {/* Quick amounts */}
-                <div className="grid grid-cols-5 gap-2">
-                  {quickAmounts.map((val) => (
-                    <Button
-                      key={val}
-                      variant="outline"
-                      onClick={() => setAmount(String(val))}
-                      className={`border-white/10 text-white hover:bg-white/5 h-11 px-2 text-sm font-medium ${amount === String(val) ? 'bg-[#10B981]/20 border-[#10B981]' : ''
-                        }`}
-                    >
-                      {val >= 1000 ? `${val / 1000}k` : val}
-                    </Button>
-                  ))}
-                </div>
-
-                <Button
-                  onClick={createTopUp}
-                  disabled={!amount || topUpLoading || parseInt(amount) < 100}
-                  className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white text-lg rounded-xl"
-                >
-                  {topUpLoading ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <Wallet className="w-5 h-5 mr-2" />
-                      Пополнить
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* Transaction History (inline) */}
+            {/* Transaction History */}
             {showHistory && (
               <div className="bg-[#121212] border border-white/5 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -723,8 +562,7 @@ export default function BuyerShop() {
                     {transactions.map((tx, i) => (
                       <div key={tx.id || i} className="flex items-center justify-between py-3 px-4 bg-[#0A0A0A] rounded-xl">
                         <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tx.status === 'completed' ? 'bg-green-500/10' : 'bg-zinc-500/10'
-                            }`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tx.status === 'completed' ? 'bg-green-500/10' : 'bg-zinc-500/10'}`}>
                             {tx.status === 'completed' ? (
                               <CheckCircle className="w-4 h-4 text-green-400" />
                             ) : tx.status === 'disputed' || tx.status === 'dispute' ? (
@@ -754,246 +592,46 @@ export default function BuyerShop() {
           </>
         )}
 
-        {/* ========== SELECT OPERATOR (STAK) ========== */}
+        {/* Operator Selection */}
         {step === 'select_operator' && (
-          <div>
-            {/* Back button + amount header */}
-            <div className="flex items-center justify-between mb-4">
-              <Button
-                variant="ghost"
-                onClick={resetFlow}
-                className="text-[#71717A] hover:text-white"
-              >
-                <X className="w-4 h-4 mr-1" /> Отмена
-              </Button>
-              <div className="text-right">
-                <div className="text-[#71717A] text-xs">Пополнение</div>
-                <div className="text-xl font-bold text-white font-['JetBrains_Mono']">
-                  {depositAmount.toLocaleString()} RUB
-                </div>
-              </div>
-            </div>
-
-            {/* Payment method filter */}
-            <div className="relative mb-4">
-              <button
-                onClick={() => setShowMethodsDropdown(!showMethodsDropdown)}
-                className="flex items-center justify-between gap-3 px-4 py-3 bg-[#121212] border border-white/10 rounded-xl hover:border-white/20 transition-colors min-w-[200px]"
-              >
-                <span className="text-white">
-                  {selectedFilter === "all" ? "Все методы оплаты" : getPaymentMethod(selectedFilter).name}
-                </span>
-                <ChevronDown className={`w-4 h-4 text-[#71717A] transition-transform ${showMethodsDropdown ? 'rotate-180' : ''}`} />
-              </button>
-              {showMethodsDropdown && (
-                <div className="absolute top-full left-0 mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl overflow-hidden z-20 shadow-xl min-w-[200px]">
-                  <button
-                    onClick={() => { setSelectedFilter("all"); setShowMethodsDropdown(false); }}
-                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/5 transition-colors ${selectedFilter === "all" ? "text-white" : "text-[#A1A1AA]"}`}
-                  >
-                    <span>Все методы</span>
-                    {selectedFilter === "all" && <Check className="w-4 h-4 text-white" />}
-                  </button>
-                  {availableMethods.map(methodType => {
-                    const info = getPaymentMethod(methodType);
-                    return (
-                      <button
-                        key={methodType}
-                        onClick={() => { setSelectedFilter(methodType); setShowMethodsDropdown(false); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${selectedFilter === methodType ? "bg-[#7C3AED] text-white" : "text-[#A1A1AA] hover:bg-white/5"}`}
-                      >
-                        <span className="text-lg">{info.emoji}</span>
-                        <span className="flex-1 text-left">{info.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Operators count */}
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[#71717A] text-sm">
-                {filteredOperators.length} {filteredOperators.length === 1 ? 'оператор' : 'операторов'}
-              </span>
-              <span className="text-xs text-[#52525B]">Лучшая цена сверху</span>
-            </div>
-
-            {/* Operators list */}
-            {filteredOperators.length === 0 ? (
-              <div className="bg-[#121212] rounded-2xl p-8 text-center border border-white/5">
-                <AlertTriangle className="w-12 h-12 text-[#F59E0B] mx-auto mb-3" />
-                <h2 className="text-lg font-semibold text-white mb-2">Нет доступных операторов</h2>
-                <p className="text-[#71717A] text-sm">
-                  {selectedFilter !== "all" ? "Попробуйте другой способ оплаты" : "Попробуйте позже"}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredOperators.map((op, index) => {
-                  const bestPrice = filteredOperators[0]?.toPayRub || depositAmount;
-                  const isBest = op.toPayRub === bestPrice;
-                  const diff = op.toPayRub - bestPrice;
-                  const uniqueTypes = [...new Set(op.requisites?.map(r => r.type) || [])];
-
-                  return (
-                    <div
-                      key={op.offer_id}
-                      onClick={() => openOperatorDialog(op)}
-                      className={`bg-[#121212] border hover:bg-[#1A1A1A] rounded-xl p-4 cursor-pointer transition-all ${isBest ? "border-[#10B981]/30" : "border-white/5 hover:border-[#7C3AED]/30"}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="relative">
-                            <div className="w-10 h-10 rounded-full bg-[#1A1A1A] flex items-center justify-center">
-                              <User className="w-5 h-5 text-[#52525B]" />
-                            </div>
-                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#121212] ${op.is_online ? 'bg-[#10B981]' : 'bg-[#52525B]'}`} />
-                          </div>
-                          <div>
-                            <div className="text-white font-medium text-sm flex items-center gap-2">
-                              {op.nickname || op.trader_login}
-                              {isBest && (
-                                <span className="px-2 py-0.5 bg-[#10B981]/10 text-[#10B981] text-xs rounded-full">
-                                  Лучшая цена
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-[#52525B]">
-                              <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-[#10B981]" />{op.success_rate || 100}%</span>
-                              <span>{op.trades_count || 0} сделок</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                          <div className="hidden sm:flex flex-wrap gap-1">
-                            {uniqueTypes.map((type, idx) => {
-                              const Icon = getRequisiteIcon(type);
-                              return (
-                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 bg-[#1A1A1A] text-[#A1A1AA] text-xs rounded">
-                                  <Icon className="w-3 h-3" />
-                                  {getRequisiteLabel(type)}
-                                </span>
-                              );
-                            })}
-                          </div>
-                          <div className="text-right">
-                            <div className="text-lg font-bold text-white font-['JetBrains_Mono']">
-                              {op.toPayRub.toLocaleString()} RUB
-                            </div>
-                            {op.commissionPercent > 0 && (
-                              <div className="text-xs text-[#F59E0B]">+{op.commissionPercent}%</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <p className="text-center text-[#52525B] text-xs mt-6 flex items-center justify-center gap-2">
-              <Shield className="w-4 h-4" /> Безопасная оплата
-            </p>
-          </div>
+          <OperatorSelector
+            depositAmount={depositAmount}
+            operators={operators}
+            filteredOperators={filteredOperators}
+            selectedFilter={selectedFilter}
+            setSelectedFilter={setSelectedFilter}
+            availableMethods={availableMethods}
+            showMethodsDropdown={showMethodsDropdown}
+            setShowMethodsDropdown={setShowMethodsDropdown}
+            openOperatorDialog={openOperatorDialog}
+            resetFlow={resetFlow}
+          />
         )}
 
-        {/* ========== PAYMENT STEP ========== */}
+        {/* Payment Step */}
         {step === 'payment' && trade && (
-          <div>
-            <Button variant="ghost" onClick={cancelTrade} className="text-[#71717A] hover:text-white mb-4">
-              <X className="w-4 h-4 mr-1" /> Отменить сделку
-            </Button>
-
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* Left: Payment details */}
-              <div className="bg-[#121212] rounded-2xl p-6 border border-white/5">
-                <div className="text-center mb-4">
-                  <div className="w-14 h-14 rounded-2xl bg-[#F59E0B]/10 flex items-center justify-center mx-auto mb-3">
-                    <Timer className="w-7 h-7 text-[#F59E0B]" />
-                  </div>
-                  <h2 className="text-lg font-bold text-white">Переведите точную сумму</h2>
-                  {timeLeft != null && (
-                    <div className="text-sm text-[#F59E0B] mt-1">
-                      Осталось: {fmtTime(timeLeft)}
-                    </div>
-                  )}
-                </div>
-
-                {(() => {
-                  const requisite = getDisplayRequisite();
-                  if (!requisite) return (
-                    <div className="text-center py-4 text-[#71717A]">
-                      <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[#F59E0B]" />
-                      <p>Реквизиты загружаются...</p>
-                    </div>
-                  );
-                  const ReqIcon = getRequisiteIcon(requisite.type);
-                  return (
-                    <div className="space-y-3">
-                      {/* Amount */}
-                      <div className="bg-[#0A0A0A] rounded-xl p-4 text-center">
-                        <div className="text-[#71717A] text-xs mb-1">Сумма к оплате</div>
-                        <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
-                          {(trade.amount_rub || depositAmount).toLocaleString()} RUB
-                        </div>
-                      </div>
-
-                      {/* Requisite details */}
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <ReqIcon className="w-4 h-4 text-[#7C3AED]" />
-                          <span className="text-[#71717A] text-sm">{getRequisiteLabel(requisite.type)}</span>
-                        </div>
-
-                        {requisite.data?.card_number && (
-                          <div className="flex items-center justify-between py-2">
-                            <span className="text-white font-mono text-lg tracking-wider">{requisite.data.card_number}</span>
-                            <button onClick={() => copy(requisite.data.card_number)} className="text-[#7C3AED] hover:text-white p-1">
-                              <Copy className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-                        {requisite.data?.phone && (
-                          <div className="flex items-center justify-between py-2">
-                            <span className="text-white font-mono text-lg">{requisite.data.phone}</span>
-                            <button onClick={() => copy(requisite.data.phone)} className="text-[#7C3AED] hover:text-white p-1">
-                              <Copy className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-                        {requisite.data?.bank_name && (
-                          <div className="text-[#52525B] text-sm">{requisite.data.bank_name}</div>
-                        )}
-                        {requisite.data?.card_holder && (
-                          <div className="text-[#71717A] text-sm mt-1">{requisite.data.card_holder}</div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                <Button onClick={markPaid} className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white text-lg rounded-xl mt-4">
-                  <Check className="w-6 h-6 mr-2" /> Я оплатил
-                </Button>
-              </div>
-
-              {/* Right: Chat */}
-              <ChatPanel
-                trade={trade}
-                messages={messages}
-                newMessage={newMessage}
-                setNewMessage={setNewMessage}
-                sendMsg={sendMsg}
-                messagesEndRef={messagesEndRef}
-              />
-            </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <PaymentCard
+              trade={trade}
+              depositAmount={depositAmount}
+              timeLeft={timeLeft}
+              requisite={getDisplayRequisite()}
+              cancelTrade={cancelTrade}
+              markPaid={markPaid}
+              copy={copy}
+            />
+            <ChatPanel
+              trade={trade}
+              messages={messages}
+              newMessage={newMessage}
+              setNewMessage={setNewMessage}
+              sendMsg={sendMsg}
+              messagesEndRef={messagesEndRef}
+            />
           </div>
         )}
 
-        {/* ========== WAITING STEP ========== */}
+        {/* Waiting Step */}
         {step === 'waiting' && trade && (
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-4">
@@ -1017,7 +655,6 @@ export default function BuyerShop() {
                   </div>
                 </div>
 
-                {/* Dispute */}
                 {canDispute ? (
                   <Button onClick={openDispute} variant="outline" className="w-full border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/10">
                     <AlertTriangle className="w-4 h-4 mr-2" />
@@ -1033,7 +670,6 @@ export default function BuyerShop() {
                 )}
               </div>
             </div>
-
             <ChatPanel
               trade={trade}
               messages={messages}
@@ -1045,7 +681,7 @@ export default function BuyerShop() {
           </div>
         )}
 
-        {/* ========== COMPLETED ========== */}
+        {/* Completed Step */}
         {step === 'completed' && (
           <div className="bg-[#121212] rounded-2xl p-8 border border-white/5 text-center max-w-md mx-auto">
             <div className="w-20 h-20 rounded-full bg-[#10B981]/10 flex items-center justify-center mx-auto mb-6">
@@ -1071,7 +707,7 @@ export default function BuyerShop() {
           </div>
         )}
 
-        {/* ========== DISPUTED ========== */}
+        {/* Disputed Step */}
         {step === 'disputed' && trade && (
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-[#121212] rounded-2xl p-6 border border-white/5">
@@ -1115,193 +751,100 @@ export default function BuyerShop() {
         )}
       </div>
 
-      {/* ========== SETTINGS MODAL ========== */}
-      <Dialog open={showSettings} onOpenChange={setShowSettings}>
-        <DialogContent className="bg-[#121212] border-white/10 text-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">Настройки</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm text-[#71717A] mb-1.5 block">API Key</label>
-              <Input
-                type="text"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="bg-[#0A0A0A] border-white/10 text-white font-mono text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-sm text-[#71717A] mb-1.5 block">Secret Key</label>
-              <Input
-                type={showSecret ? 'text' : 'password'}
-                value={apiSecret}
-                onChange={(e) => setApiSecret(e.target.value)}
-                className="bg-[#0A0A0A] border-white/10 text-white font-mono text-sm"
-              />
-            </div>
-            {connected && (
-              <div className="bg-[#0A0A0A] rounded-xl p-3">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-[#71717A]">Merchant ID</span>
-                  <span className="text-white font-mono text-xs">{merchantId}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#71717A]">Магазин</span>
-                  <span className="text-white">{merchantName}</span>
-                </div>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button
-                onClick={() => { connectApi(false); setShowSettings(false); }}
-                className="flex-1 bg-[#7C3AED] hover:bg-[#6D28D9] text-white"
-              >
-                <Save className="w-4 h-4 mr-2" /> Сохранить
-              </Button>
-              {connected && (
-                <Button
-                  onClick={() => { disconnectApi(); setShowSettings(false); }}
-                  variant="outline"
-                  className="border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/10"
-                >
-                  Отключить
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Settings Dialog */}
+      <SettingsDialog
+        open={showSettings}
+        onOpenChange={setShowSettings}
+        connected={connected}
+        merchantId={merchantId}
+        setMerchantId={setMerchantId}
+        apiKey={apiKey}
+        setApiKey={setApiKey}
+        apiSecret={apiSecret}
+        setApiSecret={setApiSecret}
+        showSecret={showSecret}
+        setShowSecret={setShowSecret}
+        merchantName={merchantName}
+        disconnectApi={disconnectApi}
+        connectApi={connectApi}
+      />
 
-      {/* ========== OPERATOR DIALOG ========== */}
+      {/* Operator Selection Dialog */}
       <Dialog open={showOperatorDialog} onOpenChange={setShowOperatorDialog}>
         <DialogContent className="bg-[#121212] border-white/10 text-white max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white">Оплата через {selectedOperator?.nickname || 'оператора'}</DialogTitle>
+            <DialogTitle>Выбор оператора</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="bg-[#0A0A0A] rounded-xl p-4">
-              <div className="flex justify-between items-center">
-                <span className="text-[#71717A]">Сумма пополнения</span>
-                <span className="text-white font-medium">{depositAmount.toLocaleString()} RUB</span>
+
+          {selectedOperator && (
+            <div className="space-y-4 mt-4">
+              <div className="bg-[#0A0A0A] rounded-xl p-4">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-[#71717A]">Оператор</span>
+                  <span className="text-white">{selectedOperator.nickname || selectedOperator.trader_login}</span>
+                </div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-[#71717A]">Сумма к оплате</span>
+                  <span className="text-white font-bold">{selectedOperator.toPayRub?.toLocaleString()} RUB</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#71717A]">Курс</span>
+                  <span className="text-white">{selectedOperator.price_rub} RUB/USDT</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center mt-2">
-                <span className="text-[#71717A]">К оплате</span>
-                <span className="text-xl font-bold text-white">{selectedOperator?.toPayRub?.toLocaleString()} RUB</span>
-              </div>
-              {selectedOperator?.commissionPercent > 0 && (
-                <div className="flex justify-between items-center mt-1">
-                  <span className="text-[#52525B] text-sm">Комиссия оператора</span>
-                  <span className="text-sm text-[#F59E0B]">+{selectedOperator?.commissionPercent}%</span>
+
+              {selectedOperator.requisites?.length > 1 && (
+                <div>
+                  <label className="text-sm text-[#71717A] mb-2 block">Способ оплаты</label>
+                  <div className="space-y-2">
+                    {selectedOperator.requisites.map((req, idx) => {
+                      const Icon = getRequisiteIcon(req.type);
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => setSelectedRequisite(req)}
+                          className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                            selectedRequisite?.id === req.id
+                              ? 'border-[#7C3AED] bg-[#7C3AED]/10'
+                              : 'border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          <Icon className="w-5 h-5 text-[#7C3AED]" />
+                          <span className="text-white">{getRequisiteLabel(req.type)}</span>
+                          {selectedRequisite?.id === req.id && (
+                            <Check className="w-4 h-4 text-[#7C3AED] ml-auto" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
-            </div>
 
-            {selectedOperator?.requisites?.length > 1 && (
-              <div>
-                <div className="text-sm text-[#71717A] mb-2">Выберите способ оплаты:</div>
-                <div className="space-y-2">
-                  {selectedOperator.requisites.map((req) => {
-                    const Icon = getRequisiteIcon(req.type);
-                    const isSelected = selectedRequisite?.id === req.id;
-                    return (
-                      <button
-                        key={req.id}
-                        onClick={() => setSelectedRequisite(req)}
-                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors ${isSelected ? 'bg-[#7C3AED]/10 border-[#7C3AED]' : 'bg-[#0A0A0A] border-white/5 hover:border-white/20'}`}
-                      >
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isSelected ? 'bg-[#7C3AED]/20' : 'bg-white/5'}`}>
-                          <Icon className={`w-5 h-5 ${isSelected ? 'text-[#7C3AED]' : 'text-[#71717A]'}`} />
-                        </div>
-                        <div className="text-left">
-                          <div className="text-white font-medium">{req.data?.bank_name || getRequisiteLabel(req.type)}</div>
-                          <div className="text-xs text-[#52525B]">{getRequisiteLabel(req.type)}</div>
-                        </div>
-                        {isSelected && <Check className="w-5 h-5 text-[#7C3AED] ml-auto" />}
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={rulesAccepted}
+                  onChange={(e) => setRulesAccepted(e.target.checked)}
+                  className="mt-1"
+                />
+                <span className="text-[#71717A] text-sm">
+                  Я подтверждаю, что переведу <span className="text-white font-bold">{selectedOperator.toPayRub?.toLocaleString()} RUB</span> в течение 15 минут
+                </span>
               </div>
-            )}
 
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={rulesAccepted}
-                onChange={(e) => setRulesAccepted(e.target.checked)}
-                className="mt-1 w-4 h-4 rounded border-white/20 bg-transparent checked:bg-[#7C3AED]"
-              />
-              <span className="text-sm text-[#71717A]">
-                Я принимаю правила сервиса и обязуюсь совершить перевод точной суммы без комментария
-              </span>
-            </label>
-
-            <Button
-              onClick={startTrade}
-              disabled={creating || !rulesAccepted}
-              className="w-full h-12 bg-[#10B981] hover:bg-[#059669] text-white rounded-xl"
-              data-testid="proceed-payment-btn"
-            >
-              {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Перейти к оплате'}
-            </Button>
-          </div>
+              <Button
+                onClick={startTrade}
+                disabled={!rulesAccepted || creating}
+                className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9]"
+              >
+                {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Подтвердить
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-// ========== CHAT PANEL COMPONENT ==========
-function ChatPanel({ trade, messages, newMessage, setNewMessage, sendMsg, messagesEndRef }) {
-  return (
-    <div className="bg-[#121212] rounded-2xl border border-white/5 flex flex-col h-[500px]">
-      <div className="p-4 border-b border-white/5">
-        <h3 className="text-white font-semibold flex items-center gap-2">
-          <MessageCircle className="w-4 h-4" />
-          Сообщения
-        </h3>
-        <p className="text-[#52525B] text-xs mt-1">Оператор: {trade?.trader_login || 'Загрузка...'}</p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 ? (
-          <div className="text-center text-[#52525B] text-sm py-8">
-            <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            Начните диалог с оператором
-          </div>
-        ) : (
-          messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] px-4 py-2 rounded-2xl ${msg.sender_type === 'client'
-                ? 'bg-[#7C3AED] text-white rounded-br-sm'
-                : 'bg-white/5 text-[#E4E4E7] rounded-bl-sm'
-                }`}>
-                <p className="text-sm">{msg.content}</p>
-                <p className="text-[10px] opacity-50 mt-1">
-                  {new Date(msg.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div className="p-4 border-t border-white/5">
-        <div className="flex gap-2">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && sendMsg()}
-            placeholder="Написать сообщение..."
-            className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
-          />
-          <Button onClick={sendMsg} className="bg-[#7C3AED] hover:bg-[#6D28D9]">
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

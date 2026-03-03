@@ -137,5 +137,13 @@ P2P криптовалютная биржа с интегрированным м
 - P1: Реализовать функционал открытия спора в тестовом магазине /shop
 - P2: Telegram уведомления для споров
 - P2: Улучшение мобильной адаптации
-- P3: Рефакторинг BuyerShop.jsx (800+ строк) на компоненты
-- P3: Удаление/депрекация старого API merchant.py
+
+## Рефакторинг (03.03.2026)
+- ✅ **BuyerShop.jsx разбит на компоненты** (1307 → 850 строк, -35%)
+- ✅ Создано 10 модульных компонентов в `/frontend/src/pages/shop/`:
+  - ShopHeader, ApiConnectionForm, BalanceCard, TopUpForm
+  - OperatorSelector, PaymentCard, ChatPanel
+  - TransactionHistory, SettingsDialog, index.js
+- ✅ **Старый merchant.py помечен как deprecated**
+  - Добавлено уведомление в docstring
+  - Для интеграций использовать `/merchant/v1/*` (merchant_api.py)
