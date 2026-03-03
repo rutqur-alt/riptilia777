@@ -460,8 +460,11 @@ async def get_merchant_analytics(user: dict = Depends(get_current_user)):
     # Use client_amount_rub (сумма пополнения клиента), not amount_rub (сумма оплаты)
     total_deposits_usdt = sum(t.get("merchant_receives_usdt", 0) or t.get("amount_usdt", 0) for t in deposit_trades)
     total_deposits_rub = sum(t.get("client_amount_rub") or t.get("amount_rub", 0) for t in deposit_trades)
-    # Commission in USDT - use merchant_commission field
-    total_deposit_commission = sum(t.get("merchant_commission", 0) or 0 for t in deposit_trades)
+    # Commission in USDT = platform_fee_rub / price_rub (exchange rate)
+    total_deposit_commission = sum(
+        (t.get("platform_fee_rub", 0) or 0) / (t.get("price_rub", 78) or 78) 
+        for t in deposit_trades
+    )
     deposits_count = len(deposit_trades)
     
     active_trades = await db.trades.count_documents(

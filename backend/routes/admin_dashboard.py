@@ -44,8 +44,11 @@ async def get_analytics(period: str = "week", user: dict = Depends(require_role(
     
     total_volume = sum(t.get("amount_usdt", 0) for t in trades)
     total_trades = len(trades)
-    # Commission in USDT - use merchant_commission field
-    total_commission_usdt = sum(t.get("merchant_commission", 0) or 0 for t in trades)
+    # Commission in USDT = platform_fee_rub / price_rub
+    total_commission_usdt = sum(
+        (t.get("platform_fee_rub", 0) or 0) / (t.get("price_rub", 78) or 78) 
+        for t in trades
+    )
     total_turnover_rub = sum(t.get("client_amount_rub", 0) or t.get("amount_rub", 0) for t in trades)
     
     # Volume by day
