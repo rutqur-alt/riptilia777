@@ -637,6 +637,11 @@ async def leave_conversation(conversation_id: str, user: dict = Depends(require_
         update_ops["$set"]["assigned_to_name"] = None
         update_ops["$set"]["assigned_at"] = None
     
+    # Archive the conversation when staff leaves
+    update_ops["$set"]["archived"] = True
+    update_ops["$set"]["archived_by"] = user_id
+    update_ops["$set"]["archived_at"] = now
+    
     await db.unified_conversations.update_one({"id": conversation_id}, update_ops)
     
     return {"status": "left", "message": "Вы вышли из чата"}

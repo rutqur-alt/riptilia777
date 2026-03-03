@@ -83,7 +83,6 @@ export function CryptoPayouts() {
   const filters = [
     { key: "all", label: "Все" },
     { key: "active", label: "Активные" },
-    { key: "dispute", label: "Споры" },
     { key: "completed", label: "Завершённые" },
     { key: "cancelled", label: "Отменённые" }
   ];
