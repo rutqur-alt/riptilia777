@@ -427,7 +427,7 @@ async def get_operators(data: OperatorsRequest):
     
     # Get active offers with enough balance
     offers = await db.offers.find({
-        "status": "active",
+        "is_active": True,
         "available_usdt": {"$gte": required_usdt * 0.9}  # 90% tolerance
     }, {"_id": 0}).to_list(100)
     
@@ -445,29 +445,48 @@ async def get_operators(data: OperatorsRequest):
         to_pay_rub = round(required_usdt * offer["price_rub"], 2)
         commission_percent = round((offer["price_rub"] - base_rate) / base_rate * 100, 2)
         
-        # Get requisites
+        # Get requisites from offer or payment_details
         requisites = []
-        for req_id in offer.get("requisite_ids", []):
-            req = await db.requisites.find_one({"id": req_id}, {"_id": 0, "id": 1, "type": 1, "data": 1})
-            if req:
+        # First check if offer has embedded requisites
+        if offer.get("requisites"):
+            for req in offer["requisites"]:
                 requisites.append({
-                    "id": req["id"],
-                    "type": req["type"],
+                    "id": req.get("id"),
+                    "type": req.get("type"),
                     "bank_name": req.get("data", {}).get("bank_name", ""),
                 })
+        else:
+            # Try payment_details collection
+            for req_id in offer.get("requisite_ids", []) or offer.get("payment_detail_ids", []):
+                pd = await db.payment_details.find_one({"id": req_id}, {"_id": 0})
+                if pd:
+                    requisites.append({
+                        "id": pd["id"],
+                        "type": pd.get("payment_type", "card"),
+                        "bank_name": pd.get("bank_name", ""),
+                    })
+                else:
+                    req = await db.requisites.find_one({"id": req_id}, {"_id": 0, "id": 1, "type": 1, "data": 1})
+                    if req:
+                        requisites.append({
+                            "id": req["id"],
+                            "type": req["type"],
+                            "bank_name": req.get("data", {}).get("bank_name", ""),
+                        })
         
         operators.append({
             "operator_id": offer["id"],
             "trader_id": offer["trader_id"],
-            "nickname": trader.get("nickname") or trader.get("login"),
+            "nickname": offer.get("trader_login") or trader.get("nickname") or trader.get("login"),
             "is_online": trader.get("is_online", False),
-            "success_rate": trader.get("success_rate", 100),
-            "trades_count": trader.get("trades_count", 0),
+            "success_rate": offer.get("success_rate") or trader.get("success_rate", 100),
+            "trades_count": offer.get("trades_count") or trader.get("trades_count", 0),
             "price_rub": offer["price_rub"],
             "to_pay_rub": to_pay_rub,
             "commission_percent": max(0, commission_percent),
             "min_amount_rub": round(offer.get("min_amount", 1) * offer["price_rub"], 2),
             "max_amount_rub": round(offer.get("available_usdt", 0) * offer["price_rub"], 2),
+            "payment_methods": offer.get("payment_methods", []),
             "requisites": requisites
         })
     
@@ -542,6 +561,7 @@ async def get_invoice_requisites(data: RequisitesRequest):
         "status": trade["status"],
         "amount_rub": trade.get("amount_rub"),
         "client_amount_rub": trade.get("client_amount_rub"),
+        "client_pays_rub": trade.get("client_pays_rub") or trade.get("amount_rub"),
         "expires_at": trade.get("expires_at"),
         "requisites": requisites_data,
         "trader_login": trade.get("trader_login")
