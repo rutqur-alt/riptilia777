@@ -89,12 +89,12 @@ def generate_signature(params: dict, secret_key: str) -> str:
     Генерация HMAC-SHA256 подписи для Reptiloid API
     
     ВАЖНО! Для /v1/invoice/create в подпись входят ТОЛЬКО эти поля:
-    - merchant_id, order_id, amount, currency, user_id, callback_url, payment_method
+    - merchant_id, order_id, amount, currency, user_id, callback_url
     
-    Поле description и другие дополнительные поля НЕ участвуют в подписи!
+    Поле description НЕ участвует в подписи!
     
     Алгоритм:
-    1. Берём только разрешённые поля (см. выше)
+    1. Берём только разрешённые поля
     2. Убираем sign и None значения
     3. ВАЖНО: float приводим к int если число целое (1500.0 → 1500)
     4. Сортируем по ключам
@@ -102,14 +102,12 @@ def generate_signature(params: dict, secret_key: str) -> str:
     6. Добавляем secret_key в конец
     7. Вычисляем HMAC-SHA256
     """
-    # Поля которые участвуют в подписи для /create
-    SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url', 'payment_method']
+    SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url']
     
     sign_params = {}
     for k, v in params.items():
         if k not in SIGN_FIELDS or k == 'sign' or v is None:
             continue
-        # ВАЖНО: приводим float к int если число целое
         if isinstance(v, float) and v == int(v):
             v = int(v)
         sign_params[k] = v
@@ -131,32 +129,42 @@ SECRET_KEY = "${merchant?.api_secret || 'YOUR_SECRET_KEY'}"
 MERCHANT_ID = "${merchant?.id || 'YOUR_MERCHANT_ID'}"
 BASE_URL = "${BASE_URL}/api/v1/invoice"
 
-# 1. Получаем список способов оплаты (для показа на вашем сайте)
-def get_payment_methods():
-    """Получить доступные способы оплаты"""
-    response = requests.get(
-        f"{BASE_URL}/payment-methods",
-        headers={"X-Api-Key": API_KEY}
-    )
-    return response.json()["payment_methods"]
+def generate_signature(params: dict, secret_key: str) -> str:
+    """Генерация HMAC-SHA256 подписи"""
+    import hmac, hashlib
+    SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url']
+    
+    sign_params = {}
+    for k, v in params.items():
+        if k not in SIGN_FIELDS or k == 'sign' or v is None:
+            continue
+        if isinstance(v, float) and v == int(v):
+            v = int(v)
+        sign_params[k] = v
+    
+    sorted_params = sorted(sign_params.items())
+    sign_string = '&'.join(f"{k}={v}" for k, v in sorted_params)
+    sign_string += secret_key
+    
+    return hmac.new(secret_key.encode(), sign_string.encode(), hashlib.sha256).hexdigest()
 
-# 2. Создаём инвойс с выбранным методом
-def create_invoice(order_id: str, amount: float, callback_url: str, payment_method: str = None, user_id: str = None):
-    """Создание инвойса на оплату"""
-    # Поля для подписи (description НЕ входит!)
+def create_invoice(order_id: str, amount: int, callback_url: str, user_id: str = None):
+    """
+    Создание инвойса на оплату
+    
+    После создания инвойса покупатель перейдёт на страницу payment_url,
+    где сам выберет оператора и способ оплаты из доступных вариантов.
+    """
     params = {
         "merchant_id": MERCHANT_ID,
         "order_id": order_id,
-        "amount": amount,  # Будет автоматически приведено к int если целое
+        "amount": amount,  # Сумма в рублях (целое число!)
         "currency": "RUB",
         "callback_url": callback_url,
-        "payment_method": payment_method,
         "user_id": user_id
     }
     params["sign"] = generate_signature(params, SECRET_KEY)
-    
-    # description можно добавить ПОСЛЕ генерации подписи (оно не участвует в sign)
-    params["description"] = "Оплата заказа"
+    params["description"] = "Оплата заказа"  # Добавляем ПОСЛЕ подписи
     
     response = requests.post(
         f"{BASE_URL}/create",
@@ -166,25 +174,24 @@ def create_invoice(order_id: str, amount: float, callback_url: str, payment_meth
     return response.json()
 
 # Пример использования:
-methods = get_payment_methods()
-# [{"id": "card", "name": "Банковская карта"}, {"id": "sbp", "name": "СБП"}, ...]
-
-# Покупатель выбрал "card" на вашем сайте
 result = create_invoice(
     order_id="ORDER_12345",
-    amount=1500,  # Используйте int, не float!
-    callback_url="https://mysite.com/payment/callback",
-    payment_method="card"
+    amount=1500,  # 1500 рублей
+    callback_url="https://mysite.com/payment/callback"
 )
 
 # Ответ:
 # {
 #   "status": "success",
 #   "payment_id": "inv_...",
-#   "payment_url": "${BASE_URL}/pay/inv_...",  <-- ОТКРЫТЬ В НОВОЙ ВКЛАДКЕ!
+#   "payment_url": "${BASE_URL}/select-operator/inv_..."
 # }
 
-# 3. На фронтенде: window.open(result["payment_url"], "_blank")`;
+# Открываем страницу оплаты в новой вкладке:
+# window.open(result["payment_url"], "_blank")
+#
+# Покупатель увидит список операторов, выберет оператора и способ оплаты,
+# затем увидит реквизиты и оплатит.`;
 
   const jsIntegrationExample = `// JavaScript пример для вашего сайта
 
@@ -193,15 +200,11 @@ const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
 const MERCHANT_ID = '${merchant?.id || 'YOUR_MERCHANT_ID'}';
 const API_BASE = '${BASE_URL}/api/v1/invoice';
 
-// Поля которые участвуют в подписи для /create
-const SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url', 'payment_method'];
+// Поля которые участвуют в подписи
+const SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url'];
 
 /**
  * Генерация подписи для Reptiloid API
- * ВАЖНО: 
- * - Только поля из SIGN_FIELDS участвуют в подписи
- * - float числа приводятся к int (1500.0 → 1500)
- * - description и другие поля НЕ участвуют в подписи
  */
 function generateSignature(params, secretKey) {
   const signParams = {};
@@ -210,7 +213,6 @@ function generateSignature(params, secretKey) {
     if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null || value === undefined) {
       continue;
     }
-    // ВАЖНО: приводим float к int если число целое
     let v = value;
     if (typeof v === 'number' && Number.isInteger(v)) {
       v = Math.floor(v);
@@ -221,37 +223,28 @@ function generateSignature(params, secretKey) {
   const sortedKeys = Object.keys(signParams).sort();
   const signString = sortedKeys.map(k => \`\${k}=\${signParams[k]}\`).join('&') + secretKey;
   
-  // Используйте crypto-js или Web Crypto API
+  // Используйте crypto-js
   return CryptoJS.HmacSHA256(signString, secretKey).toString();
 }
 
-// 1. Получаем способы оплаты при загрузке страницы
-async function loadPaymentMethods() {
-  const res = await fetch(\`\${API_BASE}/payment-methods\`, {
-    headers: { 'X-Api-Key': API_KEY }
-  });
-  const data = await res.json();
-  return data.payment_methods;
-  // Показываем покупателю выбор на ВАШЕМ сайте
-}
-
-// 2. Когда покупатель выбрал метод и нажал "Оплатить"
-async function createPayment(amount, paymentMethod, userId = null) {
+/**
+ * Создание платежа
+ * После создания откройте payment_url в новой вкладке.
+ * Покупатель сам выберет оператора и способ оплаты.
+ */
+async function createPayment(amount, description = 'Оплата заказа') {
   const orderId = 'ORDER_' + Date.now();
   
   const params = {
     merchant_id: MERCHANT_ID,
     order_id: orderId,
-    amount: Math.floor(amount), // Используйте целое число!
+    amount: Math.floor(amount), // Целое число в рублях
     currency: 'RUB',
     callback_url: 'https://yoursite.com/callback',
-    payment_method: paymentMethod,
-    user_id: userId
+    user_id: null
   };
   params.sign = generateSignature(params, SECRET_KEY);
-  
-  // description можно добавить ПОСЛЕ генерации подписи
-  params.description = 'Оплата заказа';
+  params.description = description; // После подписи
   
   const res = await fetch(\`\${API_BASE}/create\`, {
     method: 'POST',
@@ -261,12 +254,24 @@ async function createPayment(amount, paymentMethod, userId = null) {
   
   const data = await res.json();
   
-  // 3. ВАЖНО: Открываем страницу оплаты в НОВОЙ ВКЛАДКЕ
-  // Покупатель увидит реквизиты на нашем домене
-  window.open(data.payment_url, '_blank');
+  if (data.status === 'success') {
+    // Открываем страницу оплаты в новой вкладке
+    // Покупатель увидит список операторов и выберет подходящего
+    window.open(data.payment_url, '_blank');
+  }
   
-  return orderId; // Сохраняем для проверки статуса
-}`;
+  return { orderId, paymentId: data.payment_id };
+}
+
+// Пример использования:
+// При нажатии кнопки "Оплатить" на вашем сайте
+document.getElementById('payButton').onclick = async () => {
+  const amount = 1500; // Сумма в рублях
+  const { orderId, paymentId } = await createPayment(amount);
+  
+  // Сохраните orderId для проверки статуса
+  console.log('Создан платёж:', paymentId);
+};`;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

@@ -321,15 +321,14 @@ async def create_invoice(
             "message": "Merchant ID не соответствует API ключу"
         })
     
-    # 3. Verify signature
+    # 3. Verify signature (payment_method НЕ входит в подпись)
     sign_data = {
         "merchant_id": request.merchant_id,
         "order_id": request.order_id,
         "amount": request.amount,
         "currency": request.currency,
         "user_id": request.user_id,
-        "callback_url": request.callback_url,
-        "payment_method": request.payment_method
+        "callback_url": request.callback_url
     }
     
     secret_key = merchant.get("api_secret") or merchant.get("api_key", "")
