@@ -68,8 +68,8 @@ async def get_merchant_stats(user: dict = Depends(require_role(["merchant"]))):
     total_volume_usdt = sum([t.get("amount_usdt", 0) for t in completed_trades])
     
     merchant = await db.merchants.find_one({"id": merchant_id}, {"_id": 0})
-    # Calculate total commission from trades
-    total_commission = sum([t.get("merchant_receives_usdt", 0) for t in completed_trades])
+    # Calculate total commission from trades (merchant_commission is in USDT)
+    total_commission = sum([t.get("merchant_commission", 0) or 0 for t in completed_trades])
     
     avg_payment = total_volume_rub / completed_payments if completed_payments > 0 else 0
     success_rate = (completed_payments / total_payments * 100) if total_payments > 0 else 100
