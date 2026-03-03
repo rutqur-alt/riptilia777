@@ -259,7 +259,7 @@ export default function MyMessagesPage() {
     return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Combine broadcasts and conversations into unified list, sort by unread + date
+  // Combine broadcasts and conversations into unified list, sort by date (newest first)
   const allItems = useMemo(() => {
     // Convert broadcasts to unified format
     const broadcastItems = broadcasts.map(b => ({
@@ -281,18 +281,13 @@ export default function MyMessagesPage() {
       original: c
     }));
     
-    // Combine and sort
+    // Combine and sort ONLY by date (newest first)
     const combined = [...broadcastItems, ...convItems];
     
     return combined.sort((a, b) => {
-      // First: unread items on top
-      const aUnread = (a.unread_count || 0) > 0 ? 1 : 0;
-      const bUnread = (b.unread_count || 0) > 0 ? 1 : 0;
-      if (bUnread !== aUnread) return bUnread - aUnread;
-      
-      // Second: newest first
-      const aDate = new Date(a.updated_at || a.created_at || 0).getTime();
-      const bDate = new Date(b.updated_at || b.created_at || 0).getTime();
+      // Sort by date only - newest messages first
+      const aDate = new Date(a.updated_at || a.last_message_at || a.created_at || 0).getTime();
+      const bDate = new Date(b.updated_at || b.last_message_at || b.created_at || 0).getTime();
       return bDate - aDate;
     });
   }, [conversations, broadcasts]);
@@ -396,6 +391,11 @@ export default function MyMessagesPage() {
                 const isDispute = conv.status === 'dispute' || conv.status === 'disputed' || conv.type === 'p2p_dispute' || typeConfig.isDispute;
                 const isSelected = selectedConv?.id === conv.id;
                 
+                // Show "NEW" badge for unread messages OR active crypto orders
+                const hasUnread = (conv.unread_count || 0) > 0;
+                const isActiveCryptoOrder = conv.type === 'crypto_order' && !['completed', 'cancelled', 'rejected'].includes(conv.status);
+                const showNewBadge = hasUnread || isActiveCryptoOrder;
+                
                 return (
                   <div
                     key={conv.id}
@@ -414,7 +414,7 @@ export default function MyMessagesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-white text-sm font-medium truncate">{conv.title}</span>
-                          {conv.unread_count > 0 && (
+                          {showNewBadge && (
                             <span className="bg-[#10B981] text-white text-[9px] px-1.5 py-0.5 rounded flex-shrink-0">
                               НОВОЕ
                             </span>
@@ -432,11 +432,6 @@ export default function MyMessagesPage() {
                           </p>
                         )}
                       </div>
-                      {conv.unread_count > 0 && (
-                        <span className="bg-[#EF4444] text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full flex-shrink-0">
-                          {conv.unread_count}
-                        </span>
-                      )}
                     </div>
                   </div>
                 );
