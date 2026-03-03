@@ -162,7 +162,7 @@ export default function OperatorSelector({
                     </div>
                     <div className="text-right">
                       <div className="text-lg font-bold text-white font-['JetBrains_Mono']">
-                        {op.toPayRub.toLocaleString()} RUB
+                        {Math.round(op.toPayRub).toLocaleString()} RUB
                       </div>
                       {op.commissionPercent > 0 && (
                         <div className="text-xs text-[#F59E0B]">+{op.commissionPercent}%</div>

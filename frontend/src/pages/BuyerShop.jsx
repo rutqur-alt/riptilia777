@@ -785,7 +785,7 @@ export default function BuyerShop() {
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Сумма к оплате</span>
-                  <span className="text-white font-bold">{selectedOperator.toPayRub?.toLocaleString()} RUB</span>
+                  <span className="text-white font-bold">{Math.round(selectedOperator.toPayRub || 0).toLocaleString()} RUB</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-[#71717A]">Курс</span>
@@ -829,7 +829,7 @@ export default function BuyerShop() {
                   className="mt-1"
                 />
                 <span className="text-[#71717A] text-sm">
-                  Я подтверждаю, что переведу <span className="text-white font-bold">{selectedOperator.toPayRub?.toLocaleString()} RUB</span> в течение 15 минут
+                  Я подтверждаю, что переведу <span className="text-white font-bold">{Math.round(selectedOperator.toPayRub || 0).toLocaleString()} RUB</span> в течение 15 минут
                 </span>
               </div>
 
