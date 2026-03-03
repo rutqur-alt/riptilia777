@@ -128,7 +128,7 @@ async def create_trade(data: TradeCreate):
         if trader["balance_usdt"] < data.amount_usdt:
             raise HTTPException(status_code=400, detail="Insufficient trader balance")
     
-    amount_rub = data.amount_usdt * data.price_rub
+    amount_rub = round(data.amount_usdt * data.price_rub)  # Без копеек - целое число
     trader_commission = data.amount_usdt * (settings["trader_commission"] / 100)
     trader_commission = max(trader_commission, settings["minimum_commission"])
     
@@ -197,7 +197,7 @@ async def create_trade(data: TradeCreate):
         "id": trade_id,
         "amount_usdt": data.amount_usdt,
         "price_rub": data.price_rub,
-        "amount_rub": round(amount_rub, 2),
+        "amount_rub": round(amount_rub),  # Целое число без копеек
         "trader_id": data.trader_id,
         "trader_login": trader.get("login", ""),
         "merchant_id": merchant_id,
@@ -213,9 +213,9 @@ async def create_trade(data: TradeCreate):
         "merchant_commission": round(merchant_commission, 4),
         "total_commission": round(trader_commission + merchant_commission, 4),
         # New amount tracking fields
-        "client_amount_rub": data.client_amount_rub,  # Сумма пополнения (1000)
-        "client_pays_rub": data.client_pays_rub or round(amount_rub, 2),  # К оплате (1010)
-        "merchant_receives_rub": data.merchant_receives_rub,  # Мерчант получит (970)
+        "client_amount_rub": round(data.client_amount_rub) if data.client_amount_rub else None,  # Целое число
+        "client_pays_rub": round(data.client_pays_rub or amount_rub),  # Целое число
+        "merchant_receives_rub": round(data.merchant_receives_rub) if data.merchant_receives_rub else None,
         "merchant_receives_usdt": data.merchant_receives_usdt,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
@@ -271,7 +271,6 @@ async def create_trade(data: TradeCreate):
     
     auto_msg_content = f"📋 Сделка #{trade_id} создана\n\n"
     auto_msg_content += f"💰 Сумма к оплате: {trade_doc['amount_rub']:,.0f} ₽\n"
-    auto_msg_content += f"📈 Курс: {trade_doc['price_rub']} ₽/USDT\n"
     auto_msg_content += "⏱ Время на оплату: 30 минут"
     
     if offer_conditions:
@@ -619,14 +618,22 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         }}
     )
     
-    # Send system message about completion
+    # Send system message about completion - разное сообщение для мерчант клиента и P2P
+    is_merchant_trade = trade.get("payment_link_id") or trade.get("merchant_id")
+    if is_merchant_trade:
+        # Для клиента мерчанта - не показываем USDT
+        completion_text = f"✅ Сделка завершена! Оплата подтверждена. Средства зачислены."
+    else:
+        # Для P2P сделки - показываем USDT
+        completion_text = f"✅ Сделка завершена! Продавец подтвердил получение оплаты. {trade['amount_usdt']} USDT переведены покупателю."
+    
     confirm_msg = {
         "id": str(uuid.uuid4()),
         "trade_id": trade_id,
         "sender_id": "system",
         "sender_type": "system",
         "sender_role": "system",
-        "content": f"✅ Сделка завершена! Продавец подтвердил получение оплаты. {trade['amount_usdt']} USDT переведены покупателю.",
+        "content": completion_text,
         "created_at": now
     }
     await db.trade_messages.insert_one(confirm_msg)

@@ -925,7 +925,7 @@ async def merchant_open_dispute(
             "type": "p2p_dispute",
             "related_id": trade["id"],
             "status": "disputed",
-            "title": f"Спор: {trade.get('amount_usdt', 0)} USDT",
+            "title": f"Спор: {round(trade.get('amount_rub', 0)):,} ₽",
             "participants": [trade.get("trader_id"), f"merchant:{merchant['id']}"],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "archived": False,
