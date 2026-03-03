@@ -374,8 +374,8 @@ async def get_transactions(data: TransactionsRequest):
     
     trades = await db.trades.find(
         query,
-        {"_id": 0, "id": 1, "amount_rub": 1, "client_pays_rub": 1, 
-         "merchant_receives_rub": 1, "merchant_receives_usdt": 1,
+        {"_id": 0, "id": 1, "client_amount_rub": 1, "amount_rub": 1, 
+         "client_pays_rub": 1, "merchant_receives_rub": 1, 
          "status": 1, "created_at": 1, "completed_at": 1}
     ).sort("created_at", -1).skip(data.offset).limit(data.limit).to_list(data.limit)
     

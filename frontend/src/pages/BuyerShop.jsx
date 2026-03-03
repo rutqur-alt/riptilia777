@@ -738,7 +738,7 @@ export default function BuyerShop() {
                           </div>
                           <div>
                             <div className="text-white text-sm font-medium">
-                              {(tx.amount_rub || tx.original_amount_rub || 0).toLocaleString()} RUB
+                              {(tx.client_amount_rub || tx.amount_rub || 0).toLocaleString()} RUB
                             </div>
                             <div className="text-[#52525B] text-xs">
                               {tx.created_at ? new Date(tx.created_at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
@@ -747,9 +747,6 @@ export default function BuyerShop() {
                         </div>
                         <div className="text-right">
                           {getStatusBadge(tx.status)}
-                          {tx.amount_usdt && (
-                            <div className="text-xs text-[#71717A] mt-1">{tx.amount_usdt} USDT</div>
-                          )}
                         </div>
                       </div>
                     ))}
