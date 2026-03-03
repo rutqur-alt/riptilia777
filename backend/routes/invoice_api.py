@@ -595,6 +595,320 @@ async def get_invoice_status(
     }
 
 
+
+# ================== WHITE-LABEL INTEGRATION ENDPOINTS ==================
+
+@router.get("/{invoice_id}/operators")
+async def get_operators_for_invoice(
+    invoice_id: str,
+    x_api_key: str = Header(..., alias="X-Api-Key")
+):
+    """
+    White-label: Получить список доступных операторов для инвойса.
+    Мерчант отображает этот список на СВОЁМ сайте.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail={"status": "error", "message": "Неверный API ключ"})
+    
+    invoice = await db.merchant_invoices.find_one({"id": invoice_id, "merchant_id": merchant["id"]}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Инвойс не найден"})
+    
+    amount_rub = invoice.get("original_amount_rub") or invoice.get("amount_rub", 0)
+    
+    # Get current exchange rate
+    rate_data = await db.exchange_rates.find_one({"key": "usdt_rub"}, {"_id": 0})
+    exchange_rate = rate_data.get("rate", 95) if rate_data else 95
+    amount_usdt = amount_rub / exchange_rate
+    
+    # Find matching offers
+    offers = await db.offers.find({
+        "type": "sell",
+        "is_active": True,
+        "paused_by_trader": {"$ne": True},
+        "available_usdt": {"$gte": amount_usdt * 0.95},
+        "$or": [
+            {"min_amount_rub": {"$exists": False}},
+            {"min_amount_rub": {"$lte": amount_rub}}
+        ]
+    }, {"_id": 0}).to_list(50)
+    
+    if not offers:
+        return {
+            "status": "success",
+            "operators": [],
+            "message": "Нет доступных операторов для данной суммы"
+        }
+    
+    operators = []
+    for offer in offers:
+        trader = await db.traders.find_one({"id": offer["trader_id"]}, {"_id": 0})
+        if not trader:
+            continue
+        
+        # Calculate price with trader's rate
+        price_rub = offer.get("price_rub", exchange_rate)
+        to_pay_rub = round(amount_usdt * price_rub)
+        commission_percent = round(((price_rub - exchange_rate) / exchange_rate) * 100, 1)
+        
+        operators.append({
+            "offer_id": offer["id"],
+            "nickname": trader.get("nickname", "Трейдер"),
+            "rating": trader.get("rating", 100),
+            "trades_count": trader.get("completed_trades", 0),
+            "payment_methods": offer.get("payment_methods", []),
+            "price_rub": price_rub,
+            "amount_to_pay": to_pay_rub,
+            "commission_percent": max(0, commission_percent),
+            "min_amount": offer.get("min_amount_rub", 100),
+            "max_amount": offer.get("max_amount_rub", 500000)
+        })
+    
+    # Sort by price (cheapest first)
+    operators.sort(key=lambda x: x["amount_to_pay"])
+    
+    return {
+        "status": "success",
+        "invoice_id": invoice_id,
+        "amount_rub": amount_rub,
+        "exchange_rate": exchange_rate,
+        "operators": operators
+    }
+
+
+class SelectOperatorRequest(BaseModel):
+    offer_id: str
+    payment_method: str  # 'card' or 'sbp'
+
+
+@router.post("/{invoice_id}/select-operator")
+async def select_operator_for_invoice(
+    invoice_id: str,
+    request: SelectOperatorRequest,
+    x_api_key: str = Header(..., alias="X-Api-Key")
+):
+    """
+    White-label: Выбрать оператора и получить реквизиты для оплаты.
+    Мерчант показывает реквизиты на СВОЁМ сайте.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail={"status": "error", "message": "Неверный API ключ"})
+    
+    invoice = await db.merchant_invoices.find_one({"id": invoice_id, "merchant_id": merchant["id"]}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Инвойс не найден"})
+    
+    if invoice.get("trade_id"):
+        raise HTTPException(status_code=400, detail={"status": "error", "message": "Оператор уже выбран"})
+    
+    # Get offer and trader
+    offer = await db.offers.find_one({"id": request.offer_id, "is_active": True}, {"_id": 0})
+    if not offer:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Объявление не найдено или неактивно"})
+    
+    trader = await db.traders.find_one({"id": offer["trader_id"]}, {"_id": 0})
+    if not trader:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Трейдер не найден"})
+    
+    # Get requisites for selected payment method
+    # First try offer.requisites, then try payment_details collection
+    requisites = offer.get("requisites", [])
+    matching_req = None
+    
+    for req in requisites:
+        req_type = req.get("type") or req.get("payment_method") or req.get("payment_type")
+        if req_type == request.payment_method:
+            # Requisites can have nested data or flat structure
+            data = req.get("data", {})
+            matching_req = {
+                "id": req.get("id"),
+                "type": req_type,
+                "bank": data.get("bank_name", req.get("bank_name", "")),
+                "number": data.get("card_number") or data.get("phone") or req.get("card_number") or req.get("phone_number", ""),
+                "holder": data.get("card_holder") or data.get("holder") or req.get("holder_name", "")
+            }
+            break
+    
+    # If not found in offer.requisites, try payment_details collection
+    if not matching_req:
+        payment_detail = await db.payment_details.find_one({
+            "trader_id": offer["trader_id"],
+            "$or": [
+                {"type": request.payment_method},
+                {"payment_type": request.payment_method}
+            ]
+        }, {"_id": 0})
+        
+        if payment_detail:
+            matching_req = {
+                "id": payment_detail.get("id"),
+                "type": request.payment_method,
+                "bank": payment_detail.get("bank_name", ""),
+                "number": payment_detail.get("card_number") or payment_detail.get("phone_number", ""),
+                "holder": payment_detail.get("holder_name", "")
+            }
+    
+    if not matching_req or not matching_req.get("number"):
+        raise HTTPException(status_code=400, detail={"status": "error", "message": f"Реквизиты для метода оплаты {request.payment_method} не найдены у этого оператора"})
+    
+    # Calculate amounts
+    amount_rub = invoice.get("original_amount_rub") or invoice.get("amount_rub", 0)
+    rate_data = await db.exchange_rates.find_one({"key": "usdt_rub"}, {"_id": 0})
+    exchange_rate = rate_data.get("rate", 95) if rate_data else 95
+    price_rub = offer.get("price_rub", exchange_rate)
+    amount_usdt = amount_rub / price_rub
+    
+    # Check available balance
+    if offer.get("available_usdt", 0) < amount_usdt:
+        raise HTTPException(status_code=400, detail={"status": "error", "message": "Недостаточно средств у оператора"})
+    
+    # Create trade
+    trade_id = f"trd_{secrets.token_hex(8)}"
+    now = datetime.now(timezone.utc)
+    
+    trade_doc = {
+        "id": trade_id,
+        "invoice_id": invoice_id,
+        "offer_id": offer["id"],
+        "trader_id": offer["trader_id"],
+        "buyer_type": "merchant_client",
+        "merchant_id": merchant["id"],
+        "amount_usdt": round(amount_usdt, 4),
+        "amount_rub": amount_rub,
+        "price_rub": price_rub,
+        "payment_method": request.payment_method,
+        "requisites": [matching_req],
+        "status": "pending",
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=30)).isoformat()
+    }
+    await db.trades.insert_one(trade_doc)
+    
+    # Reserve USDT from offer
+    await db.offers.update_one(
+        {"id": offer["id"]},
+        {"$inc": {"available_usdt": -amount_usdt}}
+    )
+    
+    # Link trade to invoice
+    await db.merchant_invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {
+            "trade_id": trade_id,
+            "status": "pending",
+            "updated_at": now.isoformat()
+        }}
+    )
+    
+    # Send pending webhook
+    from routes.trades import send_merchant_webhook_on_trade
+    await send_merchant_webhook_on_trade(trade_doc, "pending", {"trade_id": trade_id})
+    
+    return {
+        "status": "success",
+        "trade_id": trade_id,
+        "operator": {
+            "nickname": trader.get("nickname", "Трейдер"),
+            "rating": trader.get("rating", 100)
+        },
+        "payment": {
+            "method": request.payment_method,
+            "amount": amount_rub,
+            "requisites": {
+                "type": matching_req.get("type") or matching_req.get("payment_method"),
+                "bank": matching_req.get("bank", ""),
+                "number": matching_req.get("number") or matching_req.get("card_number") or matching_req.get("phone"),
+                "holder": matching_req.get("holder") or matching_req.get("card_holder", "")
+            }
+        },
+        "expires_at": trade_doc["expires_at"],
+        "time_limit_minutes": 30
+    }
+
+
+@router.post("/{invoice_id}/mark-paid")
+async def mark_invoice_paid(
+    invoice_id: str,
+    x_api_key: str = Header(..., alias="X-Api-Key")
+):
+    """
+    White-label: Клиент нажал "Я оплатил" на сайте мерчанта.
+    Отправляет webhook 'paid' мерчанту.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail={"status": "error", "message": "Неверный API ключ"})
+    
+    invoice = await db.merchant_invoices.find_one({"id": invoice_id, "merchant_id": merchant["id"]}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Инвойс не найден"})
+    
+    trade_id = invoice.get("trade_id")
+    if not trade_id:
+        raise HTTPException(status_code=400, detail={"status": "error", "message": "Сначала выберите оператора"})
+    
+    trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
+    if not trade:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Сделка не найдена"})
+    
+    if trade["status"] != "pending":
+        raise HTTPException(status_code=400, detail={"status": "error", "message": f"Нельзя отметить оплату. Текущий статус: {trade['status']}"})
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Update trade status
+    await db.trades.update_one(
+        {"id": trade_id},
+        {"$set": {"status": "paid", "paid_at": now}}
+    )
+    
+    # Update invoice status
+    await db.merchant_invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {"status": "paid", "paid_at": now, "updated_at": now}}
+    )
+    
+    # Send system message
+    system_msg = {
+        "id": str(uuid.uuid4()),
+        "trade_id": trade_id,
+        "sender_id": "system",
+        "sender_type": "system",
+        "content": f"✅ Клиент подтвердил оплату {trade['amount_rub']:,.0f} ₽. Трейдер, проверьте поступление средств на ваши реквизиты.",
+        "created_at": now
+    }
+    await db.trade_messages.insert_one(system_msg)
+    
+    # Create notification for trader
+    try:
+        await db.event_notifications.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": trade["trader_id"],
+            "type": "trade_payment",
+            "title": "Оплата получена",
+            "message": f"Клиент оплатил сделку на {trade['amount_rub']:,.0f} ₽",
+            "link": "/trader/sales",
+            "read": False,
+            "created_at": now
+        })
+    except:
+        pass
+    
+    # Send webhook
+    from routes.trades import send_merchant_webhook_on_trade
+    trade["invoice_id"] = invoice_id  # Ensure invoice_id is set
+    await send_merchant_webhook_on_trade(trade, "paid", {"trade_id": trade_id, "paid_at": now})
+    
+    return {
+        "status": "success",
+        "message": "Оплата отмечена. Ожидайте подтверждения от оператора.",
+        "trade_status": "paid"
+    }
+
+
+
 @router.get("/transactions")
 async def get_merchant_transactions(
     x_api_key: str = Header(..., alias="X-Api-Key"),

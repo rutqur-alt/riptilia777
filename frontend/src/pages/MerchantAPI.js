@@ -128,6 +128,7 @@ API_KEY = "${merchant?.api_key || 'YOUR_API_KEY'}"
 SECRET_KEY = "${merchant?.api_secret || 'YOUR_SECRET_KEY'}"
 MERCHANT_ID = "${merchant?.id || 'YOUR_MERCHANT_ID'}"
 BASE_URL = "${BASE_URL}/api/v1/invoice"
+HEADERS = {"X-Api-Key": API_KEY, "Content-Type": "application/json"}
 
 def generate_signature(params: dict, secret_key: str) -> str:
     """Генерация HMAC-SHA256 подписи"""
@@ -148,130 +149,136 @@ def generate_signature(params: dict, secret_key: str) -> str:
     
     return hmac.new(secret_key.encode(), sign_string.encode(), hashlib.sha256).hexdigest()
 
-def create_invoice(order_id: str, amount: int, callback_url: str, user_id: str = None):
-    """
-    Создание инвойса на оплату
-    
-    После создания инвойса покупатель перейдёт на страницу payment_url,
-    где сам выберет оператора и способ оплаты из доступных вариантов.
-    """
+# ========== WHITE-LABEL ИНТЕГРАЦИЯ ==========
+
+# 1. Создаём инвойс
+def create_invoice(order_id: str, amount: int, callback_url: str):
     params = {
         "merchant_id": MERCHANT_ID,
         "order_id": order_id,
-        "amount": amount,  # Сумма в рублях (целое число!)
+        "amount": amount,
         "currency": "RUB",
         "callback_url": callback_url,
-        "user_id": user_id
+        "user_id": None
     }
     params["sign"] = generate_signature(params, SECRET_KEY)
-    params["description"] = "Оплата заказа"  # Добавляем ПОСЛЕ подписи
     
+    response = requests.post(f"{BASE_URL}/create", json=params, headers=HEADERS)
+    return response.json()  # {"status": "success", "payment_id": "inv_..."}
+
+# 2. Получаем список операторов (для отображения на ВАШЕМ сайте)
+def get_operators(invoice_id: str):
+    response = requests.get(f"{BASE_URL}/{invoice_id}/operators", headers=HEADERS)
+    return response.json()  # {"operators": [...]}
+
+# 3. Клиент выбрал оператора → получаем реквизиты
+def select_operator(invoice_id: str, offer_id: str, payment_method: str):
     response = requests.post(
-        f"{BASE_URL}/create",
-        json=params,
-        headers={"X-Api-Key": API_KEY, "Content-Type": "application/json"}
+        f"{BASE_URL}/{invoice_id}/select-operator",
+        json={"offer_id": offer_id, "payment_method": payment_method},
+        headers=HEADERS
     )
+    return response.json()  # {"payment": {"requisites": {...}}}
+
+# 4. Клиент оплатил → отмечаем
+def mark_paid(invoice_id: str):
+    response = requests.post(f"{BASE_URL}/{invoice_id}/mark-paid", headers=HEADERS)
     return response.json()
 
-# Пример использования:
-result = create_invoice(
-    order_id="ORDER_12345",
-    amount=1500,  # 1500 рублей
-    callback_url="https://mysite.com/payment/callback"
-)
+# === ПРИМЕР ИСПОЛЬЗОВАНИЯ ===
+invoice = create_invoice("ORDER_123", 1500, "https://mysite.com/webhook")
+invoice_id = invoice["payment_id"]
 
-# Ответ:
-# {
-#   "status": "success",
-#   "payment_id": "inv_...",
-#   "payment_url": "${BASE_URL}/select-operator/inv_..."
-# }
+# Показываем операторов на ВАШЕМ сайте
+operators = get_operators(invoice_id)
+for op in operators["operators"]:
+    print(f"{op['nickname']} - {op['amount_to_pay']} RUB ({op['payment_methods']})")
 
-# Открываем страницу оплаты в новой вкладке:
-# window.open(result["payment_url"], "_blank")
-#
-# Покупатель увидит список операторов, выберет оператора и способ оплаты,
-# затем увидит реквизиты и оплатит.`;
+# Клиент выбрал оператора
+result = select_operator(invoice_id, operators["operators"][0]["offer_id"], "card")
+print(f"Реквизиты: {result['payment']['requisites']['number']}")
 
-  const jsIntegrationExample = `// JavaScript пример для вашего сайта
+# Клиент оплатил
+mark_paid(invoice_id)`;
+
+  const jsIntegrationExample = `// ========== WHITE-LABEL ИНТЕГРАЦИЯ (JavaScript) ==========
+// Клиент НЕ покидает ваш сайт. Всё через API.
 
 const API_KEY = '${merchant?.api_key || 'YOUR_API_KEY'}';
 const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
 const MERCHANT_ID = '${merchant?.id || 'YOUR_MERCHANT_ID'}';
 const API_BASE = '${BASE_URL}/api/v1/invoice';
+const HEADERS = { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' };
 
-// Поля которые участвуют в подписи
+// Подпись
 const SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url'];
-
-/**
- * Генерация подписи для Reptiloid API
- */
 function generateSignature(params, secretKey) {
   const signParams = {};
-  
-  for (const [key, value] of Object.entries(params)) {
-    if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null || value === undefined) {
-      continue;
-    }
-    let v = value;
-    if (typeof v === 'number' && Number.isInteger(v)) {
-      v = Math.floor(v);
-    }
-    signParams[key] = v;
+  for (const [k, v] of Object.entries(params)) {
+    if (!SIGN_FIELDS.includes(k) || k === 'sign' || v == null) continue;
+    signParams[k] = typeof v === 'number' && Number.isInteger(v) ? Math.floor(v) : v;
   }
-  
-  const sortedKeys = Object.keys(signParams).sort();
-  const signString = sortedKeys.map(k => \`\${k}=\${signParams[k]}\`).join('&') + secretKey;
-  
-  // Используйте crypto-js
+  const signString = Object.keys(signParams).sort().map(k => \`\${k}=\${signParams[k]}\`).join('&') + secretKey;
   return CryptoJS.HmacSHA256(signString, secretKey).toString();
 }
 
-/**
- * Создание платежа
- * После создания откройте payment_url в новой вкладке.
- * Покупатель сам выберет оператора и способ оплаты.
- */
-async function createPayment(amount, description = 'Оплата заказа') {
-  const orderId = 'ORDER_' + Date.now();
-  
+// 1. Создать инвойс
+async function createInvoice(amount, orderId) {
   const params = {
     merchant_id: MERCHANT_ID,
     order_id: orderId,
-    amount: Math.floor(amount), // Целое число в рублях
+    amount: Math.floor(amount),
     currency: 'RUB',
-    callback_url: 'https://yoursite.com/callback',
+    callback_url: 'https://yoursite.com/webhook',
     user_id: null
   };
   params.sign = generateSignature(params, SECRET_KEY);
-  params.description = description; // После подписи
   
   const res = await fetch(\`\${API_BASE}/create\`, {
-    method: 'POST',
-    headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(params)
+    method: 'POST', headers: HEADERS, body: JSON.stringify(params)
   });
-  
-  const data = await res.json();
-  
-  if (data.status === 'success') {
-    // Открываем страницу оплаты в новой вкладке
-    // Покупатель увидит список операторов и выберет подходящего
-    window.open(data.payment_url, '_blank');
-  }
-  
-  return { orderId, paymentId: data.payment_id };
+  return res.json();
 }
 
-// Пример использования:
-// При нажатии кнопки "Оплатить" на вашем сайте
-document.getElementById('payButton').onclick = async () => {
-  const amount = 1500; // Сумма в рублях
-  const { orderId, paymentId } = await createPayment(amount);
+// 2. Получить операторов (показать на ВАШЕМ сайте)
+async function getOperators(invoiceId) {
+  const res = await fetch(\`\${API_BASE}/\${invoiceId}/operators\`, { headers: HEADERS });
+  return res.json();
+}
+
+// 3. Выбрать оператора → получить реквизиты
+async function selectOperator(invoiceId, offerId, paymentMethod) {
+  const res = await fetch(\`\${API_BASE}/\${invoiceId}/select-operator\`, {
+    method: 'POST', headers: HEADERS,
+    body: JSON.stringify({ offer_id: offerId, payment_method: paymentMethod })
+  });
+  return res.json();
+}
+
+// 4. Отметить как оплачено
+async function markPaid(invoiceId) {
+  const res = await fetch(\`\${API_BASE}/\${invoiceId}/mark-paid\`, {
+    method: 'POST', headers: HEADERS
+  });
+  return res.json();
+}
+
+// === ПРИМЕР ИСПОЛЬЗОВАНИЯ ===
+async function processPayment(amount) {
+  // 1. Создаём инвойс
+  const invoice = await createInvoice(amount, 'ORDER_' + Date.now());
   
-  // Сохраните orderId для проверки статуса
-  console.log('Создан платёж:', paymentId);
-};`;
+  // 2. Показываем операторов на ВАШЕМ сайте
+  const { operators } = await getOperators(invoice.payment_id);
+  renderOperatorsList(operators);  // Ваша функция рендера
+  
+  // 3. Когда клиент выбрал оператора
+  const result = await selectOperator(invoice.payment_id, selectedOfferId, 'card');
+  showRequisites(result.payment.requisites);  // Ваша функция показа реквизитов
+  
+  // 4. Когда клиент нажал "Я оплатил"
+  await markPaid(invoice.payment_id);
+}`;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -408,11 +415,12 @@ document.getElementById('payButton').onclick = async () => {
         <CardContent>
           <div className="space-y-3">
             {[
-              { method: 'GET', path: '/api/v1/invoice/payment-methods', desc: 'Получить способы оплаты' },
-              { method: 'POST', path: '/api/v1/invoice/create', desc: 'Создать инвойс на оплату' },
+              { method: 'POST', path: '/api/v1/invoice/create', desc: 'Создать инвойс' },
+              { method: 'GET', path: '/api/v1/invoice/{id}/operators', desc: 'Получить операторов для инвойса' },
+              { method: 'POST', path: '/api/v1/invoice/{id}/select-operator', desc: 'Выбрать оператора, получить реквизиты' },
+              { method: 'POST', path: '/api/v1/invoice/{id}/mark-paid', desc: 'Отметить как оплачено' },
               { method: 'GET', path: '/api/v1/invoice/status', desc: 'Проверить статус платежа' },
               { method: 'GET', path: '/api/v1/invoice/transactions', desc: 'Список всех транзакций' },
-              { method: 'GET', path: '/api/v1/invoice/docs', desc: 'Документация API (JSON)' },
             ].map((endpoint, idx) => (
               <div key={idx} className="flex items-center gap-4 p-3 bg-zinc-800/50 rounded-lg">
                 <span className={`px-2 py-1 rounded text-xs font-bold font-mono ${
@@ -430,109 +438,171 @@ document.getElementById('payButton').onclick = async () => {
         </CardContent>
       </Card>
 
-      {/* Integration Flow - IMPORTANT */}
-      <Card className="bg-gradient-to-r from-blue-500/10 to-emerald-500/10 border-blue-500/30">
+      {/* Integration Flow - WHITE LABEL */}
+      <Card className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border-emerald-500/30">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <ExternalLink className="w-5 h-5 text-blue-400" />
-            Как интегрировать на свой сайт
+            <Shield className="w-5 h-5 text-emerald-400" />
+            White-label интеграция
           </CardTitle>
+          <p className="text-sm text-zinc-400 mt-1">Клиент НЕ покидает ваш сайт. Всё через API.</p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3">
             <div className="flex gap-3 items-start">
               <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">1</span>
-              <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /create</code> — создайте инвойс на сумму в RUB</p>
+              <div>
+                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /create</code> — создайте инвойс</p>
+                <p className="text-xs text-zinc-500 mt-1">Получите invoice_id</p>
+              </div>
             </div>
             <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-orange-500/20 text-orange-400 flex items-center justify-center text-sm font-bold shrink-0">2</span>
-              <p className="text-sm text-zinc-300"><strong className="text-orange-400">window.open(payment_url, '_blank')</strong> — откройте страницу оплаты <strong>в новой вкладке</strong></p>
+              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">2</span>
+              <div>
+                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">GET /{'{id}'}/operators</code> — получите список операторов</p>
+                <p className="text-xs text-zinc-500 mt-1">Покажите их на ВАШЕМ сайте (никнейм, рейтинг, методы оплаты)</p>
+              </div>
             </div>
             <div className="flex gap-3 items-start">
               <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">3</span>
-              <p className="text-sm text-zinc-300">Покупатель выбирает оператора из списка (методы оплаты видны в карточках)</p>
+              <div>
+                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /{'{id}'}/select-operator</code> — клиент выбрал оператора</p>
+                <p className="text-xs text-zinc-500 mt-1">Получите реквизиты (номер карты/телефон). Покажите на ВАШЕМ сайте.</p>
+              </div>
             </div>
             <div className="flex gap-3 items-start">
               <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">4</span>
-              <p className="text-sm text-zinc-300">Покупатель видит реквизиты, оплачивает, нажимает "Я оплатил"</p>
+              <div>
+                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /{'{id}'}/mark-paid</code> — клиент нажал "Я оплатил"</p>
+                <p className="text-xs text-zinc-500 mt-1">Статус меняется на "paid", отправляется webhook</p>
+              </div>
             </div>
             <div className="flex gap-3 items-start">
               <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">5</span>
-              <p className="text-sm text-zinc-300">Получите <strong>webhook</strong> или проверяйте статус через <code className="bg-zinc-800 px-1 rounded">GET /status</code></p>
+              <div>
+                <p className="text-sm text-zinc-300">Ждите webhook <code className="bg-zinc-800 px-1 rounded">completed</code> или проверяйте статус</p>
+                <p className="text-xs text-zinc-500 mt-1">Оператор подтвердит получение средств</p>
+              </div>
             </div>
           </div>
           
-          <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 mt-4">
-            <p className="text-sm text-orange-300 font-medium">⚠️ Важно:</p>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mt-4">
+            <p className="text-sm text-emerald-300 font-medium">✓ Преимущества:</p>
             <ul className="text-sm text-zinc-400 mt-1 space-y-1">
-              <li>• <code className="bg-zinc-800 px-1 rounded">payment_url</code> всегда открывайте в <strong>новой вкладке</strong></li>
-              <li>• Покупатель выбирает оператора и метод оплаты на нашей странице</li>
-              <li>• Чат для споров тоже на нашем домене</li>
+              <li>• Клиент не видит наш домен</li>
+              <li>• Полный контроль над UI/UX</li>
+              <li>• Ваш бренд на всех этапах</li>
             </ul>
           </div>
         </CardContent>
       </Card>
 
-      {/* UI Example - Select Operator */}
+      {/* API Response Examples */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <ExternalLink className="w-5 h-5 text-purple-400" />
-            Пример UI: Выбор оператора
+            <Code className="w-5 h-5 text-purple-400" />
+            Ответ GET /{'{id}'}/operators
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Покупатель выбирает оператора из списка. Методы оплаты видны в карточках.</p>
+          <p className="text-sm text-zinc-400 mt-1">Список операторов для отображения на вашем сайте</p>
         </CardHeader>
         <CardContent>
-          <img 
-            src="https://customer-assets.emergentagent.com/job_fbca4ceb-9112-496d-8675-a1b10145ddee/artifacts/wjkjx2ei_image.png"
-            alt="Выбор оператора"
-            className="rounded-lg border border-zinc-800 w-full"
-          />
+          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+{`{
+  "status": "success",
+  "invoice_id": "inv_...",
+  "amount_rub": 1000,
+  "exchange_rate": 78.5,
+  "operators": [
+    {
+      "offer_id": "off_abc123",
+      "nickname": "Трейдер Один",
+      "rating": 98,
+      "trades_count": 156,
+      "payment_methods": ["card", "sbp"],
+      "amount_to_pay": 1003,      // Сумма с комиссией
+      "commission_percent": 0.3
+    },
+    {
+      "offer_id": "off_xyz789",
+      "nickname": "Оператор PRO",
+      "rating": 100,
+      "trades_count": 420,
+      "payment_methods": ["sbp"],
+      "amount_to_pay": 1010,
+      "commission_percent": 1.0
+    }
+  ]
+}`}
+          </pre>
           <p className="text-xs text-zinc-500 mt-3">
-            Покупатель видит: никнейм, рейтинг, количество сделок, методы оплаты и сумму к оплате
+            Отобразите этот список на вашем сайте. Клиент выбирает оператора.
           </p>
         </CardContent>
       </Card>
 
-      {/* UI Example - Select Payment Method */}
+      {/* Select Operator Response */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Shield className="w-5 h-5 text-blue-400" />
-            Пример UI: Выбор способа оплаты
+            <Code className="w-5 h-5 text-blue-400" />
+            Ответ POST /{'{id}'}/select-operator
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">После выбора оператора покупатель выбирает способ оплаты</p>
+          <p className="text-sm text-zinc-400 mt-1">Реквизиты для отображения на вашем сайте</p>
         </CardHeader>
         <CardContent>
-          <img 
-            src="https://customer-assets.emergentagent.com/job_fbca4ceb-9112-496d-8675-a1b10145ddee/artifacts/1niq0xge_image.png"
-            alt="Выбор способа оплаты"
-            className="rounded-lg border border-zinc-800 max-w-md mx-auto"
-          />
+          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+{`// Запрос
+{ "offer_id": "off_abc123", "payment_method": "card" }
+
+// Ответ
+{
+  "status": "success",
+  "trade_id": "trd_...",
+  "operator": {
+    "nickname": "Трейдер Один",
+    "rating": 98
+  },
+  "payment": {
+    "method": "card",
+    "amount": 1003,
+    "requisites": {
+      "type": "card",
+      "bank": "Тинькофф",
+      "number": "4276 1234 5678 9012",  // Номер карты
+      "holder": "IVANOV IVAN"           // Получатель
+    }
+  },
+  "expires_at": "2026-03-03T20:30:00Z",
+  "time_limit_minutes": 30
+}`}
+          </pre>
           <p className="text-xs text-zinc-500 mt-3">
-            Покупатель выбирает СБП или Банковскую карту → подтверждает
+            Покажите реквизиты клиенту. Запустите таймер на 30 минут.
           </p>
         </CardContent>
       </Card>
 
-      {/* UI Example - Payment Screen */}
+      {/* Mark Paid */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Shield className="w-5 h-5 text-orange-400" />
-            Пример UI: Экран оплаты
+            <Shield className="w-5 h-5 text-emerald-400" />
+            POST /{'{id}'}/mark-paid
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Покупатель видит реквизиты и переводит деньги</p>
+          <p className="text-sm text-zinc-400 mt-1">Клиент нажал "Я оплатил" на вашем сайте</p>
         </CardHeader>
         <CardContent>
-          <img 
-            src="https://customer-assets.emergentagent.com/job_fbca4ceb-9112-496d-8675-a1b10145ddee/artifacts/hmsjjefu_image.png"
-            alt="Экран оплаты"
-            className="rounded-lg border border-zinc-800 w-full"
-          />
-          <p className="text-xs text-zinc-500 mt-3">
-            Покупатель видит: таймер, сумму, реквизиты и чат с оператором. После оплаты нажимает "Я оплатил".
-          </p>
+          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+{`// Ответ
+{
+  "status": "success",
+  "message": "Оплата отмечена. Ожидайте подтверждения от оператора.",
+  "trade_status": "paid"
+}
+
+// Вам придёт webhook "paid", затем "completed" когда оператор подтвердит`}
+          </pre>
         </CardContent>
       </Card>
 

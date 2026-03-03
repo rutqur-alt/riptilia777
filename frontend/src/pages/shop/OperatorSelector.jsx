@@ -116,7 +116,8 @@ export default function OperatorSelector({
           {filteredOperators.map((op) => {
             const bestPrice = filteredOperators[0]?.toPayRub || depositAmount;
             const isBest = op.toPayRub === bestPrice;
-            const uniqueTypes = [...new Set(op.requisites?.map(r => r.type) || [])];
+            // Support both requisites (old) and payment_methods (new white-label API)
+            const uniqueTypes = [...new Set(op.payment_methods || op.requisites?.map(r => r.type) || [])];
 
             return (
               <div

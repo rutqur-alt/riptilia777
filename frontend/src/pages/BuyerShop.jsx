@@ -364,10 +364,10 @@ export default function BuyerShop() {
 
   const loadOperators = async (invoiceId, amountRub) => {
     try {
-      const params = new URLSearchParams();
-      if (amountRub) params.set("amount_rub", amountRub);
-
-      const opRes = await axios.get(`${API}/public/operators?${params}`);
+      // Use white-label API endpoint (same as real merchant would)
+      const opRes = await axios.get(`${API}/v1/invoice/${invoiceId}/operators`, {
+        headers: { 'X-Api-Key': apiKey }
+      });
       const ops = opRes.data.operators || [];
 
       // Check if there are any operators
@@ -381,23 +381,19 @@ export default function BuyerShop() {
       setAvailableMethods(allMethods);
 
       const exchangeRate = opRes.data.exchange_rate || 78;
-      const operatorsWithPrice = ops.map(op => {
-        let toPayRub = op.amount_to_pay_rub || Math.round((amountRub / exchangeRate) * op.price_rub);
-        if (amountRub > 0) toPayRub = Math.max(toPayRub, amountRub);
-        const commissionPercent = ((op.price_rub - exchangeRate) / exchangeRate * 100).toFixed(1);
-        return {
-          ...op,
-          toPayRub,
-          commissionPercent: Math.max(0, parseFloat(commissionPercent))
-        };
-      });
+      const operatorsWithPrice = ops.map(op => ({
+        ...op,
+        toPayRub: op.amount_to_pay,
+        commissionPercent: op.commission_percent || 0
+      }));
 
       operatorsWithPrice.sort((a, b) => a.toPayRub - b.toPayRub);
       setOperators(operatorsWithPrice);
       setFilteredOperators(operatorsWithPrice);
       setStep('select_operator');
     } catch (e) {
-      toast.error('Ошибка загрузки операторов');
+      const errMsg = e.response?.data?.detail?.message || 'Ошибка загрузки операторов';
+      toast.error(errMsg);
       setNoOperatorsError(true);
       setStep('no_operators');
     }
@@ -416,63 +412,78 @@ export default function BuyerShop() {
 
   const startTrade = async () => {
     if (!selectedOperator || !activeInvoice) return;
-    if (selectedOperator.requisites?.length > 1 && !selectedRequisite) {
-      toast.error("Выберите способ оплаты");
+    
+    // payment_methods come from API (e.g., ['card', 'sbp'])
+    const paymentMethods = selectedOperator.payment_methods || [];
+    if (paymentMethods.length === 0) {
+      toast.error("Нет доступных способов оплаты у этого оператора");
       return;
     }
-
-    const requisiteToUse = selectedRequisite || selectedOperator.requisites?.[0];
-    if (!requisiteToUse) {
-      toast.error("Нет доступных реквизитов");
-      return;
-    }
+    
+    // Use selected requisite type or first available payment method
+    const paymentMethod = selectedRequisite?.type || selectedRequisite?.payment_method || paymentMethods[0];
 
     setCreating(true);
     try {
-      const invRes = await axios.get(`${API}/shop/pay/${activeInvoice.invoice_id}`);
-      const inv = invRes.data.order;
+      // Use white-label API: select-operator endpoint
+      const res = await axios.post(
+        `${API}/v1/invoice/${activeInvoice.invoice_id}/select-operator`,
+        {
+          offer_id: selectedOperator.offer_id,
+          payment_method: paymentMethod
+        },
+        { headers: { 'X-Api-Key': apiKey } }
+      );
 
-      const clientAmountRub = activeInvoice.client_amount_rub || depositAmount;
-      const clientPaysRub = Math.round(inv.amount_usdt * selectedOperator.price_rub * 100) / 100;
-
-      const res = await axios.post(`${API}/trades`, {
-        amount_usdt: inv.amount_usdt,
-        price_rub: selectedOperator.price_rub,
-        trader_id: selectedOperator.trader_id,
-        payment_link_id: activeInvoice.invoice_id,
-        offer_id: selectedOperator.offer_id,
-        requisite_ids: [requisiteToUse.id],
-        buyer_type: "client",
-        merchant_id: merchantId || null,
-        client_amount_rub: clientAmountRub,
-        client_pays_rub: clientPaysRub,
-        merchant_receives_rub: activeInvoice.merchant_receives_rub,
-        merchant_receives_usdt: activeInvoice.merchant_receives_rub ? activeInvoice.merchant_receives_rub / selectedOperator.price_rub : null
-      });
-
-      setSavedRequisite(requisiteToUse);
-
-      const tradeRes = await axios.get(`${API}/trades/${res.data.id}/public`);
-      setTrade(tradeRes.data);
-      if (!tradeRes.data.requisites?.length) {
-        setTrade({ ...tradeRes.data, requisites: [requisiteToUse] });
+      if (res.data.status !== 'success') {
+        throw new Error(res.data.message || 'Ошибка выбора оператора');
       }
 
-      await axios.patch(`${API}/v1/invoice/${activeInvoice.invoice_id}/link-trade`, { trade_id: res.data.id }).catch(() => { });
+      // Map response to trade format (matching PaymentCard expected format)
+      const requisites = res.data.payment.requisites;
+      const mappedRequisite = {
+        type: requisites.type,
+        data: {
+          card_number: requisites.type === 'card' ? requisites.number : null,
+          phone: requisites.type === 'sbp' ? requisites.number : null,
+          bank_name: requisites.bank,
+          card_holder: requisites.holder
+        }
+      };
+      
+      const tradeData = {
+        id: res.data.trade_id,
+        status: 'pending',
+        amount_rub: res.data.payment.amount,
+        expires_at: res.data.expires_at,
+        requisites: [mappedRequisite],
+        operator: res.data.operator
+      };
+
+      setSavedRequisite(mappedRequisite);
+      setTrade(tradeData);
       setShowOperatorDialog(false);
       setStep("payment");
     } catch (e) {
-      toast.error(e.response?.data?.detail || "Ошибка создания сделки");
+      const errMsg = e.response?.data?.detail?.message || e.response?.data?.detail || e.message || "Ошибка создания сделки";
+      toast.error(errMsg);
     } finally { setCreating(false); }
   };
 
   const markPaid = async () => {
     try {
-      await axios.post(`${API}/trades/${trade.id}/mark-paid`);
+      // Use white-label API: mark-paid endpoint
+      await axios.post(
+        `${API}/v1/invoice/${activeInvoice.invoice_id}/mark-paid`,
+        {},
+        { headers: { 'X-Api-Key': apiKey } }
+      );
       setTrade({ ...trade, status: "paid", paid_at: new Date().toISOString() });
       setStep("waiting");
       toast.success("Ожидайте подтверждения оператора");
-    } catch (e) { toast.error("Ошибка"); }
+    } catch (e) { 
+      toast.error(e.response?.data?.detail?.message || "Ошибка"); 
+    }
   };
 
   const openDispute = async () => {
