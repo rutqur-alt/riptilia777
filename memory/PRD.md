@@ -235,3 +235,31 @@ P2P криптовалютная биржа с интегрированным м
   - `/app/backend/tests/test_offers_bug_fix.py`
   - `/app/tests/e2e/trader-offers.spec.ts`
 
+## Баг-фикс: Несоответствие счётчика уведомлений (03.03.2026)
+
+### Проблема:
+Счётчик уведомлений в шапке сайта (из `/api/notifications/sidebar-badges`) показывал число, отличное от реального количества уведомлений в списке и на дашборде (из `/api/event-notifications/unread-count`).
+
+### Причина:
+Endpoint `/api/notifications/sidebar-badges` использовал `max(event_notifications_count, old_notifications_count)` вместо суммы. Это давало неверный результат, когда пользователь имел уведомления в обеих коллекциях.
+
+### Исправление:
+- ✅ **Backend** (`/app/backend/routes/notifications.py`, строки 281-301):
+  - Изменено с `max()` на `event_notifications_count + old_notifications_count`
+  - Теперь `total` всегда равен сумме непрочитанных из обеих систем
+  - Логика идентична `/api/event-notifications/unread-count`
+
+### Тестирование:
+- Backend: 11/11 pytest тестов ✅ (100%)
+- Тест-файл: `/app/backend/tests/test_notification_consistency.py`
+- Проверено:
+  1. Консистентность `sidebar-badges.total` == `unread-count.count`
+  2. Суммирование из обеих коллекций (event_notifications + notifications)
+  3. "Mark all as read" очищает обе системы
+
+## Следующие задачи (Backlog)
+- P1: Реализовать вебхук `expired` (автоматическое истечение сделок)
+- P2: Deprecate старый merchant_api.py после миграции
+- P3: Стандартизация структуры директорий backend (`/api` vs `/routes`)
+- P3: Миграция данных из `notifications` в `event_notifications`
+
