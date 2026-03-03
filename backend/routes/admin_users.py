@@ -14,6 +14,143 @@ from core.database import db
 router = APIRouter(tags=["admin_users"])
 
 
+# ==================== GET ALL USERS ====================
+
+@router.get("/super-admin/users")
+async def get_all_users(user_type: str = "all", limit: int = 200, user: dict = Depends(require_admin_level(30))):
+    """Get all users for admin panel"""
+    users = []
+    
+    if user_type in ["all", "traders"]:
+        traders = await db.traders.find(
+            {}, 
+            {"_id": 0, "password_hash": 0, "password": 0}
+        ).limit(limit).to_list(limit)
+        for t in traders:
+            t["user_type"] = "trader"
+        users.extend(traders)
+    
+    if user_type in ["all", "merchants"]:
+        merchants = await db.merchants.find(
+            {},
+            {"_id": 0, "password_hash": 0, "password": 0}
+        ).limit(limit).to_list(limit)
+        for m in merchants:
+            m["user_type"] = "merchant"
+        users.extend(merchants)
+    
+    if user_type in ["all", "staff"]:
+        staff = await db.admins.find(
+            {"login": {"$ne": "admin"}},  # Exclude main admin
+            {"_id": 0, "password_hash": 0, "password": 0}
+        ).limit(limit).to_list(limit)
+        for s in staff:
+            s["user_type"] = "staff"
+            s["balance_usdt"] = 0  # Staff don't have balance
+        users.extend(staff)
+    
+    return users
+
+
+# ==================== BAN/UNBAN USER ====================
+
+@router.post("/super-admin/users/{user_id}/ban")
+async def ban_unban_user(user_id: str, data: dict, user: dict = Depends(require_admin_level(50))):
+    """Ban or unban a user"""
+    banned = data.get("banned", True)
+    reason = data.get("reason", "")
+    now = datetime.now(timezone.utc).isoformat()
+    
+    update_data = {
+        "is_blocked": banned,
+        "blocked_reason": reason if banned else None,
+        "blocked_at": now if banned else None,
+        "blocked_by": user["id"] if banned else None
+    }
+    
+    # Try traders
+    result = await db.traders.update_one({"id": user_id}, {"$set": update_data})
+    if result.modified_count:
+        action = "ban_user" if banned else "unban_user"
+        await log_admin_action(user["id"], action, "trader", user_id, {"reason": reason})
+        return {"status": "success", "banned": banned}
+    
+    # Try merchants
+    result = await db.merchants.update_one({"id": user_id}, {"$set": update_data})
+    if result.modified_count:
+        action = "ban_user" if banned else "unban_user"
+        await log_admin_action(user["id"], action, "merchant", user_id, {"reason": reason})
+        return {"status": "success", "banned": banned}
+    
+    raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+
+# ==================== ADJUST BALANCE ====================
+
+@router.post("/super-admin/users/{user_id}/balance")
+async def adjust_user_balance(user_id: str, data: dict, user: dict = Depends(require_admin_level(80))):
+    """Adjust user balance (add or subtract)"""
+    amount = data.get("amount", 0)
+    reason = data.get("reason", "Admin adjustment")
+    now = datetime.now(timezone.utc).isoformat()
+    
+    if amount == 0:
+        raise HTTPException(status_code=400, detail="Сумма не может быть 0")
+    
+    # Try traders
+    trader = await db.traders.find_one({"id": user_id})
+    if trader:
+        new_balance = trader.get("balance_usdt", 0) + amount
+        if new_balance < 0:
+            raise HTTPException(status_code=400, detail="Недостаточно средств")
+        
+        await db.traders.update_one(
+            {"id": user_id},
+            {"$set": {"balance_usdt": new_balance}}
+        )
+        
+        # Log transaction
+        await db.balance_adjustments.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "user_type": "trader",
+            "amount": amount,
+            "reason": reason,
+            "admin_id": user["id"],
+            "created_at": now
+        })
+        
+        await log_admin_action(user["id"], "adjust_balance", "trader", user_id, {"amount": amount, "reason": reason})
+        return {"status": "success", "new_balance": new_balance}
+    
+    # Try merchants
+    merchant = await db.merchants.find_one({"id": user_id})
+    if merchant:
+        new_balance = merchant.get("balance_usdt", 0) + amount
+        if new_balance < 0:
+            raise HTTPException(status_code=400, detail="Недостаточно средств")
+        
+        await db.merchants.update_one(
+            {"id": user_id},
+            {"$set": {"balance_usdt": new_balance}}
+        )
+        
+        await db.balance_adjustments.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "user_type": "merchant",
+            "amount": amount,
+            "reason": reason,
+            "admin_id": user["id"],
+            "created_at": now
+        })
+        
+        await log_admin_action(user["id"], "adjust_balance", "merchant", user_id, {"amount": amount, "reason": reason})
+        return {"status": "success", "new_balance": new_balance}
+    
+    raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+
 # ==================== MODELS ====================
 
 class PasswordReset(BaseModel):
