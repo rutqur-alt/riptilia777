@@ -99,6 +99,7 @@ class TradeCreate(BaseModel):
     buyer_id: Optional[str] = None
     buyer_type: Optional[str] = None
     client_session_id: Optional[str] = None
+    merchant_id: Optional[str] = None
 
 class TradeResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")

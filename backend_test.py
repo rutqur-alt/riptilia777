@@ -1,24 +1,229 @@
 #!/usr/bin/env python3
+"""
+Backend API Testing for Russian Merchant Shop Integration
+Tests merchant API key connection, payment creation, and transaction history
+"""
 
 import requests
 import sys
 import json
 from datetime import datetime
+from typing import Dict, Any
 
-class ReptiloidAPITester:
+class RussianMerchantShopTester:
     def __init__(self):
         self.base_url = "https://preview-stage-15.preview.emergentagent.com"
         self.api_url = f"{self.base_url}/api"
-        self.admin_token = None
-        self.trader_token = None
+        self.api_key = "merch_sk_8581cf8f655c4f858511e26d1dc3f3f3"
+        self.merchant_name = "Мерчант Казино"
         self.tests_run = 0
         self.tests_passed = 0
         self.failed_tests = []
+        self.test_results = []
         
     def log(self, message, level="INFO"):
         timestamp = datetime.now().strftime("%H:%M:%S")
         print(f"[{timestamp}] [{level}] {message}")
+
+    def log_test(self, name: str, success: bool, details: Dict[str, Any] = None):
+        """Log test result"""
+        self.tests_run += 1
+        if success:
+            self.tests_passed += 1
+            self.log(f"✅ {name}", "PASS")
+        else:
+            self.log(f"❌ {name}", "FAIL")
+            self.failed_tests.append(name)
         
+        self.test_results.append({
+            "test_name": name,
+            "success": success,
+            "details": details or {},
+            "timestamp": datetime.now().isoformat()
+        })
+
+    def test_merchant_info(self):
+        """Test merchant info retrieval by API key"""
+        self.log("Testing merchant info retrieval...")
+        try:
+            url = f"{self.api_url}/shop/merchant-info/{self.api_key}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                expected_fields = ["merchant_id", "company_name", "balance_usdt"]
+                
+                if all(field in data for field in expected_fields):
+                    merchant_id = data.get("merchant_id")
+                    balance = data.get("balance_usdt", 0)
+                    company_name = data.get("company_name", "")
+                    
+                    self.log_test(
+                        f"Merchant Info Retrieved - ID: {merchant_id}, Balance: {balance} USDT, Name: {company_name}",
+                        True,
+                        {"merchant_id": merchant_id, "balance_usdt": balance, "company_name": company_name}
+                    )
+                    return data
+                else:
+                    self.log_test("Merchant Info - Missing required fields", False, {"response": data})
+                    return None
+            else:
+                self.log_test(f"Merchant Info - HTTP {response.status_code}", False, {"status_code": response.status_code})
+                return None
+        except Exception as e:
+            self.log_test(f"Merchant Info - Error: {str(e)}", False, {"error": str(e)})
+            return None
+
+    def test_quick_payment_creation(self, amount_rub=5000):
+        """Test quick payment creation"""
+        self.log(f"Testing payment creation for {amount_rub} RUB...")
+        try:
+            url = f"{self.api_url}/shop/quick-payment"
+            payload = {
+                "amount_rub": amount_rub,
+                "description": f"Тестовое пополнение на {amount_rub} руб.",
+                "merchant_api_key": self.api_key
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success" and data.get("invoice_id"):
+                    invoice_id = data.get("invoice_id")
+                    payment_url = data.get("payment_url", "")
+                    
+                    self.log_test(
+                        f"Payment Created - Invoice ID: {invoice_id}",
+                        True,
+                        {"invoice_id": invoice_id, "amount_rub": amount_rub, "payment_url": payment_url}
+                    )
+                    return data
+                else:
+                    self.log_test("Payment Creation - Invalid response format", False, {"response": data})
+                    return None
+            else:
+                self.log_test(f"Payment Creation - HTTP {response.status_code}", False, {"status_code": response.status_code})
+                return None
+        except Exception as e:
+            self.log_test(f"Payment Creation - Error: {str(e)}", False, {"error": str(e)})
+            return None
+
+    def test_operators_loading(self, invoice_id: str, amount_rub=5000):
+        """Test operators loading for payment"""
+        self.log(f"Testing operators loading for invoice {invoice_id}...")
+        try:
+            url = f"{self.api_url}/public/operators?amount_rub={amount_rub}"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                operators = data.get("operators", [])
+                exchange_rate = data.get("exchange_rate", 0)
+                
+                if operators:
+                    operator_count = len(operators)
+                    first_operator = operators[0]
+                    trader_id = first_operator.get("trader_id")
+                    price_rub = first_operator.get("price_rub", 0)
+                    requisites_count = len(first_operator.get("requisites", []))
+                    
+                    self.log_test(
+                        f"Operators Loaded - {operator_count} operators, Exchange Rate: {exchange_rate}",
+                        True,
+                        {
+                            "operator_count": operator_count,
+                            "exchange_rate": exchange_rate,
+                            "first_operator_id": trader_id,
+                            "price_rub": price_rub,
+                            "requisites_count": requisites_count
+                        }
+                    )
+                    return data
+                else:
+                    self.log_test("Operators Loading - No operators available", False, {"response": data})
+                    return None
+            else:
+                self.log_test(f"Operators Loading - HTTP {response.status_code}", False, {"status_code": response.status_code})
+                return None
+        except Exception as e:
+            self.log_test(f"Operators Loading - Error: {str(e)}", False, {"error": str(e)})
+            return None
+
+    def test_transaction_history(self):
+        """Test transaction history loading"""
+        self.log("Testing transaction history...")
+        try:
+            # Get merchant info first
+            merchant_info = self.test_merchant_info()
+            if not merchant_info:
+                self.log_test("Transaction History - Merchant info required", False)
+                return None
+            
+            merchant_id = merchant_info.get("merchant_id")
+            
+            url = f"{self.api_url}/v1/invoice/transactions"
+            headers = {"X-Api-Key": self.api_key}
+            params = {"merchant_id": merchant_id, "limit": 20}
+            
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("status") == "success":
+                    transactions = data.get("data", {}).get("transactions", [])
+                    total = data.get("data", {}).get("total", 0)
+                    
+                    self.log_test(
+                        f"Transaction History Loaded - {len(transactions)} transactions, Total: {total}",
+                        True,
+                        {"transactions_count": len(transactions), "total": total}
+                    )
+                    return data
+                else:
+                    self.log_test("Transaction History - Invalid response status", False, {"response": data})
+                    return None
+            else:
+                self.log_test(f"Transaction History - HTTP {response.status_code}", False, {"status_code": response.status_code})
+                return None
+        except Exception as e:
+            self.log_test(f"Transaction History - Error: {str(e)}", False, {"error": str(e)})
+            return None
+
+    def run_merchant_shop_tests(self):
+        """Run merchant shop specific tests"""
+        self.log("🚀 Starting Russian Merchant Shop API testing...")
+        
+        # 1. Test merchant connection
+        self.log("=" * 60)
+        merchant_info = self.test_merchant_info()
+        
+        # 2. Test payment creation
+        self.log("=" * 60)
+        payment_data = self.test_quick_payment_creation(7500)
+        
+        # 3. Test operators loading
+        if payment_data:
+            self.log("=" * 60)
+            invoice_id = payment_data.get("invoice_id")
+            operators_data = self.test_operators_loading(invoice_id, 7500)
+        
+        # 4. Test transaction history
+        self.log("=" * 60)
+        self.test_transaction_history()
+        
+        # Print summary
+        self.log("=" * 60)
+        self.log(f"📊 Test Summary:")
+        self.log(f"Tests Run: {self.tests_run}")
+        self.log(f"Tests Passed: {self.tests_passed}")
+        self.log(f"Success Rate: {(self.tests_passed/self.tests_run*100):.1f}%")
+        
+        if self.failed_tests:
+            self.log(f"Failed tests: {', '.join(self.failed_tests)}", "ERROR")
+        
+        return self.tests_passed == self.tests_run
+
     def run_test(self, name, method, endpoint, expected_status, data=None, headers=None, description=None):
         """Run a single API test"""
         url = f"{self.api_url}/{endpoint}" if not endpoint.startswith('http') else endpoint
@@ -57,7 +262,6 @@ class ReptiloidAPITester:
                 except:
                     self.log(f"   Response: {response.text[:200]}")
                 return False, {}
-
         except requests.exceptions.RequestException as e:
             error_msg = f"Request failed: {str(e)}"
             self.log(f"❌ {name} - {error_msg}")
@@ -450,7 +654,7 @@ class ReptiloidAPITester:
         return self.tests_passed, self.tests_run, self.failed_tests
 
 def main():
-    tester = ReptiloidAPITester()
+    tester = RussianMerchantShopTester()
     passed, total, failed = tester.run_all_tests()
     
     # Return appropriate exit code

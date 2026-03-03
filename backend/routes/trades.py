@@ -117,7 +117,7 @@ async def create_trade(data: TradeCreate):
     trader_commission = max(trader_commission, settings["minimum_commission"])
     
     merchant_commission = 0.0
-    merchant_id = None
+    merchant_id = data.merchant_id  # Use merchant_id from request if provided
     
     if data.payment_link_id:
         link = await db.payment_links.find_one({"id": data.payment_link_id}, {"_id": 0})

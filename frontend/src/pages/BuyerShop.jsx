@@ -230,7 +230,9 @@ export default function BuyerShop() {
         params: { merchant_id: merchantId, limit: 20 },
         headers: { 'X-Api-Key': apiKey }
       });
-      setTransactions(res.data.transactions || res.data || []);
+      // API returns {status, data: {transactions: [...]}}
+      const txs = res.data?.data?.transactions || res.data?.transactions || res.data || [];
+      setTransactions(txs);
     } catch (e) { }
     finally { setLoadingHistory(false); }
   };
@@ -244,10 +246,11 @@ export default function BuyerShop() {
 
     setTopUpLoading(true);
     try {
-      // Use the quick-payment endpoint for simplicity
+      // Use the quick-payment endpoint with merchant API key
       const res = await axios.post(`${API}/shop/quick-payment`, {
         amount_rub: numAmount,
-        description: `Пополнение на ${numAmount.toLocaleString()} руб.`
+        description: `Пополнение на ${numAmount.toLocaleString()} руб.`,
+        merchant_api_key: apiKey
       });
 
       if (res.data.invoice_id) {
@@ -300,7 +303,8 @@ export default function BuyerShop() {
 
   const openOperatorDialog = (operator) => {
     setSelectedOperator(operator);
-    if (operator.requisites?.length === 1) {
+    // Auto-select first requisite if available
+    if (operator.requisites?.length > 0) {
       setSelectedRequisite(operator.requisites[0]);
     } else {
       setSelectedRequisite(null);
@@ -334,7 +338,8 @@ export default function BuyerShop() {
         payment_link_id: activeInvoice.invoice_id,
         offer_id: selectedOperator.offer_id,
         requisite_ids: [requisiteToUse.id],
-        buyer_type: "client"
+        buyer_type: "client",
+        merchant_id: merchantId || null
       });
 
       setSavedRequisite(requisiteToUse);
@@ -485,8 +490,13 @@ export default function BuyerShop() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowHistory(!showHistory)}
+                onClick={() => {
+                  setShowHistory(!showHistory);
+                  if (!showHistory) loadTransactions();
+                }}
                 className="text-[#71717A] hover:text-white"
+                data-testid="history-btn"
+                title="История транзакций"
               >
                 <History className="w-4 h-4" />
               </Button>
@@ -496,6 +506,8 @@ export default function BuyerShop() {
               size="sm"
               onClick={() => setShowSettings(!showSettings)}
               className="text-[#71717A] hover:text-white"
+              data-testid="settings-btn"
+              title="Настройки"
             >
               <Settings className="w-4 h-4" />
             </Button>
@@ -1186,8 +1198,9 @@ export default function BuyerShop() {
 
             <Button
               onClick={startTrade}
-              disabled={creating || !rulesAccepted || (selectedOperator?.requisites?.length > 1 && !selectedRequisite)}
+              disabled={creating || !rulesAccepted}
               className="w-full h-12 bg-[#10B981] hover:bg-[#059669] text-white rounded-xl"
+              data-testid="proceed-payment-btn"
             >
               {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Перейти к оплате'}
             </Button>

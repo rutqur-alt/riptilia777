@@ -595,13 +595,25 @@ async def get_merchant_transactions(
         else:
             query["status"] = status
     
+    # Get from merchant_invoices
     invoices = await db.merchant_invoices.find(query, {"_id": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
-    total = await db.merchant_invoices.count_documents(query)
+    
+    # Also get from trades with this merchant_id
+    trades = await db.trades.find(query, {"_id": 0}).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
+    
+    # Combine and sort
+    all_transactions = invoices + trades
+    all_transactions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    all_transactions = all_transactions[:limit]
+    
+    total_invoices = await db.merchant_invoices.count_documents(query)
+    total_trades = await db.trades.count_documents(query)
+    total = total_invoices + total_trades
     
     return {
         "status": "success",
         "data": {
-            "transactions": invoices,
+            "transactions": all_transactions,
             "total": total,
             "limit": limit,
             "offset": offset
