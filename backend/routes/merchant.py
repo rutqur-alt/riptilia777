@@ -63,8 +63,9 @@ async def get_merchant_dashboard(user: dict = Depends(get_current_user)):
             "total_trades": len(trades),
             "completed_trades": len(completed_trades),
             "active_trades": len(active_trades),
-            "volume_usdt": round(sum(t.get("amount", 0) for t in completed_trades), 2),
-            "volume_rub": round(sum(t.get("total_rub", 0) for t in completed_trades), 2),
+            "volume_usdt": round(sum(t.get("merchant_receives_usdt", 0) or t.get("amount", 0) for t in completed_trades), 2),
+            # Use client_amount_rub (сумма пополнения клиента)
+            "volume_rub": round(sum(t.get("client_amount_rub") or t.get("total_rub", 0) for t in completed_trades), 2),
         },
         "recent_payments": payment_links,
         "pending_withdrawals": pending_withdrawals,
@@ -456,9 +457,10 @@ async def get_merchant_analytics(user: dict = Depends(get_current_user)):
         {"_id": 0}
     ).sort("created_at", -1).to_list(1000)
     
-    total_deposits_usdt = sum(t.get("amount_usdt", 0) for t in deposit_trades)
-    total_deposits_rub = sum(t.get("amount_rub", 0) for t in deposit_trades)
-    total_deposit_commission = sum(t.get("merchant_commission", 0) for t in deposit_trades)
+    # Use client_amount_rub (сумма пополнения клиента), not amount_rub (сумма оплаты)
+    total_deposits_usdt = sum(t.get("merchant_receives_usdt", 0) or t.get("amount_usdt", 0) for t in deposit_trades)
+    total_deposits_rub = sum(t.get("client_amount_rub") or t.get("amount_rub", 0) for t in deposit_trades)
+    total_deposit_commission = sum(t.get("platform_fee_rub", 0) or t.get("merchant_commission", 0) for t in deposit_trades)
     deposits_count = len(deposit_trades)
     
     active_trades = await db.trades.count_documents(
@@ -516,8 +518,9 @@ async def get_merchant_analytics(user: dict = Depends(get_current_user)):
         recent.append({
             "id": t.get("id"),
             "type": "deposit",
-            "amount_usdt": t.get("amount_usdt", 0),
-            "amount_rub": t.get("amount_rub", 0),
+            "amount_usdt": t.get("merchant_receives_usdt", 0) or t.get("amount_usdt", 0),
+            # Use client_amount_rub (сумма пополнения клиента)
+            "amount_rub": t.get("client_amount_rub") or t.get("amount_rub", 0),
             "commission": t.get("merchant_commission", 0),
             "status": t.get("status"),
             "created_at": t.get("created_at"),

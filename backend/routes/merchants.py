@@ -53,17 +53,23 @@ async def get_merchant_stats(user: dict = Depends(require_role(["merchant"]))):
     """Get merchant statistics"""
     merchant_id = user["id"]
     
-    # Get all payment links
-    links = await db.payment_links.find({"merchant_id": merchant_id}, {"_id": 0}).to_list(1000)
+    # Get stats from trades (not payment_links)
+    trades = await db.trades.find(
+        {"merchant_id": merchant_id},
+        {"_id": 0, "status": 1, "client_amount_rub": 1, "amount_rub": 1, "amount_usdt": 1, "merchant_receives_usdt": 1}
+    ).to_list(1000)
     
-    total_payments = len(links)
-    completed_payments = len([link for link in links if link.get("trade_status") == "completed"])
+    total_payments = len(trades)
+    completed_trades = [t for t in trades if t.get("status") == "completed"]
+    completed_payments = len(completed_trades)
     
-    total_volume_rub = sum([link.get("amount_rub", 0) for link in links if link.get("trade_status") == "completed"])
-    total_volume_usdt = sum([link.get("amount_usdt", 0) for link in links if link.get("trade_status") == "completed"])
+    # Use client_amount_rub (сумма пополнения клиента), not amount_rub (сумма оплаты)
+    total_volume_rub = sum([t.get("client_amount_rub") or t.get("amount_rub", 0) for t in completed_trades])
+    total_volume_usdt = sum([t.get("amount_usdt", 0) for t in completed_trades])
     
     merchant = await db.merchants.find_one({"id": merchant_id}, {"_id": 0})
-    total_commission = merchant.get("total_commission_paid", 0)
+    # Calculate total commission from trades
+    total_commission = sum([t.get("merchant_receives_usdt", 0) for t in completed_trades])
     
     avg_payment = total_volume_rub / completed_payments if completed_payments > 0 else 0
     success_rate = (completed_payments / total_payments * 100) if total_payments > 0 else 100
@@ -86,19 +92,22 @@ async def get_merchant_transactions(user: dict = Depends(require_role(["merchant
     merchant_id = user["id"]
     transactions = []
     
-    # Get completed payment links as income
-    links = await db.payment_links.find(
-        {"merchant_id": merchant_id, "trade_status": "completed"},
+    # Get completed trades as income - use client_amount_rub
+    trades = await db.trades.find(
+        {"merchant_id": merchant_id, "status": "completed"},
         {"_id": 0}
     ).to_list(500)
     
-    for link in links:
+    for trade in trades:
+        # Use client_amount_rub (сумма пополнения клиента)
+        client_amount = trade.get("client_amount_rub") or trade.get("amount_rub", 0)
         transactions.append({
-            "id": f"payment_{link['id']}",
+            "id": f"payment_{trade['id']}",
             "type": "payment_received",
-            "amount": link.get("amount_usdt", 0),
-            "description": f"Платёж #{link['id'][:8]}",
-            "created_at": link.get("created_at", "")
+            "amount": trade.get("merchant_receives_usdt", 0),  # Что получил мерчант
+            "amount_rub": client_amount,  # Сумма пополнения клиента (для отображения)
+            "description": f"Пополнение #{trade['id'][-8:]}",
+            "created_at": trade.get("completed_at") or trade.get("created_at", "")
         })
     
     # Get withdrawals as expenses
