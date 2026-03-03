@@ -1,75 +1,79 @@
 <analysis>**original_problem_statement:**
-The user's initial request, in Russian, was разверни проект (deploy the project), providing a  archive of a P2P cryptocurrency exchange platform named Reptiloid.
+The initial request was to deploy a P2P cryptocurrency exchange platform named Reptiloid. The project evolved to include fixing bugs, implementing a secure merchant test shop, and overhauling payment logic.
 
-Over the course of the session, the user provided the following product requirements to be implemented:
-1.  **Full Project Deployment:** Set up and run the provided full-stack application (React frontend, FastAPI backend).
-2.  **Fix Admin Panel:** Resolve a bug in the Управление (Management) section where the user list was failing to load.
-3.  **Implement Merchant Test Shop:** Fully develop the  page to serve as a comprehensive test environment for merchant API integration. This includes:
-    *   Balance top-ups.
-    *   Transaction history.
-    *   Functionality for opening disputes (mentioned but not implemented).
-4.  **Implement Production-like API Security:** The merchant connection must be secured using an API Key, API Secret, and a Merchant ID, with all requests signed using HMAC for security.
-5.  **Correct Payment & Commission Logic:**
-    *   A customer on a merchant's website requests a specific amount (e.g., 1000 RUB). This is the .
-    *   The customer pays a higher amount to a P2P trader, which includes the trader's markup.
-    *   The customer's balance on the merchant's website must be credited with the exact requested amount (1000 RUB).
-    *   The merchant's balance on the Reptiloid platform is credited with the requested amount minus a platform commission () which is unique to each merchant (e.g., 1000 RUB - 10% = 900 RUB).
-6.  **UI/UX Fixes:**
-    *   The balance on the merchant test shop () must be displayed in RUB and reflect the end-user's balance, not the merchant's platform balance.
-    *   Transaction history, admin dashboards, and analytics must all display the  (the amount the customer requested), not the total amount paid to the trader.
-7.  **Fix Analytics Dashboard:** Ensure all metrics, including Turnover and Total Commissions Paid, are calculated and displayed correctly.
+The current and final set of user requirements are:
+1.  **Complete Merchant API**: Develop a full-featured, production-ready API for merchants. This includes:
+    *   An endpoint for merchants to fetch a list of available P2P traders/operators ().
+    *   Endpoints for creating invoices, getting payment requisites, and marking invoices as paid by the client.
+    *   Endpoints for managing disputes and allowing the merchant's clients to chat in disputes via the merchant's website ().
+    *   Ensuring the merchant's clients **never** leave the merchant's website to complete a payment. The entire flow must be handled via API.
+2.  **Implement All Webhooks**: The merchant's system must receive server-to-server notifications (webhooks) for all critical payment status changes:
+    *   : Invoice created.
+    *   : Client confirms payment.
+    *   : Trader confirms payment, funds credited.
+    *   : Payment cancelled.
+    *   : Payment expired.
+    *   : Dispute opened.
+3.  **Create Comprehensive API Documentation**: After implementing the API and webhooks, create a detailed API documentation file. This document must include:
+    *   All endpoints with request/response examples.
+    *   Instructions on generating HMAC signatures for security.
+    *   A full description of all webhook events and their data payloads.
+    *   Code examples for integration in PHP, Python, and Node.js.
 
 **User's preferred language**:
 Russian. The next agent MUST respond in Russian.
 
 **what currently exists?**
-A full-stack P2P crypto exchange platform (React/FastAPI) is deployed and running. The initial setup issues have been resolved. The core request, which was to build a complete and correct merchant integration test flow on the  page, is largely complete. This includes a secure HMAC-based API, correct payment logic distinguishing between client-requested amounts and net merchant proceeds, and UI fixes to display balances and history correctly in RUB. The main admin and merchant dashboards now show accurate analytics based on client-requested amounts.
+A full-stack P2P crypto exchange platform (React/FastAPI/MongoDB) is fully deployed and operational. Numerous bugs related to commission calculations, dashboard analytics, and UI displays have been fixed. A major refactoring of the  page was completed, breaking it down into smaller components. The core logic for trader commissions (reserving funds on offer creation and returning them on deletion) has been verified and corrected. The agent has just started implementing the user's latest request for a complete merchant API and webhook system. Some required backend files and functions have been created, but the new endpoints are not yet fully implemented or wired up.
 
 **Last working item**:
-*   **Last item agent was working:** The agent was about to fix an incorrect calculation for the Всего комиссий оплачено (Total commissions paid) metric on the main admin analytics page (). The user pointed out that it showed an erroneous value (e.g., 0.19 USDT) instead of the correct total commission collected by the platform (which should have been ~1300 RUB or its USDT equivalent).
+*   **Last item agent was working:** The agent was in the initial phase of building out the complete merchant API and webhook system. This involved creating a , adding placeholder functions for new API endpoints in , and adding  calls to the trade completion logic in .
 *   **Status:** IN PROGRESS
 *   **Agent Testing Done:** N
-*   **Which testing method agent to use?** both. The fix is in the backend API. The agent should first use  to test the  endpoint to verify the correct JSON response, and then use the screenshot tool on the  page to confirm the UI displays the correct value.
+*   **Which testing method agent to use?** backend testing agent. This is a large feature addition with multiple new API endpoints and critical backend logic changes. The testing agent should be used to create a new, comprehensive test suite covering all merchant API functionality and webhook triggers.
 *   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-*   **Issue 1 (P0):** Incorrect Total commissions paid on the analytics dashboard.
-    *   **Description:** The card Всего комиссий оплачено on the  page displays a small, incorrect USDT value instead of the actual total commissions earned by the platform in RUB (or its correct USDT equivalent).
-    *   **Attempted fixes:** None. The agent identified the problem just before the session ended.
-    *   **Next debug checklist:**
-        1.  Inspect the backend endpoint  in the file .
-        2.  Locate the logic that calculates the total commission. It is likely summing an incorrect field from the  collection.
-        3.  The correct logic should aggregate the  field from all completed trades.
-        4.  Modify  to implement the correct sum.
-        5.  Restart the backend service (backend: stopped
-backend: started).
-        6.  Verify the fix by calling the API with  and taking a screenshot of the  page.
-    *   **Why fix this issue?** This metric is critical for the platform owner to understand revenue.
-    *   **Status:** IN PROGRESS
-    *   **Is recurring issue?** N
-    *   **Should Test frontend/backend/both after fix?** Both.
-    *   **Blocked on other issue:** None.
+*   None. Current work is feature development, not bug fixing.
 
 **In progress Task List**:
-*   None.
+*   **Task 1 (P0): Complete Merchant API & Webhooks Implementation**
+    *   **Where to resume:** Continue building the features outlined in the user's plan.
+        1.  Implement the logic for the 5 missing API endpoints in :
+            *   : Fetch available traders based on amount.
+            *   : Get payment details for an invoice.
+            *   : Allow the merchant to signal that their client has paid.
+            *   : Programmatically open a dispute.
+            *   : Send and receive dispute chat messages.
+        2.  Integrate the  function from  into all relevant trade status transitions (, , ) within  and other relevant files. The  and  webhooks have been partially added but need verification.
+    *   **What will be achieved with this?** A fully functional, production-ready API for merchant integration.
+    *   **Status:** IN PROGRESS
+    *   **Should Test frontend/backend/both after fix?** Backend.
+    *   **Blocked on something:** None.
 
 **Upcoming and Future Tasks**
-*   **Future Task (P1):** Implement and test the dispute resolution () flow. The user mentioned this (...спор открываться должен) as a requirement for the test shop, but it was deferred to focus on the core payment flow. The UI elements may exist but the end-to-end functionality has not been built or verified.
+*   **Upcoming Task (P0): Create Full API Documentation**
+    *   Once Task 1 is complete and tested, create a new documentation file (e.g., ).
+    *   This document must cover all points requested by the user: authentication, HMAC signatures, all endpoints with examples (including the new ones for operators and disputes), all webhook events with payloads, and code examples in PHP, Python, and Node.js.
+*   **Future Task (P1): Deprecate and Remove Old Merchant API**
+    *   The file  represents an old, insecure version of the API.
+    *   After the new  is complete and documented, all its functionality should be migrated (if any is missing) and the old file should be safely removed to avoid confusion and legacy code.
 
 **Completed work in this session**
-*   **Project Deployment:** Successfully deployed the Reptiloid P2P exchange application from a user-provided archive.
-*   **Admin Panel Bug Fix:** Fixed the  page, which was failing to load due to a missing backend endpoint.
-*   **Secure Merchant API Implementation:** Created a new  merchant API () that uses API Key, API Secret, and Merchant ID for authentication, with all requests secured by HMAC signatures.
-*   **Payment Logic Overhaul:** Reworked the entire trade and payment logic to correctly handle the amount requested by a client () versus the amount paid to a trader, and to apply a merchant-specific commission rate.
-*   **Test Shop () Completion:** Updated the test shop to use the new secure API, display the client's balance in RUB, and show correct transaction history based on the client's requested amounts.
-*   **Dashboard & Analytics Fixes:** Corrected the main admin dashboard () and analytics page () to calculate turnover and display recent operations based on the correct .
-*   **Database Correction:** Executed several scripts to backfill and correct data in the  and  collections to align with the new, correct business logic.
+- **Commission Logic Overhaul:** Iteratively fixed the commission calculation logic across all dashboards (admin, merchant) to be , where  is fetched from .
+- **Merchant  Fix:** Corrected a bug where the  field for a merchant was not being incremented upon trade completion. The logic in  was updated to correctly increment this value.
+- **Dispute Chat Fix:** Enabled merchants to send messages in the dispute chat window by adding the necessary input field and backend logic handling.
+- **UI Number Formatting:** Rounded all long decimal numbers (balances, limits, etc.) to two decimal places across the application, primarily in , , and .
+- **Trader Commission Logic Verified:** Confirmed that trader commission (1%) is correctly reserved from their balance upon offer creation and is **not** incorrectly re-deducted from their main balance upon trade completion.
+- **Offer Deletion Logic Verified:** Confirmed that when a trader deletes an offer, the remaining unsold funds and the unused portion of the reserved commission are correctly refunded to their main balance. Added a success notification for this action.
+- ** Refactoring:** Refactored the massive  component (1300+ lines) into a main component and 10 smaller, manageable sub-components located in .
+- **Admin Password Change:** Changed the admin password to  at the user's request.
 
 **Earlier issues found/mentioned but not fixed**
 *   None.
 
 **Known issue recurrence from previous fork**
-*   Not applicable.
+*   None.
 
 **Code Architecture**
 
@@ -78,70 +82,76 @@ backend: started).
 *   **Frontend:** React, Redux, Axios, Tailwind CSS
 *   **Backend:** FastAPI, Pydantic, Motor (async MongoDB)
 *   **Database:** MongoDB
-*   **Authentication:** JWT for platform users and a custom HMAC-based signature for the merchant API.
+*   **Authentication:** JWT for platform users; Custom HMAC-based signature for the merchant API.
 
 **key DB schema**
-*   **users:** 
 *   **trades:** 
+*   **users:** 
+*   **settings:**  (Source for the official RUB/USDT exchange rate)
 
 **changes in tech stack**
-*    was added to the frontend dev dependencies to handle  path aliases.
+*   None.
 
 **All files of reference**
-*   : Contains the logic for the analytics dashboard, including the current bug.
-*   : The secure, production-like merchant API that was built.
-*   : Contains the core business logic for trade completion and fund distribution.
-*   : The UI for the merchant test shop at .
-*   : The UI for the analytics page where the bug is visible.
+*   : File to be expanded with new endpoints.
+*   : Core logic file where webhook triggers and commission updates need to be implemented/verified.
+*   : New helper service for sending webhook notifications.
+*   : Contains logic for trader offer management.
+*   : The refactored test shop.
+*   : Where dispute chat UI was fixed.
 
 **Areas that need refactoring**:
-*   The  component is over 800 lines long and handles all states of the test flow. It should be broken down into smaller, reusable components for better maintainability.
-*   There is a legacy merchant API () and a new one (). The old one contains incorrect logic that was patched multiple times. It should be deprecated and all functionality migrated to  to avoid confusion.
+*   The old merchant API  should be fully deprecated and removed. All merchant functionality should be consolidated into .
+*   The backend has inconsistent directory naming ( vs ). This should be standardized to  for clarity.
 
 **key api endpoints**
-*   : Authenticates a merchant using their API credentials.
-*   : Creates a payment invoice with the correct logic.
-*   : Provides data for the admin analytics page (location of the current bug).
-*   : Simulates a trader confirming payment, which triggers the trade completion logic.
+*   **To be created:**
+    *   
+    *   
+    *   
+    *   
+    *   
+*   **Existing:**
+    *   
+    *    (to set the callback URL)
 
 **Critical Info for New Agent**
-*   The user's primary goal is a perfectly functioning merchant integration. The key business logic is: **Client requests X RUB, pays Y RUB (Y >= X), and gets exactly X RUB on their balance. The merchant receives (X - commission) RUB on the platform.**
-*   The admin dashboard and analytics are expected to be 100% accurate. Any discrepancies, even minor ones, will be noticed by the user.
-*   The project uses Russian for all UI text. Continue all user interactions and code comments (where applicable) in Russian.
+*   The user is highly detail-oriented. The final implementation of the merchant API and its documentation must be flawless and match the agreed-upon plan exactly.
+*   The correct commission calculation is . The  (e.g., 78.15) comes from the  collection in MongoDB, not from the trade's .
+*   The most important principle for the merchant integration is that the merchant's end-customer **never** gets redirected to the Reptiloid platform's domain. The entire experience must be handled via API calls from the merchant's backend and rendered on the merchant's own website.
 
 **documents and test reports created in this job**
-*   : A Python script to seed the database with test data for traders and their offers.
-*   Test reports are located in .
+*   None. A new API documentation file needs to be created as part of the upcoming tasks.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** Requests a fix for the analytics and dashboard after previous changes. (COMPLETED)
-2.  **User:** Points out that the Total commissions paid metric is wrong. (IN PROGRESS)
-3.  **User:** Reports that the merchant's client received the wrong amount (902 instead of 1000). (COMPLETED)
-4.  **User:** Complains about a small discrepancy in the RUB balance display on the test shop. (COMPLETED)
-5.  **User:** Reports that the balance on the test shop is not updating correctly after a new deposit. (COMPLETED)
-6.  **User:** Asks agent to fix the analytics and dashboard, providing a screenshot showing incorrect turnover and transaction amounts. (COMPLETED)
-7.  **User:** Points out that the Total commissions paid amount in analytics is wrong, providing a screenshot. (IN PROGRESS)
-8.  **User:** Reports that the merchant's balance is being credited incorrectly and asks for the logic to be fixed for all merchants based on their individual commission rates. (COMPLETED)
-9.  **User:** States that the amount displayed in the transaction history is wrong (shows amount paid instead of amount requested). (COMPLETED)
-10. **User:** Explains the correct commission logic again: the platform's fee should be deducted from the amount the merchant receives. (COMPLETED)
+1.  **User:** Asks if the merchant integration is real and can be used on a merchant's actual site. (COMPLETED - Agent confirmed it simulates the real API).
+2.  **User:** Requests a list of webhooks and clarification on what is needed for a full merchant integration. (COMPLETED - Agent provided a list).
+3.  **User:** Confirms the plan to add missing webhooks and create full API documentation, emphasizing that the client must stay on the merchant's site. (COMPLETED - Agent created a detailed plan).
+4.  **User:** Adds a requirement for the API to provide a list of operators and allow dispute chat via API, and asks for confirmation. (COMPLETED - Agent updated the plan).
+5.  **User:** Asks if the API is already complete or if it needs changes before documentation. (COMPLETED - Agent identified missing endpoints and webhooks).
+6.  **User:** Confirms the final plan to build the missing API endpoints, add all webhooks, and then write the documentation. (IN PROGRESS - Agent started implementation).
+7.  **User:** да, все правильно, начинай. (Yes, everything is correct, begin.) (IN PROGRESS).
+8.  **User:** да (yes) (COMPLETED).
+9.  **User:** Asks for the plan to add webhooks and create documentation, ensuring the user's client never leaves their site. (COMPLETED).
+10. **User:** Asks what is needed for a real integration and what webhooks are sent. (COMPLETED).
 
 **Project Health Check:**
-*   **Broken:** The Total commissions paid calculation on the  page is incorrect.
-*   **Mocked:** The entire  page is a simulation of a merchant's website. The trader's confirmation of payment is also simulated via API calls, not by a real user interaction.
+*   **Broken:** The merchant API is incomplete and lacks most of the required endpoints and webhooks for a production-ready integration.
+*   **Mocked:** The  page is a simulation of a merchant's website, intended for testing the merchant API.
 
 **3rd Party Integrations**
 *   None.
 
 **Testing status**
-*   **Testing agent used after significant changes:** YES
+*   **Testing agent used after significant changes:** NO (but recommended for the next steps).
 *   **Troubleshoot agent used after agent stuck in loop:** NO
-*   **Test files created:** []
+*   **Test files created:** None.
 *   **Known regressions:** None.
 
 **Credentials to test flow:**
 *   **Super Admin:**  / 
-*   **Merchant (ID: merchant1):**  / . API credentials are in the database.
-*   **Merchant (ID: 222):**  / . API credentials are in the database.
+*   **Merchant (ID: 222):**  / 
+*   **Trader (user1):**  / 
 
 **What agent forgot to execute**
-*   The agent has not yet implemented the fix for the incorrect Total commissions paid calculation on the analytics dashboard, which was the user's last active request.</analysis>
+*   The agent has started but is far from finishing the main task requested by the user: implementing the 5 missing merchant API endpoints and the full suite of webhooks. This is the highest priority for the next session.</analysis>

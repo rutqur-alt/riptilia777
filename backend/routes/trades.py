@@ -22,6 +22,22 @@ async def _ws_broadcast(channel: str, data: dict):
     """Broadcast via WebSocket if available"""
     if ws_manager:
         await ws_manager.broadcast(channel, data)
+
+# Import webhook sender
+async def send_merchant_webhook_on_trade(trade: dict, status: str, extra_data: dict = None):
+    """Send webhook to merchant when trade status changes"""
+    try:
+        from routes.merchant_api import send_merchant_webhook
+        if trade.get("merchant_id") and trade.get("payment_link_id"):
+            await send_merchant_webhook(
+                trade["merchant_id"],
+                trade["payment_link_id"],
+                status,
+                extra_data
+            )
+    except Exception as e:
+        print(f"Webhook error: {e}")
+
 from models.schemas import TradeCreate, TradeResponse, MessageCreate, MessageResponse
 
 router = APIRouter(tags=["trades"])
@@ -288,6 +304,16 @@ async def create_trade(data: TradeCreate):
         "buyer_id": data.buyer_id,
         "status": "pending"
     })
+    
+    # Send webhook to merchant (PENDING - invoice created)
+    if data.payment_link_id and merchant_id:
+        await send_merchant_webhook_on_trade(trade_doc, "pending", {
+            "trade_id": trade_id,
+            "amount_usdt": data.amount_usdt,
+            "client_amount_rub": data.client_amount_rub,
+            "client_pays_rub": data.client_pays_rub or round(amount_rub, 2),
+            "expires_at": trade_doc["expires_at"]
+        })
     
     return trade_doc
 
@@ -618,6 +644,16 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
             "status": "completed"
         })
     
+    # Send webhook to merchant (COMPLETED)
+    await send_merchant_webhook_on_trade(trade, "completed", {
+        "trade_id": trade_id,
+        "amount_usdt": trade["amount_usdt"],
+        "client_amount_rub": trade.get("client_amount_rub"),
+        "merchant_receives_rub": trade.get("merchant_receives_rub"),
+        "merchant_receives_usdt": trade.get("merchant_receives_usdt"),
+        "completed_at": now
+    })
+    
     return {"status": "completed"}
 
 
@@ -664,6 +700,12 @@ async def mark_trade_paid(trade_id: str):
         )
     except Exception:
         pass
+    
+    # Send webhook to merchant (PAID)
+    await send_merchant_webhook_on_trade(trade, "paid", {
+        "trade_id": trade_id,
+        "paid_at": now
+    })
     
     return {"status": "paid"}
 
@@ -720,6 +762,13 @@ async def cancel_trade(trade_id: str, user: dict = Depends(require_role(["trader
     # Broadcast via WebSocket
     await _ws_broadcast(f"trade_{trade_id}", {"type": "message", **{k: v for k, v in system_msg.items() if k != "_id"}})
     await _ws_broadcast(f"trade_{trade_id}", {"type": "status_update", "status": "cancelled", "trade_id": trade_id})
+    
+    # Send webhook to merchant (CANCELLED)
+    await send_merchant_webhook_on_trade(trade, "cancelled", {
+        "trade_id": trade_id,
+        "reason": "Клиент не оплатил в течение 30 минут",
+        "cancelled_at": now.isoformat()
+    })
     
     return {"status": "cancelled"}
 
@@ -1273,6 +1322,14 @@ async def open_dispute(trade_id: str, reason: str = "", user: dict = Depends(get
     except Exception:
         pass
     
+    # Send webhook to merchant (DISPUTED)
+    await send_merchant_webhook_on_trade(trade, "disputed", {
+        "trade_id": trade_id,
+        "reason": reason or "Не указана",
+        "disputed_at": datetime.now(timezone.utc).isoformat(),
+        "disputed_by": opener
+    })
+    
     return {"status": "disputed"}
 
 
@@ -1323,6 +1380,14 @@ async def open_dispute_public(trade_id: str, reason: str = ""):
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.trade_messages.insert_one(system_msg)
+    
+    # Send webhook to merchant (DISPUTED)
+    await send_merchant_webhook_on_trade(trade, "disputed", {
+        "trade_id": trade_id,
+        "reason": reason or "Не указана",
+        "disputed_at": datetime.now(timezone.utc).isoformat(),
+        "disputed_by": "клиентом"
+    })
     
     return {"status": "disputed"}
 

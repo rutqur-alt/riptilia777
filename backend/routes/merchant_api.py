@@ -397,3 +397,447 @@ async def get_transactions(data: TransactionsRequest):
         "transactions": trades,
         "total": total
     }
+
+
+
+# ==================== OPERATORS ====================
+
+class OperatorsRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    merchant_id: str
+    amount_rub: float
+
+
+@router.post("/operators")
+async def get_operators(data: OperatorsRequest):
+    """
+    Получить список доступных операторов для указанной суммы.
+    Возвращает операторов с их курсами, лимитами и способами оплаты.
+    """
+    merchant, error = await verify_merchant(data.api_key, data.api_secret, data.merchant_id)
+    if error:
+        raise HTTPException(status_code=401, detail={"success": False, "error": error})
+    
+    # Get base rate
+    rate_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
+    
+    # Calculate required USDT
+    required_usdt = data.amount_rub / base_rate
+    
+    # Get active offers with enough balance
+    offers = await db.offers.find({
+        "status": "active",
+        "available_usdt": {"$gte": required_usdt * 0.9}  # 90% tolerance
+    }, {"_id": 0}).to_list(100)
+    
+    operators = []
+    for offer in offers:
+        # Get trader info
+        trader = await db.traders.find_one(
+            {"id": offer["trader_id"]},
+            {"_id": 0, "login": 1, "nickname": 1, "success_rate": 1, "trades_count": 1, "is_online": 1}
+        )
+        if not trader:
+            continue
+        
+        # Calculate amount to pay
+        to_pay_rub = round(required_usdt * offer["price_rub"], 2)
+        commission_percent = round((offer["price_rub"] - base_rate) / base_rate * 100, 2)
+        
+        # Get requisites
+        requisites = []
+        for req_id in offer.get("requisite_ids", []):
+            req = await db.requisites.find_one({"id": req_id}, {"_id": 0, "id": 1, "type": 1, "data": 1})
+            if req:
+                requisites.append({
+                    "id": req["id"],
+                    "type": req["type"],
+                    "bank_name": req.get("data", {}).get("bank_name", ""),
+                })
+        
+        operators.append({
+            "operator_id": offer["id"],
+            "trader_id": offer["trader_id"],
+            "nickname": trader.get("nickname") or trader.get("login"),
+            "is_online": trader.get("is_online", False),
+            "success_rate": trader.get("success_rate", 100),
+            "trades_count": trader.get("trades_count", 0),
+            "price_rub": offer["price_rub"],
+            "to_pay_rub": to_pay_rub,
+            "commission_percent": max(0, commission_percent),
+            "min_amount_rub": round(offer.get("min_amount", 1) * offer["price_rub"], 2),
+            "max_amount_rub": round(offer.get("available_usdt", 0) * offer["price_rub"], 2),
+            "requisites": requisites
+        })
+    
+    # Sort by price (cheapest first)
+    operators.sort(key=lambda x: x["to_pay_rub"])
+    
+    return {
+        "success": True,
+        "amount_rub": data.amount_rub,
+        "base_rate": base_rate,
+        "operators": operators
+    }
+
+
+# ==================== REQUISITES ====================
+
+class RequisitesRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    merchant_id: str
+    payment_id: str
+
+
+@router.post("/invoice/requisites")
+async def get_invoice_requisites(data: RequisitesRequest):
+    """
+    Получить реквизиты для оплаты счёта.
+    Мерчант показывает эти реквизиты клиенту на своём сайте.
+    """
+    merchant, error = await verify_merchant(data.api_key, data.api_secret, data.merchant_id)
+    if error:
+        raise HTTPException(status_code=401, detail={"success": False, "error": error})
+    
+    # Find trade by payment_id (invoice_id)
+    trade = await db.trades.find_one(
+        {"payment_link_id": data.payment_id, "merchant_id": data.merchant_id},
+        {"_id": 0}
+    )
+    
+    if not trade:
+        # Try to find invoice
+        invoice = await db.merchant_invoices.find_one(
+            {"id": data.payment_id, "merchant_id": data.merchant_id},
+            {"_id": 0}
+        )
+        if not invoice:
+            raise HTTPException(status_code=404, detail={"success": False, "error": "INVOICE_NOT_FOUND"})
+        
+        return {
+            "success": True,
+            "status": invoice.get("status", "pending"),
+            "amount_rub": invoice.get("amount_rub"),
+            "requisites": None,
+            "message": "Счёт создан, но сделка ещё не начата. Клиент должен выбрать оператора."
+        }
+    
+    # Get requisites from trade
+    requisites_data = []
+    for req in trade.get("requisites", []):
+        requisites_data.append({
+            "type": req.get("type"),
+            "card_number": req.get("data", {}).get("card_number"),
+            "phone": req.get("data", {}).get("phone"),
+            "bank_name": req.get("data", {}).get("bank_name"),
+            "card_holder": req.get("data", {}).get("card_holder"),
+        })
+    
+    return {
+        "success": True,
+        "payment_id": data.payment_id,
+        "trade_id": trade["id"],
+        "status": trade["status"],
+        "amount_rub": trade.get("amount_rub"),
+        "client_amount_rub": trade.get("client_amount_rub"),
+        "expires_at": trade.get("expires_at"),
+        "requisites": requisites_data,
+        "trader_login": trade.get("trader_login")
+    }
+
+
+# ==================== MARK PAID ====================
+
+class MarkPaidRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    merchant_id: str
+    payment_id: str
+
+
+@router.post("/invoice/mark-paid")
+async def mark_invoice_paid(data: MarkPaidRequest):
+    """
+    Отметить счёт как оплаченный.
+    Вызывается когда клиент на сайте мерчанта нажал "Я оплатил".
+    """
+    merchant, error = await verify_merchant(data.api_key, data.api_secret, data.merchant_id)
+    if error:
+        raise HTTPException(status_code=401, detail={"success": False, "error": error})
+    
+    # Find trade
+    trade = await db.trades.find_one(
+        {"payment_link_id": data.payment_id, "merchant_id": data.merchant_id},
+        {"_id": 0}
+    )
+    
+    if not trade:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "TRADE_NOT_FOUND"})
+    
+    if trade["status"] != "pending":
+        raise HTTPException(status_code=400, detail={
+            "success": False, 
+            "error": "INVALID_STATUS",
+            "message": f"Сделка в статусе '{trade['status']}', ожидался 'pending'"
+        })
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    await db.trades.update_one(
+        {"id": trade["id"]},
+        {"$set": {
+            "status": "paid",
+            "paid_at": now
+        }}
+    )
+    
+    # Send webhook
+    await send_merchant_webhook(data.merchant_id, data.payment_id, "paid", {
+        "trade_id": trade["id"],
+        "paid_at": now
+    })
+    
+    return {
+        "success": True,
+        "payment_id": data.payment_id,
+        "trade_id": trade["id"],
+        "status": "paid",
+        "paid_at": now,
+        "message": "Ожидайте подтверждения от оператора"
+    }
+
+
+# ==================== DISPUTES ====================
+
+class OpenDisputeRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    merchant_id: str
+    payment_id: str
+    reason: str = "Оплата не подтверждена оператором"
+
+
+@router.post("/disputes/open")
+async def open_dispute(data: OpenDisputeRequest):
+    """
+    Открыть спор по платежу.
+    Спор можно открыть через 10 минут после отметки "оплачено".
+    """
+    merchant, error = await verify_merchant(data.api_key, data.api_secret, data.merchant_id)
+    if error:
+        raise HTTPException(status_code=401, detail={"success": False, "error": error})
+    
+    # Find trade
+    trade = await db.trades.find_one(
+        {"payment_link_id": data.payment_id, "merchant_id": data.merchant_id},
+        {"_id": 0}
+    )
+    
+    if not trade:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "TRADE_NOT_FOUND"})
+    
+    if trade["status"] not in ["paid", "pending"]:
+        raise HTTPException(status_code=400, detail={
+            "success": False,
+            "error": "INVALID_STATUS",
+            "message": f"Спор можно открыть только для статусов 'pending' или 'paid'"
+        })
+    
+    # Check 10 minute cooldown
+    if trade.get("paid_at"):
+        paid_at = datetime.fromisoformat(trade["paid_at"].replace("Z", "+00:00"))
+        elapsed = (datetime.now(timezone.utc) - paid_at).total_seconds()
+        if elapsed < 600:  # 10 minutes
+            remaining = int(600 - elapsed)
+            raise HTTPException(status_code=400, detail={
+                "success": False,
+                "error": "DISPUTE_COOLDOWN",
+                "message": f"Спор можно открыть через {remaining} секунд"
+            })
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    await db.trades.update_one(
+        {"id": trade["id"]},
+        {"$set": {
+            "status": "disputed",
+            "disputed_at": now,
+            "dispute_reason": data.reason,
+            "dispute_opened_by": "merchant_client"
+        }}
+    )
+    
+    # Send webhook
+    await send_merchant_webhook(data.merchant_id, data.payment_id, "disputed", {
+        "trade_id": trade["id"],
+        "reason": data.reason,
+        "disputed_at": now
+    })
+    
+    return {
+        "success": True,
+        "payment_id": data.payment_id,
+        "trade_id": trade["id"],
+        "status": "disputed",
+        "reason": data.reason,
+        "disputed_at": now
+    }
+
+
+class DisputeMessagesRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    merchant_id: str
+    payment_id: str
+
+
+@router.post("/disputes/messages")
+async def get_dispute_messages(data: DisputeMessagesRequest):
+    """Получить сообщения спора"""
+    merchant, error = await verify_merchant(data.api_key, data.api_secret, data.merchant_id)
+    if error:
+        raise HTTPException(status_code=401, detail={"success": False, "error": error})
+    
+    # Find trade
+    trade = await db.trades.find_one(
+        {"payment_link_id": data.payment_id, "merchant_id": data.merchant_id},
+        {"_id": 0, "id": 1, "status": 1}
+    )
+    
+    if not trade:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "TRADE_NOT_FOUND"})
+    
+    messages = await db.trade_messages.find(
+        {"trade_id": trade["id"]},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(100)
+    
+    return {
+        "success": True,
+        "trade_id": trade["id"],
+        "status": trade["status"],
+        "messages": messages
+    }
+
+
+class SendDisputeMessageRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    merchant_id: str
+    payment_id: str
+    message: str
+    sender_name: str = "Клиент"
+
+
+@router.post("/disputes/send-message")
+async def send_dispute_message(data: SendDisputeMessageRequest):
+    """Отправить сообщение в спор от имени клиента мерчанта"""
+    merchant, error = await verify_merchant(data.api_key, data.api_secret, data.merchant_id)
+    if error:
+        raise HTTPException(status_code=401, detail={"success": False, "error": error})
+    
+    # Find trade
+    trade = await db.trades.find_one(
+        {"payment_link_id": data.payment_id, "merchant_id": data.merchant_id},
+        {"_id": 0, "id": 1, "status": 1}
+    )
+    
+    if not trade:
+        raise HTTPException(status_code=404, detail={"success": False, "error": "TRADE_NOT_FOUND"})
+    
+    if trade["status"] != "disputed":
+        raise HTTPException(status_code=400, detail={
+            "success": False,
+            "error": "NOT_IN_DISPUTE",
+            "message": "Сообщения можно отправлять только в споре"
+        })
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    message_doc = {
+        "id": f"msg_{secrets.token_hex(8)}",
+        "trade_id": trade["id"],
+        "sender_type": "client",
+        "sender_role": "client",
+        "sender_name": data.sender_name,
+        "content": data.message,
+        "created_at": now
+    }
+    
+    await db.trade_messages.insert_one(message_doc)
+    
+    return {
+        "success": True,
+        "message_id": message_doc["id"],
+        "created_at": now
+    }
+
+
+# ==================== WEBHOOK HELPER ====================
+
+async def send_merchant_webhook(merchant_id: str, payment_id: str, status: str, extra_data: dict = None):
+    """Отправить webhook мерчанту"""
+    import httpx
+    
+    merchant = await db.merchants.find_one({"id": merchant_id}, {"_id": 0})
+    if not merchant:
+        return
+    
+    webhook_url = merchant.get("webhook_url")
+    if not webhook_url:
+        return
+    
+    # Find invoice for order_id
+    invoice = await db.merchant_invoices.find_one({"id": payment_id}, {"_id": 0})
+    
+    payload = {
+        "event": status,
+        "payment_id": payment_id,
+        "order_id": invoice.get("external_order_id", payment_id) if invoice else payment_id,
+        "status": status,
+        "amount_rub": invoice.get("amount_rub") if invoice else None,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    if extra_data:
+        payload.update(extra_data)
+    
+    # Generate signature
+    api_secret = merchant.get("api_secret", "")
+    payload["sign"] = generate_signature(api_secret, {k: v for k, v in payload.items() if k != "sign"})
+    
+    # Save to webhook history
+    webhook_record = {
+        "id": f"whk_{secrets.token_hex(8)}",
+        "merchant_id": merchant_id,
+        "payment_id": payment_id,
+        "event": status,
+        "webhook_url": webhook_url,
+        "payload": payload,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.webhook_history.insert_one(webhook_record)
+    
+    # Send webhook
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(webhook_url, json=payload)
+            success = response.status_code == 200
+            
+            await db.webhook_history.update_one(
+                {"id": webhook_record["id"]},
+                {"$set": {
+                    "status": "delivered" if success else "failed",
+                    "response_code": response.status_code,
+                    "delivered_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+    except Exception as e:
+        await db.webhook_history.update_one(
+            {"id": webhook_record["id"]},
+            {"$set": {"status": "failed", "error": str(e)}}
+        )

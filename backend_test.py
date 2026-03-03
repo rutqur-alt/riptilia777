@@ -12,7 +12,7 @@ from typing import Dict, Any
 
 class RussianMerchantShopTester:
     def __init__(self):
-        self.base_url = "https://exchange-staging.preview.emergentagent.com"
+        self.base_url = "https://p2p-trader-preview.preview.emergentagent.com"
         self.api_url = f"{self.base_url}/api"
         self.api_key = "merch_sk_8581cf8f655c4f858511e26d1dc3f3f3"
         self.merchant_name = "Мерчант Казино"
