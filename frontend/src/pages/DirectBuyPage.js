@@ -27,6 +27,12 @@ export default function DirectBuyPage() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [timeLeft, setTimeLeft] = useState(1800);
+  
+  // Block merchants and admins from buying
+  const isBlockedFromBuying = () => {
+    if (!user) return false;
+    return user.role === "merchant" || user.role === "admin" || user.admin_role;
+  };
 
   const onWsMessage = useCallback((data) => {
     if (data.type === "message") {
@@ -49,6 +55,12 @@ export default function DirectBuyPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       navigate("/auth");
+      return;
+    }
+    // Block merchants and admins
+    if (isBlockedFromBuying()) {
+      toast.error("Покупка USDT недоступна для вашего типа аккаунта");
+      navigate("/");
       return;
     }
     fetchOffer();

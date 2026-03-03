@@ -362,6 +362,15 @@ export default function Landing() {
                           Купить
                         </Button>
                       </Link>
+                    ) : isAuthenticated && (user?.role === "merchant" || user?.role === "admin") ? (
+                      <Button 
+                        size="sm" 
+                        className="bg-[#52525B] text-[#A1A1AA] rounded-lg h-8 px-4 cursor-not-allowed" 
+                        disabled
+                        title="Покупка недоступна для вашей роли"
+                      >
+                        Недоступно
+                      </Button>
                     ) : (
                       <Link to={`/shop?offer=${offer.id}`}>
                         <Button size="sm" className="bg-[#10B981] hover:bg-[#059669] text-white rounded-lg h-8 px-4" title="Купить USDT">
