@@ -231,8 +231,13 @@ export default function BuyerShop() {
         params: { merchant_id: merchantId, limit: 20 },
         headers: { 'X-Api-Key': apiKey }
       });
-      setTransactions(res.data.transactions || res.data || []);
-    } catch (e) { }
+      // API returns { status, data: { transactions: [...] } }
+      const txs = res.data?.data?.transactions || res.data?.transactions || [];
+      setTransactions(Array.isArray(txs) ? txs : []);
+    } catch (e) { 
+      console.error('Load transactions error:', e);
+      setTransactions([]);
+    }
     finally { setLoadingHistory(false); }
   };
 
@@ -486,7 +491,13 @@ export default function BuyerShop() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowHistory(!showHistory)}
+                onClick={() => {
+                  const newValue = !showHistory;
+                  setShowHistory(newValue);
+                  if (newValue && apiKey && merchantId) {
+                    loadTransactions();
+                  }
+                }}
                 className="text-[#71717A] hover:text-white"
               >
                 <History className="w-4 h-4" />
