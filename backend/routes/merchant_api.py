@@ -284,9 +284,10 @@ async def get_invoice_status(data: InvoiceStatusRequest):
             "success": True,
             "invoice_id": data.invoice_id,
             "status": trade.get("status"),
-            "amount_rub": trade.get("amount_rub"),
-            "client_paid_rub": trade.get("client_pays_rub"),
-            "merchant_receives_rub": trade.get("merchant_receives_rub"),
+            "amount_rub": trade.get("client_amount_rub") or trade.get("amount_rub"),  # Запрошенная сумма клиента
+            "client_amount_rub": trade.get("client_amount_rub"),  # Сумма пополнения клиента
+            "client_paid_rub": trade.get("client_pays_rub"),  # Сколько клиент заплатил
+            "merchant_receives_rub": trade.get("merchant_receives_rub"),  # Сколько получит мерчант
             "trade_id": trade.get("id"),
             "completed_at": trade.get("completed_at")
         }
@@ -295,7 +296,8 @@ async def get_invoice_status(data: InvoiceStatusRequest):
         "success": True,
         "invoice_id": invoice.get("id"),
         "status": invoice.get("status"),
-        "amount_rub": invoice.get("amount_rub"),
+        "amount_rub": invoice.get("amount_rub"),  # Запрошенная сумма клиента (1000)
+        "client_amount_rub": invoice.get("amount_rub"),  # То же самое для ясности
         "client_paid_rub": invoice.get("client_pays_rub"),
         "merchant_receives_rub": invoice.get("merchant_receives_rub"),
         "trade_id": invoice.get("trade_id"),

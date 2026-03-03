@@ -811,7 +811,8 @@ async def get_merchant_disputes(
             "payment_id": invoice["id"] if invoice else None,
             "order_id": invoice.get("external_order_id") if invoice else None,
             "status": trade["status"],
-            "amount_rub": trade.get("amount_rub"),
+            "amount_rub": trade.get("client_amount_rub") or trade.get("amount_rub"),  # Запрошенная сумма клиента
+            "client_amount_rub": trade.get("client_amount_rub"),
             "amount_usdt": trade.get("amount_usdt"),
             "disputed_at": trade.get("disputed_at"),
             "disputed_by": trade.get("disputed_by"),
