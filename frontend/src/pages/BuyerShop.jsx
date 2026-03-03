@@ -193,7 +193,8 @@ export default function BuyerShop() {
         setMerchantName(res.data.merchant_name || 'Магазин');
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
-          total_received_rub: res.data.total_received_rub || 0,
+          total_client_rub: res.data.total_client_rub || 0,  // Баланс клиента
+          total_received_rub: res.data.total_received_rub || 0,  // Баланс мерчанта
           transactions_count: res.data.transactions_count || 0
         });
         setConnected(true);
@@ -225,7 +226,8 @@ export default function BuyerShop() {
       if (res.data.success) {
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
-          total_received_rub: res.data.total_received_rub || 0,
+          total_client_rub: res.data.total_client_rub || 0,  // Баланс клиента
+          total_received_rub: res.data.total_received_rub || 0,  // Баланс мерчанта
           transactions_count: res.data.transactions_count || 0
         });
       }
@@ -637,10 +639,10 @@ export default function BuyerShop() {
                 </Button>
               </div>
               <div className="text-4xl font-bold text-white mb-1 font-['JetBrains_Mono']">
-                {balance ? `${(balance.total_received_rub || 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} RUB` : '---'}
+                {balance ? `${(balance.total_client_rub || 0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} RUB` : '---'}
               </div>
               <div className="text-sm text-[#52525B]">
-                ≈ {balance ? (balance.balance_usdt || 0).toFixed(2) : '0'} USDT
+                Баланс клиента на сайте
               </div>
             </div>
 
