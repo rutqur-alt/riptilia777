@@ -113,40 +113,6 @@ export default function TraderBalance() {
 
   return (
     <div className="space-y-6">
-      {/* Notifications Panel */}
-      {notifications.length > 0 && (
-        <div className="bg-[#121212] border border-[#EF4444]/30 rounded-2xl overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5 bg-[#EF4444]/5">
-            <div className="w-2 h-2 rounded-full bg-[#EF4444] animate-pulse" />
-            <span className="text-sm font-medium text-white">Оповещения</span>
-            <span className="text-xs text-[#EF4444]">({notifications.length})</span>
-          </div>
-          <div className="divide-y divide-white/5">
-            {notifications.map(notif => {
-              const IconComponent = NOTIF_ICONS[notif.type] || NOTIF_ICONS.default;
-              return (
-                <button 
-                  key={notif.id}
-                  onClick={() => handleNotificationClick(notif)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors text-left"
-                >
-                  <div className="w-9 h-9 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
-                    <IconComponent className="w-4 h-4 text-[#7C3AED]" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-white truncate">{notif.title}</div>
-                    <div className="text-xs text-[#71717A] truncate">{notif.message}</div>
-                  </div>
-                  <div className="text-[10px] text-[#52525B] flex-shrink-0">
-                    {new Date(notif.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Balance + Quick Stats Row */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-[#10B981] to-[#059669] rounded-2xl p-5 lg:col-span-2">

@@ -498,7 +498,7 @@ async def create_invoice(
     
     if not base_url:
         import os
-        base_url = os.environ.get("SITE_URL", "https://merchant-api-preview.preview.emergentagent.com")
+        base_url = os.environ.get("SITE_URL", "https://exchange-platform-8.preview.emergentagent.com")
     
     # URL на страницу выбора оператора
     payment_url = f"{base_url}/select-operator/{invoice_id}"

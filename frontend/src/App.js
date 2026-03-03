@@ -173,10 +173,32 @@ function AuthenticatedLayout({ children }) {
 function AuthNotificationDropdown({ badges, token, role, prefix }) {
   const [open, setOpen] = React.useState(false);
   const [localBadges, setLocalBadges] = React.useState(badges);
+  const [notifications, setNotifications] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
   const dropdownRef = React.useRef(null);
   const buttonRef = React.useRef(null);
 
   React.useEffect(() => { setLocalBadges(badges); }, [badges]);
+
+  // Load actual notifications when dropdown opens
+  React.useEffect(() => {
+    if (!open || !token) return;
+    const loadNotifications = async () => {
+      setLoading(true);
+      try {
+        const r = await axios.get(`${API}/event-notifications?limit=10`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setNotifications(r.data || []);
+      } catch (e) { 
+        console.error(e);
+        setNotifications([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadNotifications();
+  }, [open, token]);
 
   React.useEffect(() => {
     const handleClickOutside = (event) => {
@@ -197,52 +219,39 @@ function AuthNotificationDropdown({ badges, token, role, prefix }) {
     return "событий";
   };
 
-  const buildNotificationList = () => {
-    const b = localBadges;
-    const items = [];
-    
-    // Main notification item - all event notifications
-    if (b.event_notifications > 0) {
-      items.push({ key: "all_events", label: "Все оповещения", path: `${prefix}`, count: b.event_notifications, isMain: true });
-    }
-    
-    // Individual notification types (show only if there are any)
-    if (b.trades > 0) items.push({ key: "trades", label: "Активные сделки", path: role === "merchant" ? `${prefix}/payments` : `${prefix}/sales`, count: b.trades });
-    if (role !== "merchant" && b.purchases > 0) items.push({ key: "purchases", label: "Покупки в маркете", path: `${prefix}/my-purchases`, count: b.purchases });
-    if (role !== "merchant" && b.guarantor_deals > 0) items.push({ key: "guarantor", label: "Гарант-сделки", path: `${prefix}/my-purchases`, count: b.guarantor_deals });
-    if (b.shop_messages > 0) items.push({ key: "shop_messages", label: "Сообщения магазина", path: role === "merchant" ? `${prefix}/shop` : `${prefix}/shop-chats`, count: b.shop_messages });
-    if (b.messages > 0) items.push({ key: "messages", label: role === "merchant" ? "Сообщения" : "Личные сообщения", path: `${prefix}/messages`, count: b.messages });
-    if (b.deposits > 0) items.push({ key: "deposits", label: "Пополнения", path: `${prefix}/transactions`, count: b.deposits });
-    if (b.withdrawals > 0) items.push({ key: "withdrawals", label: "Вывод средств", path: `${prefix}/withdraw`, count: b.withdrawals });
-    if (b.trade_payment > 0) items.push({ key: "trade_payment", label: "Оплата в сделке", path: role === "merchant" ? `${prefix}/payments` : `${prefix}/sales`, count: b.trade_payment });
-    if (b.trade_message > 0) items.push({ key: "trade_message", label: "Сообщение в сделке", path: role === "merchant" ? `${prefix}/payments` : `${prefix}/sales`, count: b.trade_message });
-    if (b.trade_dispute > 0) items.push({ key: "trade_dispute", label: "Спор в сделке", path: role === "merchant" ? `${prefix}/disputes` : `${prefix}/sales`, count: b.trade_dispute });
-    return items;
-  };
-
-  const handleItemClick = async (item) => {
-    const updated = { ...localBadges, [item.key]: 0 };
-    updated.total = Object.entries(updated).filter(([k]) => !["total","trade_payments","trade_events","disputes","guarantor_unread","support","shop_customer_messages"].includes(k)).reduce((s, [, v]) => s + (v || 0), 0);
-    setLocalBadges(updated);
-    setOpen(false);
-    try {
-      await axios.post(`${API}/notifications/read`, { type: item.key }, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (e) { console.error(e); }
-    window.location.href = item.path;
-  };
-
   const handleReadAll = async () => {
     const zeroed = {};
     Object.keys(localBadges).forEach(k => zeroed[k] = 0);
     setLocalBadges(zeroed);
+    setNotifications([]);
     setOpen(false);
     try {
-      await axios.post(`${API}/notifications/read`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API}/event-notifications/mark-read`, { all: true }, { headers: { Authorization: `Bearer ${token}` } });
     } catch (e) { console.error(e); }
   };
 
+  const getIcon = (type) => {
+    if (type?.includes('new_trade') || type === 'trade_created') return '📈';
+    if (type?.includes('cancelled') || type?.includes('cancel')) return '❌';
+    if (type?.includes('completed') || type?.includes('complete')) return '✅';
+    if (type?.includes('payment') || type?.includes('paid')) return '💰';
+    if (type?.includes('dispute')) return '⚠️';
+    if (type?.includes('message')) return '💬';
+    return '🔔';
+  };
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = (now - date) / 1000 / 60;
+    if (diff < 1) return 'только что';
+    if (diff < 60) return `${Math.floor(diff)} мин`;
+    if (diff < 1440) return `${Math.floor(diff / 60)} ч`;
+    return `${Math.floor(diff / 1440)} д`;
+  };
+
   const total = localBadges.event_notifications || localBadges.total || 0;
-  const items = buildNotificationList();
 
   const getDropdownPos = () => {
     if (!buttonRef.current) return { top: 100, left: 60 };
@@ -260,25 +269,28 @@ function AuthNotificationDropdown({ badges, token, role, prefix }) {
         {total > 0 ? `${total} ${declension(total)}` : "Нет событий"}
       </button>
       {open && ReactDOM.createPortal(
-        <div ref={dropdownRef} style={{position: "fixed", top: getDropdownPos().top, left: getDropdownPos().left, zIndex: 99999, minWidth: "300px", width: "320px"}} className="bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+        <div ref={dropdownRef} style={{position: "fixed", top: getDropdownPos().top, left: getDropdownPos().left, zIndex: 99999, minWidth: "320px", width: "360px"}} className="bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
           <div className="p-3 border-b border-white/5">
             <div className="text-xs font-medium text-white">Оповещения</div>
           </div>
-          <div className="max-h-80 overflow-y-auto">
-            {items.length === 0 ? (
+          <div className="max-h-96 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 text-center text-xs text-[#52525B]">Загрузка...</div>
+            ) : notifications.length === 0 ? (
               <div className="p-4 text-center text-xs text-[#52525B]">Нет оповещений</div>
             ) : (
-              items.map((item) => (
-                <button
-                  key={item.key}
-                  onClick={() => handleItemClick(item)}
-                  className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 flex items-center justify-between gap-3"
+              notifications.map((notif, idx) => (
+                <div
+                  key={notif.id || idx}
+                  className="px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 flex items-start gap-3"
                 >
-                  <span className="text-sm text-[#A1A1AA]">{item.label}</span>
-                  <span className="text-[10px] bg-[#EF4444] text-white rounded-full px-1.5 py-0.5 min-w-[20px] text-center font-bold flex-shrink-0">
-                    {item.count}
-                  </span>
-                </button>
+                  <span className="text-lg flex-shrink-0">{getIcon(notif.type)}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white font-medium truncate">{notif.title || notif.message?.split(' ').slice(0, 3).join(' ')}</div>
+                    <div className="text-xs text-[#71717A] truncate">{notif.message}</div>
+                  </div>
+                  <span className="text-[10px] text-[#52525B] flex-shrink-0">{formatTime(notif.created_at)}</span>
+                </div>
               ))
             )}
           </div>

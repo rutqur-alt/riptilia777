@@ -3,77 +3,86 @@ The initial request was to build a P2P cryptocurrency exchange platform named Re
 1.  **Complete Merchant API**: A production-ready API for merchants.
 2.  **Implement All Webhooks**: Server-to-server notifications for all critical payment status changes.
 3.  **Comprehensive API Documentation**: Detailed API documentation with examples.
-4.  **UI/UX Refinements (from user feedback):** This session focused on numerous UI/UX fixes, including:
-    *   Implementing a one-click purchase flow for traders buying USDT.
-    *   Fixing incorrect currency calculations and displays across the application.
-    *   Building a complete chat and resolution workflow for payout orders between traders and moderators.
-    *   Adding and fixing administrative features like order cancellation, user broadcasts, and search functionality.
-    *   Removing deprecated UI elements like Disputes tabs.
-5.  **New Major Feature: Centralized Notification System**: A new request to build a site-wide notification system (bell icon) that aggregates all important events (new messages, status changes, etc.) for users and merchants.
+4.  **UI/UX Refinements (from user feedback):** The platform has undergone numerous UI/UX fixes and feature implementations based on user requests.
+5.  **New Major Feature: Centralized Notification System**: A site-wide notification system (bell icon) that aggregates all important events for users and merchants.
+6.  **Critical Bug Reports:**
+    *   An ad is visible in the public order book but missing from the trader's My Ads page.
+    *   Funds are stuck in closed ads and not returned to the trader's balance.
+    *   Message sorting is incorrect.
+    *   Notification counts are inconsistent across the application.
+    *   Merchants can bypass restrictions on buying crypto.
 
-**User's preferred language**: Russian. The next agent MUST respond in Russian.
+**User's preferred language**: Russian
 
 **what currently exists?**
-The platform is a functional full-stack P2P crypto exchange. Key features completed in this session include:
--   **One-Click Purchase**: The Buy USDT page now features a one-click purchase flow, removing the previous amount selection modal.
--   **Payout Order Workflow**: A complete workflow for  (payouts) is implemented. Traders can see these orders in their messages, mark them as paid, and chat with moderators. Moderators can see these chats, approve, or cancel orders from the admin panel.
--   **Corrected Calculations**: The root cause of recurring currency calculation errors has been fixed. The system now consistently uses the up-to-date  from global settings when creating orders, ensuring traders and the platform see correct USDT amounts. Merchant fund freezing/unfreezing logic has also been corrected.
--   **Broadcast System**: An admin-driven broadcast (Рассылка) system is functional. Admins can send messages to all users, traders, or merchants, and these messages now correctly appear in the respective users' message centers.
--   **UI/UX Improvements**:
-    *   New messages are now always sorted to the top of the chat list and marked with a НОВОЕ (NEW) tag.
-    *   Admin panels have been improved with cross-status search and removal of unnecessary tabs (Споры).
-    *   The merchant dashboard now correctly displays completed payout requests and chat history.
+The platform is a full-stack P2P crypto exchange with functional trader, merchant, and admin dashboards. This session focused heavily on fixing critical bugs and implementing user-requested features, significantly improving the platform's stability and usability.
+
+**Key achievements in this session:**
+*   **Ad Management Overhaul:** Fixed a critical bug where ads were not visible to traders. The entire ad lifecycle has been reworked: ads are now hard-deleted (instead of soft-deleted), and a feature has been added to prevent deletion if active trades exist.
+*   **Critical Funds Bug Fixed:** Resolved a severe issue where traders' funds were not returned to their balance after closing an ad. A migration script was run to return all stuck funds.
+*   **New Ad Features:** Implemented user-requested features to Pause/Resume ads and view a list of all trades associated with a specific ad.
+*   **UI/UX Fixes:**
+    *   Resolved a recurring message sorting bug.
+    *   Unified notification displays and fixed inconsistent counts between different parts of the UI.
+    *   Corrected broken filters on the merchant's payment history page.
+    *   Streamlined admin panel notifications to simple red-dot indicators.
+    *   Re-enforced the rule preventing merchants from buying USDT.
 
 **Last working item**:
-*   **Last item agent was working:** The user requested the implementation of a new, centralized notification system. The agent acknowledged the request, broke down the requirements, and confirmed understanding.
-*   **Status:** NOT STARTED
+*   **Last item agent was working:** The agent was fixing a discrepancy where the notification count in the main header (e.g., 5 событий) did not match the count on the user's dashboard page (e.g., 8 событий). The agent successfully unified the frontend components to use a single notification dropdown but discovered the root cause of the count mismatch is a faulty backend endpoint.
+*   **Status:** IN PROGRESS
 *   **Agent Testing Done:** N
-*   **Which testing method agent to use?** both. The backend testing agent will be needed to verify that notifications are created for all specified events (new message, status change, etc.). The frontend testing agent will be needed to verify the UI of the notification bell, the dropdown list, the unread indicator, click navigation, and the read all functionality.
+*   **Which testing method agent to use?** backend testing agent. The core issue is that  returns an incorrect count. A test is needed to assert that its  matches the unread count from the  endpoint to ensure data consistency.
 *   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-*   None. All issues raised during the session were resolved.
+*   **Issue 1: Inconsistent Notification Count (P0)**
+    *   **Description:** The notification count in the main header (, from ) shows a different number than the actual list of notifications and the count on the dashboard (, from ). This confuses the user.
+    *   **Status:** IN PROGRESS
+    *   **Is recurring issue?** Y
+    *   **Should Test frontend/backend/both after fix?** backend
+    *   **Blocked on other issue:** None
+
+*   **Issues Detail:**
+    *   **Issue 1: Inconsistent Notification Count**
+        *   **Attempted fixes:** The agent has already unified the frontend components to fetch from a single source for the list itself. The remaining issue is the badge count in the header.
+        *   **Next debug checklist:**
+            1.  Modify the backend endpoint  located in .
+            2.  Change its logic to calculate the  unread count by querying the  and legacy  collections with , exactly like the  endpoint does.
+            3.  This will ensure both the header badge and the dropdown list derive their numbers from the same source of truth.
+        *   **Why fix this issue and what will be achieved with the fix?** To eliminate user confusion and provide a consistent and reliable user experience for notifications, which is a core feature.
 
 **In progress Task List**:
 *   None.
 
 **Upcoming and Future Tasks**
-*   **Upcoming Task (P0): Implement Centralized Notification System**
-    *   **Description:** Build the feature requested in the last user message.
-    *   **Backend:** Create a new collection ( seems appropriate) and logic to generate a notification document for every key event (new message, trade status change, new payout order, etc.) targeting the relevant user(s).
-    *   **Backend:** Create endpoints to fetch unread notifications for a user and to mark notifications as read (individually and all at once).
-    *   **Frontend:**
-        *   Implement a component (likely in the main sidebar) with a bell icon and an unread notification count.
-        *   On click, display a dropdown/modal listing all unread notifications.
-        *   Each notification in the list should be a link that navigates the user to the relevant page (e.g., a specific chat, a specific trade).
-        *   Clicking a notification should mark it as read and remove it from the list.
-        *   Implement a Прочитать всё (Read All) button.
 *   **Upcoming Task (P1): Implement  Webhook**
-    *   **Description:** A background task is needed to find trades/orders that have passed their payment time limit, update their status to , and trigger the corresponding webhook. This was carried over from the previous session and is still pending.
-*   **Future Task (P2): Re-evaluate Old Merchant API for Deprecation**
-    *   **Description:** The previous handoff suggested deleting . This agent correctly identified that this file is critical for the merchant dashboard UI. The task is now to investigate  and determine if *it* is the old, insecure API that should be deprecated or removed.
+    *   Description: Create a background task to find trades/orders that have passed their payment time limit, update their status to , and trigger a corresponding webhook notification.
+*   **Future Task (P2): Deprecate Old Merchant API**
+    *   Description: Investigate the file  to determine if it is a legacy, insecure API that should be deprecated or removed.
 *   **Future Task (P3): Standardize Backend Route Directories**
-    *   **Description:** Consolidate backend route files currently split between  and  into a single, consistent directory structure (e.g., ).
+    *   Description: Consolidate all backend route files, which are currently split between  and , into a single, consistent directory structure (e.g., moving everything to ).
+*   **Future Task (P3): Migrate Legacy Notifications**
+    *   Description: Create a migration script to move all data from the legacy  collection to the new  collection. Then, refactor the backend to remove all dependencies on the old collection.
 
 **Completed work in this session**
--   **One-Click Buy USDT Flow Implemented:** Replaced the amount selection modal with a direct purchase confirmation dialog.
--   **Payout Order Chat & Resolution Workflow:** Built the full flow for traders to chat with moderators about s, mark payments, and for moderators to complete or cancel transactions.
--   **Root Cause Fix for Rate Calculations:** Corrected the logic in  to always use the current  from settings when creating an order, eliminating a recurring bug.
--   **Merchant Balance Logic Fixed:** Corrected bugs that led to negative frozen balances for merchants, ensuring funds are correctly managed during order cancellation and completion.
--   **Broadcasts Implemented for Users:** Admins can send broadcasts, which now correctly appear in the message centers for traders () and merchants ().
--   **Message Sorting and NEW Tag:** Implemented frontend logic to sort new/unread messages to the top of the list and display a НОВОЕ tag.
--   **Admin/Merchant UI Cleanup:** Removed the Споры (Disputes) tab and menu items from both admin and merchant dashboards.
--   **Admin Search Enhancement:** Improved the search in the Выплаты panel to work across all statuses.
--   **Chat Archiving Fixed:** Corrected the Leave Chat functionality for admins to properly archive the chat and remove it from the active list.
--   **Merchant Chat History:** Fixed a bug preventing merchants from viewing the chat history for payout requests.
+-   **Critical Ad Discrepancy Bug Fixed:** Resolved the issue where a trader's ad was visible publicly but not in their My Ads list.
+-   **Critical Fund Return Bug Fixed:** Fixed a bug where funds were not returned to a trader's balance when an ad was closed. A migration was run to return over 800 USDT in stuck funds.
+-   **Ad Deletion Logic Changed to Hard Delete:** Per user request, ad deletion now completely removes the ad from the database instead of marking it inactive.
+-   **Ad Management Features Added:** Implemented Pause/Resume functionality and a button to view a list of trades for a specific ad.
+-   **Ad Deletion Blocked for Active Trades:** Implemented a backend check to prevent an ad from being deleted if it has any non-completed/non-cancelled trades.
+-   **Message Sorting & Read Status Fixed:** Corrected the logic in  to sort all conversations by date and properly handle the NEW badge disappearing on click.
+-   **Merchant Buy USDT Restriction Fixed:** Added checks in  and  to show a Not Available button for logged-in merchants, preventing them from initiating a purchase.
+-   **Merchant Payment Filtering Fixed:** Corrected the filtering logic in  so that the status tabs (Active, Completed, Cancelled, Disputes) work correctly.
+-   **Admin Notification UI Streamlined:** Reworked  to remove all notification counts except for red-dot indicators next to All Chats and Staff.
+-   **Trader Notification UI Unified:** Removed a redundant notification box from  and updated  to show a full list of notifications on the main page, matching the dashboard.
+-   **Dispute Notification Bug Fixed:** Corrected logic in  to ensure dispute notifications are created for all relevant parties in the new  system.
 
 **Earlier issues found/mentioned but not fixed**
 *   None.
 
 **Known issue recurrence from previous fork**
-*   **Issue:** Incorrect USDT amount calculations due to using stale exchange rates stored in offer documents.
-*   **Recurrence count:** High. This was a central theme of the session.
-*   **Status:** RESOLVED. The root cause was addressed by modifying  to always fetch the live  from the  collection when creating a . This should prevent recurrence.
+*   None.
 
 **Code Architecture**
 
@@ -82,67 +91,67 @@ The platform is a functional full-stack P2P crypto exchange. Key features comple
 *   **Frontend:** React, Redux, Axios, Tailwind CSS
 *   **Backend:** FastAPI, Pydantic, Motor (async MongoDB)
 *   **Database:** MongoDB
-*   **Authentication:** JWT for platform users; HMAC-SHA256 for merchant APIs.
+*   **Authentication:** JWT
 
 **key DB schema**
-*   **unified_conversations:** The  field is now used to hide chats from the active list.
-*   **crypto_orders:** The  is now reliably stored with the correct, current value upon creation.
-*   **traders/merchants:** The  field logic was corrected to prevent negative values.
-*   **notifications:** This collection was used for broadcasts. It will likely be extended or used as the basis for the new centralized notification system.
+*   **offers:** The schema was normalized and the lifecycle management was completely changed. Offers are now hard-deleted instead of being marked with . A new  field was added.
+*   **event_notifications:** The primary collection for user notifications.
+*   **notifications:** Legacy collection. The backend now temporarily reads from both  and  to create a unified view for the user until a full migration can be performed.
 
 **changes in tech stack**
 *   None.
 
 **All files of reference**
-*   : Heavily modified to fix the root cause of rate calculations and order cancellation logic.
-*   : Heavily modified to show  chats, add the I Paid button, display broadcasts, and sort new messages to the top.
-*   : Modified to fix display of completed orders, remove the Disputes tab, and correctly launch the chat history modal.
-*   : Modified to display broadcasts.
-*   : Modified to improve search/filtering and remove the Disputes tab.
-*   : Modified to correctly archive chats when an admin leaves.
-*   : Modified to implement the one-click purchase flow.
-*   : A new endpoint was added to fetch chat history for payout orders.
+*   : Location of the buggy  endpoint that needs to be fixed.
+*   : Contains the new logic for hard-deleting, pausing, and checking for active trades on an offer.
+*   : Contains the new frontend UI for the pause/resume and trade list features.
+*   : The refactored component that now shows a unified notification list on the main page header.
+*   : Contains the fixed filtering logic for merchant payments.
+*   : Contains the streamlined notification logic for the admin sidebar.
 
-**Areas that need refactoring**:
-*   The backend route directories ( vs ) should be standardized.
+**Areas that need refactoring**
+*   The backend's notification system is a temporary hybrid, reading from both  and the legacy  collections. A task should be created to migrate the old data and remove dependency on the legacy collection.
+*   The  endpoint is a source of inconsistency and should be refactored to use the same data query as the main notification fetching endpoints.
 
 **key api endpoints**
-*   : (New) Allows a trader to mark a payout order as paid.
-*   : (New) Allows a merchant to fetch chat history for a payout order.
-*   : (New) Allows a user/trader to fetch broadcasts.
-*   Multiple admin endpoints (, ) were updated to filter out archived chats.
-*   : The logic for  status was changed to return the offer to an  state.
+*   : **(CRITICAL - BUGGY)** This endpoint returns an inconsistent notification count, causing UI discrepancies.
+*   : Overhauled. Now checks for active trades and performs a hard delete from the database.
+*   : New endpoint to pause an ad.
+*   : New endpoint to resume a paused ad.
+*   : New endpoint to get a list of trades for a specific ad.
+*   : New endpoint to mark a conversation as read.
+*   : Now aggregates data from both new and legacy notification collections.
 
 **Critical Info for New Agent**
-*   The highest priority is the new **centralized notification system**. This is a major feature request from the user.
-*   A recurring issue with incorrect currency calculations was fixed at its root by always fetching the current  from settings in . The agent must maintain this logic. Any new feature involving rates must follow this pattern.
-*   The plan from the previous handoff to delete  was **incorrect**. The file is essential for the merchant dashboard. The task to clean up old APIs should now focus on other potential legacy files like .
-*   The user's desired logic for order cancellation (offer returns to market, merchant funds remain frozen) is now correctly implemented.
+*   The user is highly attentive to financial data integrity (e.g., balance updates, stuck funds) and UI consistency (e.g., matching numbers, correct sorting). All fixes in these areas must be thorough.
+*   Your immediate priority is to fix the notification count discrepancy by correcting the logic in the  backend endpoint.
+*   The ad management lifecycle was significantly changed in this session. Ads are now **hard-deleted**. Do not re-introduce soft-deletion logic.
+*   The notification system is currently a hybrid of two database collections. Be aware of this when working on notification-related tasks.
 
 **documents and test reports created in this job**
-*   None.
+*   
+*   
+*   
+*   
+*   
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User:** Asks to remove the Disputes tab from the admin panel and fix the Leave Chat functionality. (COMPLETED)
-2.  **User:** Reports that leaving a chat doesn't remove it from the active list. (COMPLETED)
-3.  **User:** Asks to verify that the Broadcast section works. (COMPLETED)
-4.  **User:** Points out that sent broadcasts don't appear for traders or merchants. (COMPLETED)
-5.  **User:** Asks for clarification on order cancellation logic and reports a negative frozen balance for the merchant. (COMPLETED)
-6.  **User:** Asks for all new messages to be sorted to the top of the list with a NEW tag. (COMPLETED)
-7.  **User:** Confirms the new message sorting logic is what they wanted. (COMPLETED)
-8.  **User:** Makes a major feature request for a centralized notification system (bell icon) that consolidates all events. (NOT STARTED)
-9.  **User:** Adds a requirement that the notification bell should have a red indicator when there are new events. (NOT STARTED)
-10. **User:** Да, все правильно. ... Могу начинать? (Yes, that's all correct. ... Can I start?) - User gives the go-ahead to start the notification system. (PENDING HUMAN ACTION - Agent needs to start work).
+1.  **User (msg #475):** Clarified that for the admin panel, number counters inside All Chats and Staff should remain, but the sidebar should only get a red dot. All other notifications for admins should be removed.
+2.  **User (msg #477):** Confirmed the agent's refined plan for admin notifications.
+3.  **User (msg #504):** Reported multiple issues: 1) A redundant notification box with a red border is showing for traders. 2) Notification counts are different on the main page vs. the dashboard.
+4.  **User (msg #506):** Added another requirement: the notification dropdown on the main page should show the full list of notifications, just like on the dashboard page.
+5.  **User (msg #507):** Confirmed the agent's plan to fix the notification UI and count issues.
+The remaining messages were the agent implementing the fixes for the notifications.
 
 **Project Health Check:**
-*   **Broken:** The centralized notification system is completely non-existent.
-*   **Mocked:** The  page serves as a test environment for the complex Merchant API.
+*   **Broken:** The main site-wide notification counter in the header is unreliable and shows a different number than the actual list of notifications. This is a high-visibility UI bug.
+*   **Mocked:** N/A
 
 **3rd Party Integrations**
 *   None.
 
 **Testing status**
-*   **Testing agent used after significant changes:** NO. The agent performed extensive manual testing via screenshots and some  commands, but did not use the testing agent.
+*   **Testing agent used after significant changes:** YES, but only once early in the session. Many critical fixes and new features were added afterward and tested manually.
 *   **Troubleshoot agent used after agent stuck in loop:** NO
 *   **Test files created:** []
 *   **Known regressions:** None.
@@ -153,6 +162,5 @@ The platform is a functional full-stack P2P crypto exchange. Key features comple
 *   **Merchant 222:**  / 
 
 **What agent forgot to execute**
-*   The agent did not start the implementation for the last major user request: the centralized notification system.
-*   The  webhook implementation, carried over from the previous fork, remains pending.
-*   The task to standardize backend directories is also still pending.</analysis>
+*   The agent identified the root cause of the inconsistent notification count (the  endpoint) but did not implement the backend fix before the session ended.
+*   The upcoming tasks from the previous handoff ( webhook, API deprecation, route standardization) were not addressed, as the session was fully consumed by fixing numerous critical bugs and implementing high-priority user requests.</analysis>

@@ -284,35 +284,21 @@ async def get_sidebar_badges(user: dict = Depends(get_current_user)):
         "read": False
     })
     
-    # Also count from old notifications as fallback
+    # Also count from old notifications collection
     old_notifications_count = await db.notifications.count_documents({
         "user_id": user_id,
         "read": False
     })
     
-    # Use whichever is higher (to ensure we show all notifications)
-    combined_notifications = max(event_notifications_count, old_notifications_count)
+    # Sum both sources for accurate total (same logic as /api/event-notifications/unread-count)
+    combined_notifications = event_notifications_count + old_notifications_count
 
     # Backward compatibility
     trade_payments = trade_payment
     trade_events = trade_message + trade_dispute
     
-    # Use combined notifications count as total for consistency
-    total = combined_notifications if combined_notifications > 0 else (
-        active_trades
-        + unread_messages
-        + active_guarantor
-        + shop_messages
-        + shop_customer_messages
-        + purchases
-        + guarantor_deals
-        + admin_messages
-        + pending_deposits
-        + pending_withdrawals
-        + trade_payment
-        + trade_message
-        + trade_dispute
-    )
+    # Total is the sum of all unread notifications from both systems
+    total = combined_notifications
 
     return {
         "trades": active_trades,
