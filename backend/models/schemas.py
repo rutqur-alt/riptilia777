@@ -150,21 +150,22 @@ class OfferResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     trader_id: str
-    trader_login: str
-    amount_usdt: float
-    available_usdt: float
+    trader_login: Optional[str] = None
+    amount_usdt: Optional[float] = 0.0
+    available_usdt: Optional[float] = 0.0
     min_amount: Optional[float] = 0.0
     max_amount: Optional[float] = 0.0
-    price_rub: float
-    payment_methods: List[str]
+    price_rub: Optional[float] = 0.0
+    payment_methods: Optional[List[str]] = []
     accepted_merchant_types: Optional[List[str]] = None
     requisite_ids: Optional[List[str]] = None
     payment_detail_ids: Optional[List[str]] = None
     requisites: Optional[List[Dict[str, Any]]] = None
     payment_details: Optional[List[Dict[str, Any]]] = None
     conditions: Optional[str] = None
-    is_active: bool
-    created_at: str
+    is_active: Optional[bool] = False
+    status: Optional[str] = None
+    created_at: Optional[str] = None
     trades_count: Optional[int] = 0
     success_rate: Optional[float] = 100.0
 

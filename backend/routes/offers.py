@@ -158,7 +158,8 @@ async def create_offer(data: OfferCreate, user: dict = Depends(require_role(["tr
 
 
 def _normalize_offer(offer: dict) -> dict:
-    """Ensure offer has all required fields"""
+    """Ensure offer has all required fields with sensible defaults"""
+    # Handle amount fields
     if "amount_usdt" not in offer:
         offer["amount_usdt"] = offer.get("max_amount", 0)
     if "available_usdt" not in offer:
@@ -167,11 +168,35 @@ def _normalize_offer(offer: dict) -> dict:
         offer["min_amount"] = 1.0
     if "max_amount" not in offer:
         offer["max_amount"] = offer.get("amount_usdt", 0)
+    if "price_rub" not in offer:
+        offer["price_rub"] = 0.0
+    
+    # Handle trader_login - try to load from trader collection if missing
+    if not offer.get("trader_login"):
+        offer["trader_login"] = ""  # Will be populated by caller if needed
+    
+    # Handle payment_methods - ensure it's always a list
+    if not offer.get("payment_methods"):
+        offer["payment_methods"] = []
+    elif not isinstance(offer["payment_methods"], list):
+        offer["payment_methods"] = [offer["payment_methods"]]
+    
+    # Synchronize is_active and status fields
+    # Use is_active as the source of truth if present, otherwise derive from status
+    if "is_active" not in offer:
+        status = offer.get("status", "")
+        offer["is_active"] = status == "active"
+    
+    # Ensure created_at exists
+    if not offer.get("created_at"):
+        offer["created_at"] = datetime.now(timezone.utc).isoformat()
+    
     # Clean _id from embedded payment_details/requisites
     if offer.get("payment_details"):
         offer["payment_details"] = [{k: v for k, v in d.items() if k != "_id"} for d in offer["payment_details"]]
     if offer.get("requisites"):
         offer["requisites"] = [{k: v for k, v in req.items() if k != "_id"} for req in offer["requisites"]]
+    
     return offer
 
 
@@ -254,10 +279,21 @@ async def get_offers(
 async def get_my_offers(user: dict = Depends(require_role(["trader"]))):
     """Get current trader's offers"""
     offers = await db.offers.find({"trader_id": user["id"]}, {"_id": 0}).to_list(100)
+    
+    # Get trader's login for fallback
+    trader = await db.traders.find_one({"id": user["id"]}, {"_id": 0, "login": 1})
+    trader_login = trader.get("login", "") if trader else ""
+    
     result = []
     for offer in offers:
         offer = await _load_payment_details_for_offer(offer)
-        result.append(_normalize_offer(offer))
+        offer = _normalize_offer(offer)
+        
+        # Ensure trader_login is set
+        if not offer.get("trader_login"):
+            offer["trader_login"] = trader_login
+        
+        result.append(offer)
     return result
 
 

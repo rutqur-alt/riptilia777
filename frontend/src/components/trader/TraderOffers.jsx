@@ -337,8 +337,8 @@ export default function TraderOffers() {
         </div>
       ) : (
         <div className="space-y-4">
-          {offers.filter(o => o.is_active || o.paused_by_admin).map((offer) => (
-            <div key={offer.id} className={`bg-[#121212] border rounded-2xl p-6 ${offer.paused_by_admin ? 'border-[#F59E0B]/30' : 'border-white/5'}`} data-testid="offer-card">
+          {offers.map((offer) => (
+            <div key={offer.id} className={`bg-[#121212] border rounded-2xl p-6 ${offer.paused_by_admin ? 'border-[#F59E0B]/30' : !offer.is_active ? 'border-[#52525B]/30 opacity-60' : 'border-white/5'}`} data-testid="offer-card">
               <div className="flex items-start justify-between">
                 <div className="space-y-3 flex-1">
                   <div className="flex items-center gap-4 flex-wrap">
@@ -350,10 +350,15 @@ export default function TraderOffers() {
                         <Pause className="w-3 h-3" />
                         {"\u041D\u0430 \u043F\u0430\u0443\u0437\u0435"}
                       </span>
-                    ) : (
+                    ) : offer.is_active ? (
                       <span className="px-2 py-1 bg-[#10B981]/10 text-[#10B981] text-xs rounded-full font-medium flex items-center gap-1">
                         <Play className="w-3 h-3" />
                         {"\u0410\u043A\u0442\u0438\u0432\u043D\u043E"}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-[#52525B]/20 text-[#71717A] text-xs rounded-full font-medium flex items-center gap-1">
+                        <XCircle className="w-3 h-3" />
+                        {"Закрыто"}
                       </span>
                     )}
                   </div>
