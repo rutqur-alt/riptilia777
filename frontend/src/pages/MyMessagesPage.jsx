@@ -43,7 +43,9 @@ const TYPE_CONFIG = {
 export default function MyMessagesPage() {
   const { token, user } = useAuth();
   const [conversations, setConversations] = useState([]);
+  const [broadcasts, setBroadcasts] = useState([]);
   const [selectedConv, setSelectedConv] = useState(null);
+  const [selectedBroadcast, setSelectedBroadcast] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -108,6 +110,34 @@ export default function MyMessagesPage() {
       console.error('Error fetching conversations:', error);
     } finally {
       setLoading(false);
+    }
+    
+    // Fetch broadcasts separately (always)
+    fetchBroadcasts();
+  };
+
+  const fetchBroadcasts = async () => {
+    try {
+      const response = await axios.get(`${API}/notifications/broadcasts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      console.log('Broadcasts loaded:', response.data);
+      setBroadcasts(response.data || []);
+    } catch (error) {
+      console.error('Error fetching broadcasts:', error);
+    }
+  };
+
+  const markBroadcastRead = async (notificationId) => {
+    try {
+      await axios.post(`${API}/notifications/${notificationId}/read`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setBroadcasts(prev => prev.map(b => 
+        b.id === notificationId ? { ...b, is_read: true } : b
+      ));
+    } catch (error) {
+      console.error('Error marking broadcast read:', error);
     }
   };
 
@@ -262,7 +292,7 @@ export default function MyMessagesPage() {
               <div className="flex items-center justify-center h-40">
                 <Loader className="w-5 h-5 text-[#7C3AED] animate-spin" />
               </div>
-            ) : filteredConversations.length === 0 ? (
+            ) : filteredConversations.length === 0 && broadcasts.length === 0 ? (
               <div className="p-6 text-center">
                 <MessageCircle className="w-10 h-10 text-[#52525B] mx-auto mb-3" />
                   <p className="text-[#71717A] text-sm">Нет сообщений</p>
@@ -274,7 +304,55 @@ export default function MyMessagesPage() {
                     </Button>
               </div>
             ) : (
-              filteredConversations.map((conv) => {
+              <>
+              {/* Broadcasts first */}
+              {broadcasts.length > 0 && (
+                <>
+                  <div className="px-3 py-2 bg-[#F59E0B]/10 border-b border-[#F59E0B]/20">
+                    <span className="text-[#F59E0B] text-xs font-medium flex items-center gap-1">
+                      <Shield className="w-3 h-3" />
+                      Рассылки от администрации ({broadcasts.length})
+                    </span>
+                  </div>
+                  {broadcasts.map((b) => (
+                    <div
+                      key={b.id}
+                      onClick={() => {
+                        setSelectedConv(null);
+                        setSelectedBroadcast(b);
+                        if (!b.is_read) markBroadcastRead(b.id);
+                      }}
+                      className={`p-3 border-b border-white/5 cursor-pointer transition-colors ${
+                        selectedBroadcast?.id === b.id 
+                          ? 'bg-[#F59E0B]/10 border-l-2 border-l-[#F59E0B]' 
+                          : 'hover:bg-white/5'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <Shield className="w-4 h-4 mt-0.5 text-[#F59E0B]" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-sm font-medium truncate">
+                              {b.title || 'Рассылка'}
+                            </span>
+                            {!b.is_read && (
+                              <span className="bg-[#F59E0B] text-white text-[9px] px-1.5 py-0.5 rounded">
+                                НОВОЕ
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[#52525B] text-xs mt-1 truncate">
+                            {b.message?.slice(0, 50)}...
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+              
+              {/* Chats */}
+              {filteredConversations.map((conv) => {
                 const typeConfig = TYPE_CONFIG[conv.type] || TYPE_CONFIG.support_ticket;
                 const TypeIcon = typeConfig.icon;
                 const isDispute = conv.status === 'dispute' || conv.status === 'disputed' || conv.type === 'p2p_dispute' || typeConfig.isDispute;
@@ -319,14 +397,44 @@ export default function MyMessagesPage() {
                     </div>
                   </div>
                 );
-              })
+              })}
+              </>
             )}
           </div>
         </div>
 
         {/* Chat Area */}
         <div className="lg:col-span-2 bg-[#121212] border border-white/5 rounded-xl overflow-hidden flex flex-col">
-          {selectedConv ? (
+          {selectedBroadcast ? (
+            // Show broadcast content
+            <div className="flex-1 flex flex-col">
+              <div className="p-4 border-b border-white/5 bg-[#F59E0B]/10">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-[#F59E0B]" />
+                  <h3 className="text-white font-semibold">
+                    {selectedBroadcast.title || 'Рассылка от администрации'}
+                  </h3>
+                </div>
+                <p className="text-[#71717A] text-xs mt-1">
+                  {new Date(selectedBroadcast.created_at).toLocaleString('ru-RU')}
+                </p>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="bg-[#0A0A0A] border border-white/5 rounded-xl p-4">
+                  <p className="text-white whitespace-pre-wrap">{selectedBroadcast.message}</p>
+                </div>
+              </div>
+              <div className="p-3 border-t border-white/5">
+                <Button 
+                  onClick={() => setSelectedBroadcast(null)}
+                  variant="outline"
+                  className="w-full border-white/10 text-white hover:bg-white/5"
+                >
+                  Закрыть
+                </Button>
+              </div>
+            </div>
+          ) : selectedConv ? (
             <>
               {/* Header */}
               <div className={`p-3 border-b border-white/5 ${selectedConv.status === 'dispute' ? 'bg-[#EF4444]/10' : ''}`}>
@@ -503,7 +611,7 @@ export default function MyMessagesPage() {
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <MessageCircle className="w-12 h-12 text-[#52525B] mx-auto mb-3" />
-                <p className="text-[#71717A]">Выберите чат</p>
+                <p className="text-[#71717A]">Выберите чат или рассылку</p>
                 <p className="text-[#52525B] text-sm mt-1">или создайте обращение в поддержку</p>
               </div>
             </div>
