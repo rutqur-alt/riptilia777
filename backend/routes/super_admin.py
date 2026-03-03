@@ -127,6 +127,19 @@ async def get_admin_notifications(user: dict = Depends(require_admin_level(30)))
     pending_withdrawals = await db.withdrawals.count_documents({"status": "pending"})
     active_trades = await db.trades.count_documents({"status": {"$in": ["pending", "paid"]}})
     
+    # Count unread messages for admin (all chats)
+    messages_total = await db.unified_messages.count_documents({
+        "read_by": {"$ne": user["id"]},
+        "sender_id": {"$ne": user["id"]}
+    })
+    
+    # Count unread staff messages
+    staff_messages = await db.unified_messages.count_documents({
+        "conversation_id": {"$regex": "^staff_"},
+        "read_by": {"$ne": user["id"]},
+        "sender_id": {"$ne": user["id"]}
+    })
+    
     return {
         "pending_merchants": pending_merchants,
         "open_tickets": open_tickets,
@@ -137,7 +150,9 @@ async def get_admin_notifications(user: dict = Depends(require_admin_level(30)))
         "support_total": open_tickets + shop_applications,
         "p2p_total": disputed_trades + active_trades,
         "users_total": pending_merchants,
-        "finances_total": pending_withdrawals
+        "finances_total": pending_withdrawals,
+        "messages_total": messages_total,
+        "staff_messages": staff_messages
     }
 
 

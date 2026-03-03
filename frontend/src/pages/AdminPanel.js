@@ -24,6 +24,14 @@ const NotificationBadge = ({ count }) => {
   );
 };
 
+// Red dot indicator (no number)
+const RedDotIndicator = ({ show }) => {
+  if (!show) return null;
+  return (
+    <span className="ml-auto w-2 h-2 bg-[#EF4444] rounded-full flex-shrink-0" />
+  );
+};
+
 // Import all admin components
 import BroadcastPageComponent from "@/components/admin/BroadcastPage";
 import StaffMonitoringComponent from "@/components/admin/StaffMonitoring";
@@ -104,26 +112,23 @@ export default function AdminPanel() {
         { path: "/admin/users", icon: Users, label: "Пользователи", roles: ["owner", "admin", "mod_p2p"] },
         { path: "/admin/staff", icon: UserCog, label: "Персонал", roles: ["owner", "admin"] },
         { path: "/admin/staff/monitor", icon: Eye, label: "Мониторинг", roles: ["owner", "admin"] },
-        { path: "/admin/finances", icon: DollarSign, label: "Финансы", notifyKey: "pending_withdrawals", roles: ["owner", "admin"] },
-      ],
-      notifyKey: "finances_total"
+        { path: "/admin/finances", icon: DollarSign, label: "Финансы", roles: ["owner", "admin"] },
+      ]
     },
     {
       title: "P2P Торговля",
       items: [
         { path: "/admin/p2p/offers", icon: TrendingUp, label: "Объявления" },
-        { path: "/admin/p2p/trades", icon: Activity, label: "Сделки", notifyKey: "active_trades" },
-      ],
-      notifyKey: "p2p_total"
+        { path: "/admin/p2p/trades", icon: Activity, label: "Сделки" },
+      ]
     },
     {
       title: "Мерчанты",
       items: [
         { path: "/admin/merchants", icon: Briefcase, label: "Список" },
-        { path: "/admin/merchants/payouts", icon: ArrowDownRight, label: "Выплаты", notifyKey: "crypto_payouts" },
+        { path: "/admin/merchants/payouts", icon: ArrowDownRight, label: "Выплаты" },
         { path: "/admin/merchants/payout-rules", icon: FileText, label: "Правила выплат" },
-      ],
-      notifyKey: "pending_merchants"
+      ]
     },
     {
       title: "Маркетплейс",
@@ -132,18 +137,16 @@ export default function AdminPanel() {
         { path: "/admin/market/products", icon: Package, label: "Товары" },
         { path: "/admin/market/orders", icon: ShoppingBag, label: "Заказы" },
         { path: "/admin/market/guarantor", icon: Shield, label: "Гарант-сделки" },
-        { path: "/admin/market/withdrawals", icon: ArrowDownRight, label: "Выводы", notifyKey: "pending_withdrawals", roles: ["owner", "admin"] },
-      ],
-      notifyKey: "shop_applications"
+        { path: "/admin/market/withdrawals", icon: ArrowDownRight, label: "Выводы", roles: ["owner", "admin"] },
+      ]
     },
     {
       title: "Сообщения",
       items: [
-        { path: "/admin/messages", icon: MessageCircle, label: "Все чаты", notifyKey: "messages_total" },
-        { path: "/admin/messages/staff", icon: UserCog, label: "Персонал", roles: ["owner", "admin", "mod_p2p", "mod_market", "support"] },
+        { path: "/admin/messages", icon: MessageCircle, label: "Все чаты", showDot: "messages_total" },
+        { path: "/admin/messages/staff", icon: UserCog, label: "Персонал", showDot: "staff_messages", roles: ["owner", "admin", "mod_p2p", "mod_market", "support"] },
         { path: "/admin/broadcast", icon: Send, label: "Рассылка", roles: ["owner", "admin", "support"] },
-      ],
-      notifyKey: "messages_total"
+      ]
     },
     {
       title: "Настройки",
@@ -205,11 +208,6 @@ export default function AdminPanel() {
           </div>
           <span className="text-white text-sm font-medium">{user?.login}</span>
         </div>
-        {Object.values(notifications).reduce((a, b) => a + b, 0) > 0 && (
-          <div className="w-6 h-6 rounded-full bg-[#EF4444] flex items-center justify-center text-white text-xs">
-            {Object.values(notifications).reduce((a, b) => a + b, 0)}
-          </div>
-        )}
       </div>
 
       {/* Mobile Overlay */}
@@ -268,7 +266,6 @@ export default function AdminPanel() {
 
         <nav className="flex-1 p-2 overflow-y-auto scrollbar-thin">
           {sections.map((section, idx) => {
-            const sectionCount = section.notifyKey ? notifications[section.notifyKey] : 0;
             return (
               <div key={idx} className="mb-1">
                 <button
@@ -277,13 +274,12 @@ export default function AdminPanel() {
                 >
                   <span className="flex items-center gap-1">
                     {section.title}
-                    <NotificationBadge count={sectionCount} />
                   </span>
                   {collapsed[section.title] ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
                 {!collapsed[section.title] && section.items.map((item) => {
                   const isActive = location.pathname === item.path;
-                  const itemCount = item.notifyKey ? notifications[item.notifyKey] : 0;
+                  const showRedDot = item.showDot && notifications[item.showDot] > 0;
                   return (
                     <Link
                       key={item.path}
@@ -296,7 +292,7 @@ export default function AdminPanel() {
                     >
                       <item.icon className="w-3.5 h-3.5" />
                       <span className="flex-1">{item.label}</span>
-                      <NotificationBadge count={itemCount} />
+                      <RedDotIndicator show={showRedDot} />
                     </Link>
                   );
                 })}
