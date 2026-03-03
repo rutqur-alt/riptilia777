@@ -566,9 +566,10 @@ async def startup():
     logging.info("Started guarantor auto-complete background task")
 
 async def auto_cancel_expired_trades():
-    """Background task to auto-cancel trades that have been pending for 30+ minutes"""
-    # Import webhook sender
+    """Background task to auto-cancel trades and invoices that have expired"""
+    # Import webhook senders
     from routes.merchant_api import send_merchant_webhook
+    from routes.invoice_api import send_webhook_notification
     
     while True:
         try:
@@ -577,16 +578,14 @@ async def auto_cancel_expired_trades():
             timeout_minutes = settings.get("trade_timeout_minutes", 30) if settings else 30
             
             cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+            cancelled_at = datetime.now(timezone.utc).isoformat()
             
+            # ========== 1. CANCEL EXPIRED TRADES ==========
             # Find expired pending trades (ONLY if buyer hasn't marked as paid)
-            # Status "pending" means buyer hasn't clicked "paid" yet
-            # Status "paid" means buyer clicked paid, waiting for seller - don't auto-cancel
             expired_trades = await db.trades.find({
-                "status": "pending",  # Only pending, not "paid"
+                "status": "pending",
                 "created_at": {"$lt": cutoff_time.isoformat()}
             }).to_list(100)
-            
-            cancelled_at = datetime.now(timezone.utc).isoformat()
             
             for trade in expired_trades:
                 # Cancel the trade
@@ -607,28 +606,76 @@ async def auto_cancel_expired_trades():
                         {"$inc": {"available_usdt": trade["amount_usdt"]}}
                     )
                 
-                # Send webhook to merchant (CANCELLED - auto timeout)
-                if trade.get("merchant_id"):
-                    try:
-                        await send_merchant_webhook(
-                            merchant_id=trade["merchant_id"],
-                            payment_id=trade.get("invoice_id") or trade["id"],
-                            status="cancelled",
-                            extra_data={
+                # Update linked invoice status
+                if trade.get("invoice_id"):
+                    await db.merchant_invoices.update_one(
+                        {"id": trade["invoice_id"]},
+                        {"$set": {"status": "cancelled", "cancelled_at": cancelled_at}}
+                    )
+                
+                # Send webhook (prefer Invoice API, fallback to old merchant_api)
+                try:
+                    if trade.get("invoice_id"):
+                        await send_webhook_notification(
+                            trade["invoice_id"],
+                            "cancelled",
+                            {
                                 "trade_id": trade["id"],
-                                "amount_rub": trade.get("amount_rub", 0),
-                                "reason": f"auto_timeout",
+                                "reason": "auto_timeout",
                                 "cancel_reason": f"Клиент не оплатил в течение {timeout_minutes} минут",
                                 "cancelled_at": cancelled_at,
                                 "cancelled_by": "system"
                             }
                         )
-                    except Exception as webhook_err:
-                        print(f"[AUTO-CANCEL] Webhook error for trade {trade['id']}: {webhook_err}")
+                    elif trade.get("merchant_id"):
+                        await send_merchant_webhook(
+                            merchant_id=trade["merchant_id"],
+                            payment_id=trade["id"],
+                            status="cancelled",
+                            extra_data={
+                                "trade_id": trade["id"],
+                                "amount_rub": trade.get("amount_rub", 0),
+                                "reason": "auto_timeout",
+                                "cancel_reason": f"Клиент не оплатил в течение {timeout_minutes} минут",
+                                "cancelled_at": cancelled_at,
+                                "cancelled_by": "system"
+                            }
+                        )
+                except Exception as webhook_err:
+                    print(f"[AUTO-CANCEL] Webhook error for trade {trade['id']}: {webhook_err}")
                 
                 print(f"[AUTO-CANCEL] Trade {trade['id']} cancelled - buyer didn't pay in {timeout_minutes} minutes")
             
-            # Also check merchant payment requests
+            # ========== 2. EXPIRE INVOICES WITHOUT TRADE ==========
+            # Invoices where client never selected an operator
+            expired_invoices = await db.merchant_invoices.find({
+                "status": "waiting_requisites",
+                "trade_id": {"$exists": False},
+                "expires_at": {"$lt": datetime.now(timezone.utc).isoformat()}
+            }).to_list(100)
+            
+            for invoice in expired_invoices:
+                await db.merchant_invoices.update_one(
+                    {"id": invoice["id"]},
+                    {"$set": {"status": "expired", "expired_at": cancelled_at}}
+                )
+                
+                # Send expired webhook
+                try:
+                    await send_webhook_notification(
+                        invoice["id"],
+                        "expired",
+                        {
+                            "reason": "Клиент не выбрал оператора",
+                            "expired_at": cancelled_at
+                        }
+                    )
+                except Exception as webhook_err:
+                    print(f"[AUTO-EXPIRE] Webhook error for invoice {invoice['id']}: {webhook_err}")
+                
+                print(f"[AUTO-EXPIRE] Invoice {invoice['id']} expired - client didn't select operator")
+            
+            # ========== 3. EXPIRE OLD PAYMENT REQUESTS ==========
             expired_requests = await db.payment_requests.find({
                 "status": "pending",
                 "created_at": {"$lt": cutoff_time.isoformat()}
@@ -639,7 +686,7 @@ async def auto_cancel_expired_trades():
                     {"id": request["id"]},
                     {"$set": {
                         "status": "expired",
-                        "expired_at": datetime.now(timezone.utc).isoformat()
+                        "expired_at": cancelled_at
                     }}
                 )
                 print(f"[AUTO-EXPIRE] Payment request {request['id']} expired")

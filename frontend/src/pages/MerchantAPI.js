@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useAuth, API } from '@/App';
 import axios from 'axios';
-import { Copy, RefreshCw, Code, Key, Shield, ExternalLink, Eye, EyeOff } from 'lucide-react';
+import { Copy, RefreshCw, Code, Key, Shield, ExternalLink, Eye, EyeOff, CheckCircle, AlertTriangle, Clock, ArrowRight } from 'lucide-react';
 
 const MerchantAPI = () => {
   const { user, token } = useAuth();
@@ -78,7 +78,6 @@ const MerchantAPI = () => {
     );
   }
 
-  // Домен платформы для документации
   const BASE_URL = window.location.origin;
 
   const signatureExample = `import hmac
@@ -88,15 +87,15 @@ def generate_signature(params: dict, secret_key: str) -> str:
     """
     Генерация HMAC-SHA256 подписи для Reptiloid API
     
-    ВАЖНО! Для /v1/invoice/create в подпись входят ТОЛЬКО эти поля:
-    - merchant_id, order_id, amount, currency, user_id, callback_url
+    Поля участвующие в подписи:
+    merchant_id, order_id, amount, currency, user_id, callback_url
     
-    Поле description НЕ участвует в подписи!
+    ВАЖНО: description НЕ участвует в подписи!
     
     Алгоритм:
     1. Берём только разрешённые поля
     2. Убираем sign и None значения
-    3. ВАЖНО: float приводим к int если число целое (1500.0 → 1500)
+    3. float приводим к int если число целое (1500.0 → 1500)
     4. Сортируем по ключам
     5. Формируем строку key=value&key2=value2
     6. Добавляем secret_key в конец
@@ -122,19 +121,19 @@ def generate_signature(params: dict, secret_key: str) -> str:
         hashlib.sha256
     ).hexdigest()`;
 
-  const createInvoiceExample = `import requests
+  const pythonExample = `import requests
+import hmac
+import hashlib
 
+# === ВАШИ КЛЮЧИ ===
 API_KEY = "${merchant?.api_key || 'YOUR_API_KEY'}"
 SECRET_KEY = "${merchant?.api_secret || 'YOUR_SECRET_KEY'}"
 MERCHANT_ID = "${merchant?.id || 'YOUR_MERCHANT_ID'}"
 BASE_URL = "${BASE_URL}/api/v1/invoice"
-HEADERS = {"X-Api-Key": API_KEY, "Content-Type": "application/json"}
 
 def generate_signature(params: dict, secret_key: str) -> str:
     """Генерация HMAC-SHA256 подписи"""
-    import hmac, hashlib
     SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url']
-    
     sign_params = {}
     for k, v in params.items():
         if k not in SIGN_FIELDS or k == 'sign' or v is None:
@@ -149,10 +148,20 @@ def generate_signature(params: dict, secret_key: str) -> str:
     
     return hmac.new(secret_key.encode(), sign_string.encode(), hashlib.sha256).hexdigest()
 
-# ========== WHITE-LABEL ИНТЕГРАЦИЯ ==========
 
-# 1. Создаём инвойс
-def create_invoice(order_id: str, amount: int, callback_url: str):
+def create_payment(order_id: str, amount: int, callback_url: str, description: str = None):
+    """
+    Создание платежа. Возвращает ссылку для редиректа клиента.
+    
+    Args:
+        order_id: Уникальный ID заказа в вашей системе
+        amount: Сумма в рублях (минимум 100)
+        callback_url: URL для получения вебхуков
+        description: Описание платежа (опционально)
+    
+    Returns:
+        payment_url - ссылка для редиректа клиента на страницу оплаты
+    """
     params = {
         "merchant_id": MERCHANT_ID,
         "order_id": order_id,
@@ -163,134 +172,265 @@ def create_invoice(order_id: str, amount: int, callback_url: str):
     }
     params["sign"] = generate_signature(params, SECRET_KEY)
     
-    response = requests.post(f"{BASE_URL}/create", json=params, headers=HEADERS)
-    return response.json()  # {"status": "success", "payment_id": "inv_..."}
-
-# 2. Получаем список операторов (для отображения на ВАШЕМ сайте)
-def get_operators(invoice_id: str):
-    response = requests.get(f"{BASE_URL}/{invoice_id}/operators", headers=HEADERS)
-    return response.json()  # {"operators": [...]}
-
-# 3. Клиент выбрал оператора → получаем реквизиты
-def select_operator(invoice_id: str, offer_id: str, payment_method: str):
+    # description не участвует в подписи, добавляем отдельно
+    if description:
+        params["description"] = description
+    
     response = requests.post(
-        f"{BASE_URL}/{invoice_id}/select-operator",
-        json={"offer_id": offer_id, "payment_method": payment_method},
-        headers=HEADERS
+        f"{BASE_URL}/create",
+        json=params,
+        headers={"X-Api-Key": API_KEY, "Content-Type": "application/json"}
     )
-    return response.json()  # {"payment": {"requisites": {...}}}
+    
+    data = response.json()
+    if data.get("status") == "success":
+        return data["payment_url"]  # Редирект клиента сюда!
+    else:
+        raise Exception(data.get("message", "Ошибка создания платежа"))
 
-# 4. Клиент оплатил → отмечаем
-def mark_paid(invoice_id: str):
-    response = requests.post(f"{BASE_URL}/{invoice_id}/mark-paid", headers=HEADERS)
+
+def check_payment_status(order_id: str = None, payment_id: str = None):
+    """
+    Проверка статуса платежа.
+    Можно проверять по order_id (ваш ID) или payment_id (наш ID).
+    """
+    params = {}
+    if order_id:
+        params["order_id"] = order_id
+    if payment_id:
+        params["payment_id"] = payment_id
+    
+    response = requests.get(
+        f"{BASE_URL}/status",
+        params=params,
+        headers={"X-Api-Key": API_KEY}
+    )
+    
     return response.json()
 
+
 # === ПРИМЕР ИСПОЛЬЗОВАНИЯ ===
-invoice = create_invoice("ORDER_123", 1500, "https://mysite.com/webhook")
-invoice_id = invoice["payment_id"]
 
-# Показываем операторов на ВАШЕМ сайте
-operators = get_operators(invoice_id)
-for op in operators["operators"]:
-    print(f"{op['nickname']} - {op['amount_to_pay']} RUB ({op['payment_methods']})")
+# 1. Клиент нажал "Оплатить" на вашем сайте
+payment_url = create_payment(
+    order_id="ORDER_123456",
+    amount=1500,
+    callback_url="https://yoursite.com/webhook",
+    description="Пополнение баланса"
+)
 
-# Клиент выбрал оператора
-result = select_operator(invoice_id, operators["operators"][0]["offer_id"], "card")
-print(f"Реквизиты: {result['payment']['requisites']['number']}")
+# 2. Редиректим клиента на страницу оплаты
+print(f"Redirect клиента на: {payment_url}")
+# В веб-приложении: return redirect(payment_url)
 
-# Клиент оплатил
-mark_paid(invoice_id)`;
+# 3. Проверка статуса (опционально, вместо вебхука)
+status = check_payment_status(order_id="ORDER_123456")
+print(f"Статус: {status['data']['status']}")`;
 
-  const jsIntegrationExample = `// ========== WHITE-LABEL ИНТЕГРАЦИЯ (JavaScript) ==========
-// Клиент НЕ покидает ваш сайт. Всё через API.
-
+  const jsExample = `// === ВАШИ КЛЮЧИ ===
 const API_KEY = '${merchant?.api_key || 'YOUR_API_KEY'}';
 const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
 const MERCHANT_ID = '${merchant?.id || 'YOUR_MERCHANT_ID'}';
 const API_BASE = '${BASE_URL}/api/v1/invoice';
-const HEADERS = { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' };
 
-// Подпись
+// Подключите crypto-js: npm install crypto-js
+// import CryptoJS from 'crypto-js';
+
 const SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url'];
+
 function generateSignature(params, secretKey) {
   const signParams = {};
   for (const [k, v] of Object.entries(params)) {
     if (!SIGN_FIELDS.includes(k) || k === 'sign' || v == null) continue;
     signParams[k] = typeof v === 'number' && Number.isInteger(v) ? Math.floor(v) : v;
   }
-  const signString = Object.keys(signParams).sort().map(k => \`\${k}=\${signParams[k]}\`).join('&') + secretKey;
+  const signString = Object.keys(signParams).sort()
+    .map(k => \`\${k}=\${signParams[k]}\`).join('&') + secretKey;
   return CryptoJS.HmacSHA256(signString, secretKey).toString();
 }
 
-// 1. Создать инвойс
-async function createInvoice(amount, orderId) {
+/**
+ * Создание платежа
+ * @param {number} amount - сумма в рублях
+ * @param {string} orderId - уникальный ID заказа
+ * @param {string} callbackUrl - URL для вебхуков
+ * @returns {string} payment_url - ссылка для редиректа
+ */
+async function createPayment(amount, orderId, callbackUrl, description = null) {
   const params = {
     merchant_id: MERCHANT_ID,
     order_id: orderId,
     amount: Math.floor(amount),
     currency: 'RUB',
-    callback_url: 'https://yoursite.com/webhook',
+    callback_url: callbackUrl,
     user_id: null
   };
   params.sign = generateSignature(params, SECRET_KEY);
   
+  if (description) params.description = description;
+  
   const res = await fetch(\`\${API_BASE}/create\`, {
-    method: 'POST', headers: HEADERS, body: JSON.stringify(params)
+    method: 'POST',
+    headers: { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
   });
-  return res.json();
-}
-
-// 2. Получить операторов (показать на ВАШЕМ сайте)
-async function getOperators(invoiceId) {
-  const res = await fetch(\`\${API_BASE}/\${invoiceId}/operators\`, { headers: HEADERS });
-  return res.json();
-}
-
-// 3. Выбрать оператора → получить реквизиты
-async function selectOperator(invoiceId, offerId, paymentMethod) {
-  const res = await fetch(\`\${API_BASE}/\${invoiceId}/select-operator\`, {
-    method: 'POST', headers: HEADERS,
-    body: JSON.stringify({ offer_id: offerId, payment_method: paymentMethod })
-  });
-  return res.json();
-}
-
-// 4. Отметить как оплачено
-async function markPaid(invoiceId) {
-  const res = await fetch(\`\${API_BASE}/\${invoiceId}/mark-paid\`, {
-    method: 'POST', headers: HEADERS
-  });
-  return res.json();
+  
+  const data = await res.json();
+  if (data.status === 'success') {
+    return data.payment_url;  // Редирект клиента сюда!
+  }
+  throw new Error(data.message || 'Ошибка создания платежа');
 }
 
 // === ПРИМЕР ИСПОЛЬЗОВАНИЯ ===
-async function processPayment(amount) {
-  // 1. Создаём инвойс
-  const invoice = await createInvoice(amount, 'ORDER_' + Date.now());
+
+// На сервере (Node.js/Express):
+app.post('/pay', async (req, res) => {
+  const { amount, orderId } = req.body;
   
-  // 2. Показываем операторов на ВАШЕМ сайте
-  const { operators } = await getOperators(invoice.payment_id);
-  renderOperatorsList(operators);  // Ваша функция рендера
+  const paymentUrl = await createPayment(
+    amount,
+    orderId,
+    'https://yoursite.com/webhook'
+  );
   
-  // 3. Когда клиент выбрал оператора
-  const result = await selectOperator(invoice.payment_id, selectedOfferId, 'card');
-  showRequisites(result.payment.requisites);  // Ваша функция показа реквизитов
-  
-  // 4. Когда клиент нажал "Я оплатил"
-  await markPaid(invoice.payment_id);
+  // Редирект клиента на страницу оплаты
+  res.redirect(paymentUrl);
+});
+
+// На клиенте (React/Vue):
+async function handlePayment() {
+  const paymentUrl = await createPayment(1500, 'ORDER_' + Date.now(), '/webhook');
+  window.location.href = paymentUrl;  // Редирект
 }`;
+
+  const webhookExample = `// Node.js / Express - обработка вебхуков
+const crypto = require('crypto');
+
+const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
+const SIGN_FIELDS = ['order_id', 'payment_id', 'status', 'amount', 'amount_usdt', 'timestamp'];
+
+function verifyWebhookSignature(payload, receivedSign) {
+  const signParams = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null) continue;
+    let v = value;
+    if (typeof v === 'number' && Number.isInteger(v)) v = Math.floor(v);
+    signParams[key] = v;
+  }
+  
+  const signString = Object.keys(signParams).sort()
+    .map(k => \`\${k}=\${signParams[k]}\`).join('&') + SECRET_KEY;
+  
+  const expectedSign = crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(signString)
+    .digest('hex');
+  
+  return expectedSign === receivedSign;
+}
+
+// Обработчик вебхуков
+app.post('/webhook', (req, res) => {
+  const { sign, ...payload } = req.body;
+  
+  // 1. Проверяем подпись
+  if (!verifyWebhookSignature(payload, sign)) {
+    console.error('Invalid webhook signature!');
+    return res.status(401).json({ status: 'error', message: 'Invalid signature' });
+  }
+  
+  // 2. Обрабатываем статус
+  const { order_id, payment_id, status, amount, amount_usdt } = payload;
+  
+  switch (status) {
+    case 'pending':
+      // Клиент выбрал оператора, ожидает оплаты
+      console.log(\`Заказ \${order_id}: ожидает оплаты\`);
+      break;
+      
+    case 'paid':
+      // Клиент оплатил, ожидает подтверждения оператора
+      console.log(\`Заказ \${order_id}: клиент оплатил, ждём подтверждения\`);
+      break;
+      
+    case 'completed':
+      // ✅ ПЛАТЁЖ УСПЕШЕН - зачислите средства клиенту!
+      console.log(\`Заказ \${order_id}: УСПЕХ! Сумма: \${amount} RUB / \${amount_usdt} USDT\`);
+      // await creditUserBalance(order_id, amount_usdt);
+      break;
+      
+    case 'cancelled':
+      // Отмена (клиент отменил или таймаут)
+      console.log(\`Заказ \${order_id}: отменён. Причина: \${payload.reason}\`);
+      break;
+      
+    case 'disputed':
+      // Открыт спор - ждите решения арбитража
+      console.log(\`Заказ \${order_id}: открыт спор\`);
+      break;
+  }
+  
+  // 3. ВАЖНО: всегда отвечайте { status: 'ok' }
+  res.json({ status: 'ok' });
+});`;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">API Интеграция</h1>
-        <p className="text-zinc-400 text-sm">Invoice API v1 - Приём рублевых платежей через p2p USDT</p>
+        <p className="text-zinc-400 text-sm">Invoice API v1 — Приём рублевых платежей через P2P USDT</p>
       </div>
+
+      {/* Как это работает */}
+      <Card className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border-emerald-500/30">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ArrowRight className="w-5 h-5 text-emerald-400" />
+            Как работает интеграция
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-zinc-300">
+            Простая интеграция с редиректом. Клиент переходит на нашу платформу для оплаты.
+          </p>
+          
+          <div className="space-y-3">
+            <div className="flex gap-3 items-start">
+              <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">1</span>
+              <div>
+                <p className="text-sm text-white font-medium">Создайте платёж через API</p>
+                <p className="text-xs text-zinc-500 mt-1">POST /api/v1/invoice/create → получите payment_url</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">2</span>
+              <div>
+                <p className="text-sm text-white font-medium">Перенаправьте клиента на payment_url</p>
+                <p className="text-xs text-zinc-500 mt-1">Клиент увидит список операторов, выберет способ оплаты, получит реквизиты</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">3</span>
+              <div>
+                <p className="text-sm text-white font-medium">Клиент оплачивает на нашей платформе</p>
+                <p className="text-xs text-zinc-500 mt-1">Чат с оператором, проверка статуса — всё на нашей стороне</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">4</span>
+              <div>
+                <p className="text-sm text-white font-medium">Получите webhook о статусе платежа</p>
+                <p className="text-xs text-zinc-500 mt-1">completed = успех, зачислите средства клиенту</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* API Keys */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* API Key */}
         <Card className="bg-zinc-900 border-zinc-800">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -300,7 +440,7 @@ async function processPayment(amount) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Используется в заголовке X-Api-Key</label>
+              <label className="text-sm text-zinc-400">Передаётся в заголовке X-Api-Key</label>
               <div className="flex gap-2">
                 <div className="flex-1 bg-zinc-950 rounded-lg px-4 py-3 font-mono text-sm border border-zinc-800 truncate">
                   {merchant?.api_key}
@@ -317,7 +457,6 @@ async function processPayment(amount) {
                 </Button>
               </div>
             </div>
-
             <Button 
               variant="outline" 
               size="sm"
@@ -331,7 +470,6 @@ async function processPayment(amount) {
           </CardContent>
         </Card>
 
-        {/* Secret Key */}
         <Card className="bg-zinc-900 border-zinc-800">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -341,7 +479,7 @@ async function processPayment(amount) {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-zinc-400">Для генерации подписи (HMAC-SHA256)</label>
+              <label className="text-sm text-zinc-400">Для генерации и проверки подписи (HMAC-SHA256)</label>
               <div className="flex gap-2">
                 <div className="flex-1 bg-zinc-950 rounded-lg px-4 py-3 font-mono text-sm border border-zinc-800 truncate">
                   {showSecret 
@@ -369,10 +507,9 @@ async function processPayment(amount) {
                 </Button>
               </div>
               <p className="text-xs text-red-400">
-                ⚠️ Никогда не передавайте Secret Key в запросах!
+                Никогда не передавайте Secret Key в запросах! Используйте только для генерации подписи.
               </p>
             </div>
-
             <Button 
               variant="outline" 
               size="sm"
@@ -410,19 +547,15 @@ async function processPayment(amount) {
       {/* API Endpoints */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
-          <CardTitle className="text-lg">Invoice API v1 - Endpoints</CardTitle>
+          <CardTitle className="text-lg">API Endpoints</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {[
-              { method: 'POST', path: '/api/v1/invoice/create', desc: 'Создать инвойс' },
-              { method: 'GET', path: '/api/v1/invoice/{id}/operators', desc: 'Получить операторов для инвойса' },
-              { method: 'POST', path: '/api/v1/invoice/{id}/select-operator', desc: 'Выбрать оператора, получить реквизиты' },
-              { method: 'POST', path: '/api/v1/invoice/{id}/mark-paid', desc: 'Отметить как оплачено' },
-              { method: 'GET', path: '/api/v1/invoice/{id}/messages', desc: 'Получить сообщения чата' },
-              { method: 'POST', path: '/api/v1/invoice/{id}/messages', desc: 'Отправить сообщение в чат' },
+              { method: 'POST', path: '/api/v1/invoice/create', desc: 'Создать платёж (получить payment_url)' },
               { method: 'GET', path: '/api/v1/invoice/status', desc: 'Проверить статус платежа' },
               { method: 'GET', path: '/api/v1/invoice/transactions', desc: 'Список всех транзакций' },
+              { method: 'GET', path: '/api/v1/invoice/stats', desc: 'Статистика платежей' },
             ].map((endpoint, idx) => (
               <div key={idx} className="flex items-center gap-4 p-3 bg-zinc-800/50 rounded-lg">
                 <span className={`px-2 py-1 rounded text-xs font-bold font-mono ${
@@ -440,209 +573,173 @@ async function processPayment(amount) {
         </CardContent>
       </Card>
 
-      {/* Integration Flow - WHITE LABEL */}
-      <Card className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border-emerald-500/30">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Shield className="w-5 h-5 text-emerald-400" />
-            White-label интеграция
-          </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Клиент НЕ покидает ваш сайт. Всё через API.</p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">1</span>
-              <div>
-                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /create</code> — создайте инвойс</p>
-                <p className="text-xs text-zinc-500 mt-1">Получите invoice_id</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">2</span>
-              <div>
-                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">GET /{'{id}'}/operators</code> — получите список операторов</p>
-                <p className="text-xs text-zinc-500 mt-1">Покажите их на ВАШЕМ сайте (никнейм, рейтинг, методы оплаты)</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">3</span>
-              <div>
-                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /{'{id}'}/select-operator</code> — клиент выбрал оператора</p>
-                <p className="text-xs text-zinc-500 mt-1">Получите реквизиты (номер карты/телефон). Покажите на ВАШЕМ сайте.</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">4</span>
-              <div>
-                <p className="text-sm text-zinc-300"><code className="bg-zinc-800 px-1 rounded">POST /{'{id}'}/mark-paid</code> — клиент нажал "Я оплатил"</p>
-                <p className="text-xs text-zinc-500 mt-1">Статус меняется на "paid", отправляется webhook</p>
-              </div>
-            </div>
-            <div className="flex gap-3 items-start">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">5</span>
-              <div>
-                <p className="text-sm text-zinc-300">Ждите webhook <code className="bg-zinc-800 px-1 rounded">completed</code> или проверяйте статус</p>
-                <p className="text-xs text-zinc-500 mt-1">Оператор подтвердит получение средств</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 mt-4">
-            <p className="text-sm text-emerald-300 font-medium">✓ Преимущества:</p>
-            <ul className="text-sm text-zinc-400 mt-1 space-y-1">
-              <li>• Клиент не видит наш домен</li>
-              <li>• Полный контроль над UI/UX</li>
-              <li>• Ваш бренд на всех этапах</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* API Response Examples */}
+      {/* Create Invoice */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Code className="w-5 h-5 text-purple-400" />
-            Ответ GET /{'{id}'}/operators
+            <Code className="w-5 h-5 text-emerald-400" />
+            POST /api/v1/invoice/create
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Список операторов для отображения на вашем сайте</p>
+          <p className="text-sm text-zinc-400 mt-1">Создание платежа</p>
         </CardHeader>
-        <CardContent>
-          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+        <CardContent className="space-y-4">
+          <div>
+            <h4 className="text-sm font-medium text-zinc-300 mb-2">Запрос:</h4>
+            <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+{`Header: X-Api-Key: ${merchant?.api_key || 'YOUR_API_KEY'}
+
+{
+  "merchant_id": "${merchant?.id || 'YOUR_MERCHANT_ID'}",
+  "order_id": "ORDER_123456",        // Уникальный ID в вашей системе
+  "amount": 1500,                    // Сумма в рублях (мин. 100)
+  "currency": "RUB",
+  "callback_url": "https://yoursite.com/webhook",
+  "user_id": null,                   // Опционально
+  "description": "Пополнение",       // Опционально, НЕ входит в подпись
+  "sign": "abc123..."                // HMAC-SHA256 подпись
+}`}
+            </pre>
+          </div>
+          
+          <div>
+            <h4 className="text-sm font-medium text-zinc-300 mb-2">Ответ:</h4>
+            <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
 {`{
   "status": "success",
-  "invoice_id": "inv_...",
-  "amount_rub": 1000,
-  "exchange_rate": 78.5,
-  "operators": [
-    {
-      "offer_id": "off_abc123",
-      "nickname": "Трейдер Один",
-      "rating": 98,
-      "trades_count": 156,
-      "payment_methods": ["card", "sbp"],
-      "amount_to_pay": 1003,      // Сумма с комиссией
-      "commission_percent": 0.3
-    },
-    {
-      "offer_id": "off_xyz789",
-      "nickname": "Оператор PRO",
-      "rating": 100,
-      "trades_count": 420,
-      "payment_methods": ["sbp"],
-      "amount_to_pay": 1010,
-      "commission_percent": 1.0
-    }
-  ]
+  "payment_id": "inv_20250128_ABC123",
+  "payment_url": "${BASE_URL}/select-operator/inv_20250128_ABC123",
+  "details": {
+    "original_amount": 1500,
+    "total_amount": 1507,           // С маркером для идентификации
+    "marker": 7,
+    "amount_usdt": 15.50,
+    "expires_at": "2025-01-28T12:30:00Z"
+  }
 }`}
-          </pre>
-          <p className="text-xs text-zinc-500 mt-3">
-            Отобразите этот список на вашем сайте. Клиент выбирает оператора.
-          </p>
+            </pre>
+          </div>
+          
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+            <p className="text-sm text-emerald-300">
+              <strong>payment_url</strong> — перенаправьте клиента на этот URL для оплаты
+            </p>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Select Operator Response */}
+      {/* Check Status */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Code className="w-5 h-5 text-blue-400" />
-            Ответ POST /{'{id}'}/select-operator
+            GET /api/v1/invoice/status
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Реквизиты для отображения на вашем сайте</p>
+          <p className="text-sm text-zinc-400 mt-1">Проверка статуса платежа</p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
-{`// Запрос
-{ "offer_id": "off_abc123", "payment_method": "card" }
+{`GET /api/v1/invoice/status?order_id=ORDER_123456
+Header: X-Api-Key: ${merchant?.api_key || 'YOUR_API_KEY'}
 
-// Ответ
+// или по payment_id:
+GET /api/v1/invoice/status?payment_id=inv_20250128_ABC123
+
+// Ответ:
 {
   "status": "success",
-  "trade_id": "trd_...",
-  "operator": {
-    "nickname": "Трейдер Один",
-    "rating": 98
-  },
-  "payment": {
-    "method": "card",
-    "amount": 1003,
-    "requisites": {
-      "type": "card",
-      "bank": "Тинькофф",
-      "number": "4276 1234 5678 9012",  // Номер карты
-      "holder": "IVANOV IVAN"           // Получатель
-    }
-  },
-  "expires_at": "2026-03-03T20:30:00Z",
-  "time_limit_minutes": 30
+  "data": {
+    "order_id": "ORDER_123456",
+    "payment_id": "inv_20250128_ABC123",
+    "status": "completed",           // pending | paid | completed | cancelled | disputed
+    "amount": 1500,
+    "total_amount": 1507,
+    "amount_usdt": 15.50,
+    "created_at": "2025-01-28T12:00:00Z",
+    "paid_at": "2025-01-28T12:05:00Z",
+    "expires_at": "2025-01-28T12:30:00Z"
+  }
 }`}
           </pre>
-          <p className="text-xs text-zinc-500 mt-3">
-            Покажите реквизиты клиенту. Запустите таймер на 30 минут.
-          </p>
         </CardContent>
       </Card>
 
-      {/* Mark Paid */}
-      <Card className="bg-zinc-900 border-zinc-800">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Shield className="w-5 h-5 text-emerald-400" />
-            POST /{'{id}'}/mark-paid
-          </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Клиент нажал "Я оплатил" на вашем сайте</p>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
-{`// Ответ
-{
-  "status": "success",
-  "message": "Оплата отмечена. Ожидайте подтверждения от оператора.",
-  "trade_status": "paid"
-}
-
-// Вам придёт webhook "paid", затем "completed" когда оператор подтвердит`}
-          </pre>
-        </CardContent>
-      </Card>
-
-      {/* Chat API */}
+      {/* Webhooks */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <ExternalLink className="w-5 h-5 text-purple-400" />
-            Chat API — чат с оператором
+            Webhook уведомления
           </CardTitle>
-          <p className="text-sm text-zinc-400 mt-1">Интегрируйте чат поддержки на ваш сайт</p>
+          <p className="text-sm text-zinc-400 mt-1">Автоматические уведомления о статусе платежа</p>
         </CardHeader>
-        <CardContent>
-          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
-{`// GET /{id}/messages — Получить сообщения
-{
-  "status": "success",
-  "messages": [
-    { "id": "...", "sender": "system", "text": "Сделка создана", "timestamp": "..." },
-    { "id": "...", "sender": "operator", "text": "Здравствуйте!", "timestamp": "..." },
-    { "id": "...", "sender": "client", "text": "Оплатил", "timestamp": "..." }
-  ]
-}
+        <CardContent className="space-y-4">
+          <p className="text-sm text-zinc-400">
+            Система отправляет POST-запрос на ваш <code className="bg-zinc-800 px-1 rounded">callback_url</code> при каждом изменении статуса:
+          </p>
+          
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
+              <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+              <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">pending</code>
+              <span className="text-sm text-zinc-400 flex-1">Клиент выбрал оператора, ожидает оплаты</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
+              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+              <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">paid</code>
+              <span className="text-sm text-zinc-400 flex-1">Клиент оплатил, ожидает подтверждения оператора</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+              <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">completed</code>
+              <span className="text-sm text-emerald-400 flex-1 font-medium">Платёж успешен — зачислите средства клиенту!</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
+              <span className="w-3 h-3 rounded-full bg-red-500"></span>
+              <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">cancelled</code>
+              <span className="text-sm text-zinc-400 flex-1">Отмена (клиент отменил или таймаут 30 мин)</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-zinc-800/50 rounded-lg">
+              <span className="w-3 h-3 rounded-full bg-orange-500"></span>
+              <code className="bg-zinc-800 px-2 py-0.5 rounded text-sm">disputed</code>
+              <span className="text-sm text-zinc-400 flex-1">Открыт спор, ожидает решения арбитража</span>
+            </div>
+          </div>
+          
+          <div>
+            <h4 className="text-sm font-medium text-zinc-300 mb-2">Формат webhook:</h4>
+            <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+{`POST https://yoursite.com/webhook
 
-// POST /{id}/messages — Отправить сообщение от клиента
-// Body: { "text": "Сообщение клиента" }
 {
-  "status": "success",
-  "message": { "id": "...", "sender": "client", "text": "...", "timestamp": "..." }
+  "order_id": "ORDER_123456",
+  "payment_id": "inv_20250128_ABC123",
+  "status": "completed",
+  "amount": 1500,
+  "amount_usdt": 15.50,
+  "timestamp": "2025-01-28T12:10:00Z",
+  "sign": "f6a7b8c9..."              // HMAC-SHA256 подпись
+  
+  // Дополнительные поля для некоторых статусов:
+  "trade_id": "trd_abc123",          // ID сделки
+  "reason": "auto_timeout",          // Причина отмены (для cancelled)
+  "completed_at": "...",             // Время завершения (для completed)
 }`}
-          </pre>
-          <p className="text-xs text-zinc-500 mt-3">
-            Polling: запрашивайте сообщения каждые 3-5 секунд для real-time обновлений.
+            </pre>
+          </div>
+          
+          <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
+            <p className="text-sm text-orange-300">
+              <strong>Важно:</strong> Всегда проверяйте подпись <code>sign</code>! Отвечайте <code>{`{ "status": "ok" }`}</code> для подтверждения.
+            </p>
+          </div>
+          
+          <p className="text-xs text-zinc-500">
+            Retry-политика: 1 мин → 5 мин → 15 мин → 1 час → 2 часа → 4 часа → 12 часов → 24 часа
           </p>
         </CardContent>
       </Card>
 
-      {/* Signature Example */}
+      {/* Signature */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -652,7 +749,7 @@ async function processPayment(amount) {
         </CardHeader>
         <CardContent>
           <div className="relative">
-            <pre className="bg-zinc-950 rounded-lg p-4 overflow-x-auto text-sm font-mono text-zinc-300 border border-zinc-800">
+            <pre className="bg-zinc-950 rounded-lg p-4 overflow-x-auto text-sm font-mono text-zinc-300 border border-zinc-800 max-h-[400px]">
               {signatureExample}
             </pre>
             <Button
@@ -668,25 +765,25 @@ async function processPayment(amount) {
         </CardContent>
       </Card>
 
-      {/* Create Invoice Example */}
+      {/* Python Example */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Code className="w-5 h-5 text-emerald-400" />
-            Пример создания инвойса (Python)
+            Полный пример (Python)
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="relative">
             <pre className="bg-zinc-950 rounded-lg p-4 overflow-x-auto text-sm font-mono text-zinc-300 border border-zinc-800 max-h-[500px]">
-              {createInvoiceExample}
+              {pythonExample}
             </pre>
             <Button
               variant="ghost"
               size="sm"
               className="absolute top-2 right-2"
               title="Скопировать"
-              onClick={() => copyToClipboard(createInvoiceExample, 'Код')}
+              onClick={() => copyToClipboard(pythonExample, 'Код')}
             >
               <Copy className="w-4 h-4" />
             </Button>
@@ -699,20 +796,20 @@ async function processPayment(amount) {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Code className="w-5 h-5 text-yellow-400" />
-            Пример интеграции (JavaScript)
+            Полный пример (JavaScript)
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="relative">
             <pre className="bg-zinc-950 rounded-lg p-4 overflow-x-auto text-sm font-mono text-zinc-300 border border-zinc-800 max-h-[500px]">
-              {jsIntegrationExample}
+              {jsExample}
             </pre>
             <Button
               variant="ghost"
               size="sm"
               className="absolute top-2 right-2"
               title="Скопировать"
-              onClick={() => copyToClipboard(jsIntegrationExample, 'Код')}
+              onClick={() => copyToClipboard(jsExample, 'Код')}
             >
               <Copy className="w-4 h-4" />
             </Button>
@@ -720,141 +817,134 @@ async function processPayment(amount) {
         </CardContent>
       </Card>
 
-      {/* Callback Info */}
-      <Card className="bg-zinc-900 border-zinc-800">
-        <CardHeader>
-          <CardTitle className="text-lg">Webhook уведомления</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-zinc-400">
-            Система автоматически отправляет POST-запрос на ваш <code className="bg-zinc-800 px-1 rounded">callback_url</code> при изменении статуса платежа:
-          </p>
-          
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span className="text-sm"><code className="bg-zinc-800 px-1 rounded">paid</code> — платёж успешно завершён</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-              <span className="text-sm"><code className="bg-zinc-800 px-1 rounded">cancelled</code> — платёж отменён покупателем</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-zinc-500"></span>
-              <span className="text-sm"><code className="bg-zinc-800 px-1 rounded">expired</code> — истёк срок ожидания</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-              <span className="text-sm"><code className="bg-zinc-800 px-1 rounded">dispute</code> — открыт спор</span>
-            </div>
-          </div>
-          
-          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800">
-{`{
-  "order_id": "ORDER_12345",
-  "payment_id": "inv_20250128_ABC123",
-  "status": "paid",
-  "amount": 1500.00,
-  "amount_usdt": 15.50,
-  "timestamp": "2025-01-28T12:00:00Z",
-  "sign": "f6g7h8i9j0..."
-}`}
-          </pre>
-          <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
-            <p className="text-sm text-orange-300">
-              <strong>⚠️ Важно:</strong> Всегда проверяйте подпись <code>sign</code> в webhook! 
-              Ответьте <code>{`{ "status": "ok" }`}</code> для подтверждения получения.
-            </p>
-          </div>
-          <p className="text-xs text-zinc-500">
-            Retry-политика: 1 мин → 5 мин → 15 мин → 1 час → 2 часа → 4 часа → 12 часов → 24 часа
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Dispute System */}
-      <Card className="bg-zinc-900 border-zinc-800">
-        <CardHeader>
-          <CardTitle className="text-lg">Система споров</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-zinc-400">
-            При статусе <code className="bg-zinc-800 px-1 rounded">dispute</code> в ответе API появляется уникальная ссылка для клиента:
-          </p>
-          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800">
-{`{
-  "status": "success",
-  "data": {
-    "order_id": "ORDER_12345",
-    "status": "dispute",
-    "dispute_url": "${BASE_URL}/dispute/abc123def456"
-  }
-}`}
-          </pre>
-          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
-            <p className="text-sm text-blue-300">
-              Передайте <code>dispute_url</code> клиенту — он сможет напрямую общаться с нашей поддержкой по данному платежу.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Проверка подписи webhook (вместо SDK) */}
+      {/* Webhook Handler Example */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Code className="w-5 h-5 text-green-400" />
-            Проверка подписи Webhook
+            <Code className="w-5 h-5 text-purple-400" />
+            Обработка вебхуков (Node.js)
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-zinc-400">
-            При получении webhook всегда проверяйте подпись для безопасности:
-          </p>
-          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800">
-{`// Node.js / Express пример
-const crypto = require('crypto');
+        <CardContent>
+          <div className="relative">
+            <pre className="bg-zinc-950 rounded-lg p-4 overflow-x-auto text-sm font-mono text-zinc-300 border border-zinc-800 max-h-[500px]">
+              {webhookExample}
+            </pre>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute top-2 right-2"
+              title="Скопировать"
+              onClick={() => copyToClipboard(webhookExample, 'Код')}
+            >
+              <Copy className="w-4 h-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
+      {/* Statuses */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg">Статусы платежа</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left py-2 px-3 text-zinc-400">Статус</th>
+                  <th className="text-left py-2 px-3 text-zinc-400">Описание</th>
+                  <th className="text-left py-2 px-3 text-zinc-400">Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-zinc-800/50">
+                  <td className="py-3 px-3"><code className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">waiting_requisites</code></td>
+                  <td className="py-3 px-3 text-zinc-300">Инвойс создан, ожидает выбора оператора</td>
+                  <td className="py-3 px-3 text-zinc-500">Ждать</td>
+                </tr>
+                <tr className="border-b border-zinc-800/50">
+                  <td className="py-3 px-3"><code className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">pending</code></td>
+                  <td className="py-3 px-3 text-zinc-300">Клиент выбрал оператора, ожидает оплаты</td>
+                  <td className="py-3 px-3 text-zinc-500">Ждать</td>
+                </tr>
+                <tr className="border-b border-zinc-800/50">
+                  <td className="py-3 px-3"><code className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">paid</code></td>
+                  <td className="py-3 px-3 text-zinc-300">Клиент оплатил, ждём подтверждения</td>
+                  <td className="py-3 px-3 text-zinc-500">Ждать</td>
+                </tr>
+                <tr className="border-b border-zinc-800/50">
+                  <td className="py-3 px-3"><code className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">completed</code></td>
+                  <td className="py-3 px-3 text-emerald-300 font-medium">Платёж успешен!</td>
+                  <td className="py-3 px-3 text-emerald-400">Зачислить средства</td>
+                </tr>
+                <tr className="border-b border-zinc-800/50">
+                  <td className="py-3 px-3"><code className="bg-red-500/20 text-red-400 px-2 py-0.5 rounded">cancelled</code></td>
+                  <td className="py-3 px-3 text-zinc-300">Отменён клиентом или по таймауту</td>
+                  <td className="py-3 px-3 text-zinc-500">Ничего не делать</td>
+                </tr>
+                <tr className="border-b border-zinc-800/50">
+                  <td className="py-3 px-3"><code className="bg-zinc-500/20 text-zinc-400 px-2 py-0.5 rounded">expired</code></td>
+                  <td className="py-3 px-3 text-zinc-300">Истёк срок ожидания</td>
+                  <td className="py-3 px-3 text-zinc-500">Ничего не делать</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-3"><code className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded">disputed</code></td>
+                  <td className="py-3 px-3 text-zinc-300">Открыт спор</td>
+                  <td className="py-3 px-3 text-zinc-500">Ждать решения арбитража</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
-// Поля которые участвуют в подписи
-const SIGN_FIELDS = ['order_id', 'payment_id', 'status', 'amount', 'timestamp'];
+      {/* Errors */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg">Коды ошибок</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            {[
+              { code: 'INVALID_API_KEY', desc: 'Неверный API ключ' },
+              { code: 'INVALID_SIGNATURE', desc: 'Неверная подпись запроса' },
+              { code: 'MERCHANT_MISMATCH', desc: 'merchant_id не соответствует API ключу' },
+              { code: 'DUPLICATE_ORDER_ID', desc: 'Заказ с таким order_id уже существует' },
+              { code: 'INVALID_AMOUNT', desc: 'Сумма меньше минимальной (100 RUB)' },
+              { code: 'RATE_LIMIT_EXCEEDED', desc: 'Превышен лимит запросов' },
+              { code: 'NOT_FOUND', desc: 'Платёж не найден' },
+            ].map((err, idx) => (
+              <div key={idx} className="flex items-center gap-4 p-2 bg-zinc-800/30 rounded">
+                <code className="text-red-400 font-mono">{err.code}</code>
+                <span className="text-zinc-400">{err.desc}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-function verifyWebhookSignature(payload, receivedSign) {
-  const signParams = {};
-  for (const [key, value] of Object.entries(payload)) {
-    if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null) continue;
-    let v = value;
-    if (typeof v === 'number' && Number.isInteger(v)) v = Math.floor(v);
-    signParams[key] = v;
-  }
-  
-  const sortedKeys = Object.keys(signParams).sort();
-  const signString = sortedKeys.map(k => \`\${k}=\${signParams[k]}\`).join('&') + SECRET_KEY;
-  
-  const expectedSign = crypto
-    .createHmac('sha256', SECRET_KEY)
-    .update(signString)
-    .digest('hex');
-  
-  return expectedSign === receivedSign;
-}
-
-// Обработка webhook
-app.post('/webhook', (req, res) => {
-  const { sign, ...payload } = req.body;
-  
-  if (!verifyWebhookSignature(payload, sign)) {
-    return res.status(401).json({ status: 'error', message: 'Invalid signature' });
-  }
-  
-  // Обработка платежа
-  console.log('Webhook received:', payload.status, payload.payment_id);
-  
-  // ВАЖНО: Всегда отвечайте { status: 'ok' }
-  res.json({ status: 'ok' });
-});`}
-          </pre>
+      {/* Rate Limits */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg">Лимиты запросов</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between p-2 bg-zinc-800/30 rounded">
+              <span className="text-zinc-300">/create</span>
+              <span className="text-zinc-400">60 запросов/мин</span>
+            </div>
+            <div className="flex justify-between p-2 bg-zinc-800/30 rounded">
+              <span className="text-zinc-300">/status</span>
+              <span className="text-zinc-400">120 запросов/мин</span>
+            </div>
+            <div className="flex justify-between p-2 bg-zinc-800/30 rounded">
+              <span className="text-zinc-300">/transactions</span>
+              <span className="text-zinc-400">30 запросов/мин</span>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
