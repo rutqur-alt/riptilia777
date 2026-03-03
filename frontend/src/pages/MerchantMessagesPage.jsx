@@ -186,7 +186,15 @@ export default function MerchantMessagesPage() {
     return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
-  const filteredConversations = conversations;
+  // Sort conversations: unread first, then by updated_at
+  const filteredConversations = [...conversations].sort((a, b) => {
+    // Unread messages first
+    const aUnread = (a.unread_count || 0) > 0 ? 1 : 0;
+    const bUnread = (b.unread_count || 0) > 0 ? 1 : 0;
+    if (bUnread !== aUnread) return bUnread - aUnread;
+    // Then by updated_at (newest first)
+    return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
+  });
 
   return (
     <div className="space-y-4" data-testid="merchant-messages-page">
@@ -239,7 +247,7 @@ export default function MerchantMessagesPage() {
               </div>
             ) : (
               <>
-              {/* Broadcasts first */}
+              {/* Broadcasts first - unread on top */}
               {broadcasts.length > 0 && (
                 <>
                   <div className="px-3 py-2 bg-[#F59E0B]/10 border-b border-[#F59E0B]/20">
@@ -248,7 +256,7 @@ export default function MerchantMessagesPage() {
                       Рассылки от администрации ({broadcasts.length})
                     </span>
                   </div>
-                  {broadcasts.map((b) => (
+                  {[...broadcasts].sort((a, b) => (b.is_read ? 0 : 1) - (a.is_read ? 0 : 1)).map((b) => (
                     <div
                       key={b.id}
                       onClick={() => {
@@ -310,6 +318,11 @@ export default function MerchantMessagesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-white text-sm font-medium truncate">{conv.title}</span>
+                          {conv.unread_count > 0 && (
+                            <span className="bg-[#10B981] text-white text-[9px] px-1.5 py-0.5 rounded flex-shrink-0">
+                              НОВОЕ
+                            </span>
+                          )}
                           {isDispute && (
                             <span className="bg-[#EF4444] text-white text-[9px] px-1.5 py-0.5 rounded flex-shrink-0">
                               СПОР
