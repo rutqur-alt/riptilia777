@@ -1262,6 +1262,25 @@ async def cancel_trade_client(trade_id: str):
     await _ws_broadcast(f"trade_{trade_id}", {"type": "message", **{k: v for k, v in system_msg.items() if k != "_id"}})
     await _ws_broadcast(f"trade_{trade_id}", {"type": "status_update", "status": "cancelled", "trade_id": trade_id})
     
+    # Notify trader that client cancelled the trade
+    if trade.get("trader_id"):
+        await _create_trade_notification(
+            user_id=trade["trader_id"],
+            notif_type="trade_cancelled",
+            title="Сделка отменена",
+            message=f"Покупатель отменил сделку на {trade['amount_usdt']:.2f} USDT",
+            link=f"/trader/sales/{trade_id}",
+            trade_id=trade_id
+        )
+    
+    # Send webhook to merchant if applicable
+    if trade.get("merchant_id"):
+        await send_merchant_webhook_on_trade(trade, "cancelled", {
+            "trade_id": trade_id,
+            "reason": "Отменено покупателем",
+            "cancelled_at": datetime.now(timezone.utc).isoformat()
+        })
+    
     return {"status": "cancelled"}
 
 
