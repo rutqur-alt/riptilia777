@@ -314,7 +314,7 @@ export default function Landing() {
                   {/* Available - USDT + RUB */}
                   <div className="md:col-span-2">
                     <div className="text-white font-medium">
-                      {offer.available_usdt || offer.amount_usdt} USDT
+                      {(offer.available_usdt || offer.amount_usdt || 0).toFixed(2)} USDT
                     </div>
                     <div className="text-xs text-[#10B981]">
                       ≈ {formatNumber(Math.round(availableRub))} ₽
@@ -324,7 +324,7 @@ export default function Landing() {
                   {/* Limits - NEW COLUMN */}
                   <div className="md:col-span-2">
                     <div className="text-[#A1A1AA] text-sm">
-                      {offer.min_amount || 1} – {offer.max_amount || offer.amount_usdt}
+                      {(offer.min_amount || 1).toFixed(2)} – {(offer.max_amount || offer.amount_usdt || 0).toFixed(2)}
                     </div>
                     <div className="text-xs text-[#52525B]">USDT</div>
                   </div>

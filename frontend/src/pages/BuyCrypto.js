@@ -235,11 +235,11 @@ export default function BuyCrypto() {
                   <div className="flex items-center gap-6 text-sm">
                     <div>
                       <span className="text-[#71717A]">Лимиты: </span>
-                      <span className="text-white">{offer.min_amount} - {offer.max_amount} USDT</span>
+                      <span className="text-white">{(offer.min_amount || 0).toFixed(2)} - {(offer.max_amount || 0).toFixed(2)} USDT</span>
                     </div>
                     <div>
                       <span className="text-[#71717A]">Доступно: </span>
-                      <span className="text-[#10B981]">{offer.available_amount?.toFixed(2)} USDT</span>
+                      <span className="text-[#10B981]">{(offer.available_amount || 0).toFixed(2)} USDT</span>
                     </div>
                   </div>
 
@@ -287,7 +287,7 @@ export default function BuyCrypto() {
                   className="bg-[#0A0A0A] border-white/10 text-white h-12"
                 />
                 <div className="text-xs text-[#71717A] mt-1">
-                  Лимиты: {selectedOffer.min_amount} - {selectedOffer.max_amount} USDT
+                  Лимиты: {(selectedOffer.min_amount || 0).toFixed(2)} - {(selectedOffer.max_amount || 0).toFixed(2)} USDT
                 </div>
               </div>
 
@@ -400,11 +400,11 @@ export default function BuyCrypto() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#71717A]">Доступно:</span>
-                    <span className="text-white">{selectedOffer.available_amount?.toFixed(2)} USDT</span>
+                    <span className="text-white">{(selectedOffer.available_amount || 0).toFixed(2)} USDT</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#71717A]">Лимиты:</span>
-                    <span className="text-white">{selectedOffer.min_amount} - {selectedOffer.max_amount} USDT</span>
+                    <span className="text-white">{(selectedOffer.min_amount || 0).toFixed(2)} - {(selectedOffer.max_amount || 0).toFixed(2)} USDT</span>
                   </div>
                 </div>
               </div>
