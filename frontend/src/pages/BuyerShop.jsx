@@ -85,6 +85,10 @@ export default function BuyerShop() {
   const [transactions, setTransactions] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  
+  // === Active Payments ===
+  const [activePayments, setActivePayments] = useState([]);
+  const [loadingActive, setLoadingActive] = useState(false);
 
   // ========== Auto-connect on mount ==========
   useEffect(() => {
@@ -196,7 +200,7 @@ export default function BuyerShop() {
         localStorage.setItem('shop_merchant_name', mname);
         if (!silent) toast.success('Подключено!');
         loadBalance();
-        loadTransactions();
+        loadActivePayments(apiKey);  // Передаём apiKey напрямую
       }
     } catch (e) {
       if (!silent) toast.error('Неверный API ключ');
@@ -239,6 +243,25 @@ export default function BuyerShop() {
       setTransactions([]);
     }
     finally { setLoadingHistory(false); }
+  };
+
+  // Загрузка активных заявок (pending, waiting_requisites)
+  const loadActivePayments = async (key = null) => {
+    const useKey = key || apiKey;
+    if (!useKey) return;
+    setLoadingActive(true);
+    try {
+      const res = await axios.get(`${API}/v1/invoice/transactions`, {
+        params: { status: 'active', limit: 10 },
+        headers: { 'X-Api-Key': useKey }
+      });
+      const txs = res.data?.data?.transactions || [];
+      setActivePayments(Array.isArray(txs) ? txs : []);
+    } catch (e) {
+      console.error('Load active payments error:', e);
+      setActivePayments([]);
+    }
+    finally { setLoadingActive(false); }
   };
 
   const createTopUp = async () => {
@@ -656,6 +679,56 @@ export default function BuyerShop() {
                 </Button>
               </div>
             </div>
+
+            {/* === ACTIVE PAYMENTS === */}
+            {activePayments.length > 0 && (
+              <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-white font-semibold text-lg flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-yellow-400" />
+                    Активные заявки ({activePayments.length})
+                  </h2>
+                  <Button variant="ghost" size="sm" onClick={loadActivePayments} disabled={loadingActive} className="text-[#71717A]">
+                    <RefreshCw className={`w-4 h-4 ${loadingActive ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {activePayments.map((payment, i) => (
+                    <div 
+                      key={payment.id || i} 
+                      className="flex items-center justify-between py-3 px-4 bg-[#0A0A0A] rounded-xl cursor-pointer hover:bg-[#1A1A1A] transition-colors"
+                      onClick={() => {
+                        // Перейти к продолжению оплаты
+                        if (payment.id) {
+                          window.open(`/select-operator/${payment.id}`, '_blank');
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                          <Clock className="w-5 h-5 text-yellow-400" />
+                        </div>
+                        <div>
+                          <div className="text-white text-sm font-medium">
+                            {(payment.original_amount_rub || payment.amount_rub || 0).toLocaleString()} ₽
+                          </div>
+                          <div className="text-[#52525B] text-xs">
+                            {payment.created_at ? new Date(payment.created_at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="px-2 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">
+                          {payment.status === 'waiting_requisites' ? 'Ожидает выбора' : payment.status === 'pending' ? 'Ожидает оплаты' : 'В процессе'}
+                        </span>
+                        <ExternalLink className="w-4 h-4 text-[#52525B]" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-[#52525B] mt-3">Нажмите на заявку чтобы продолжить оплату</p>
+              </div>
+            )}
 
             {/* Transaction History (inline) */}
             {showHistory && (
