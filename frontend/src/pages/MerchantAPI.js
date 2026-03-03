@@ -472,6 +472,156 @@ async function createPayment(amount, paymentMethod, userId = null) {
         </CardContent>
       </Card>
 
+      {/* UI Example - Select Operator */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ExternalLink className="w-5 h-5 text-purple-400" />
+            Пример UI: Выбор оператора
+          </CardTitle>
+          <p className="text-sm text-zinc-400 mt-1">Так выглядит страница выбора оператора, которую увидит покупатель</p>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-zinc-950 rounded-lg p-4 border border-zinc-800">
+            <div className="space-y-3">
+              {/* Header */}
+              <div className="flex justify-between items-center border-b border-zinc-800 pb-3">
+                <span className="text-zinc-400 text-sm">Все методы оплаты ▼</span>
+                <div className="text-right">
+                  <div className="text-zinc-500 text-xs">Пополнение</div>
+                  <div className="text-emerald-400 font-bold">1 000 RUB</div>
+                </div>
+              </div>
+              
+              {/* Operators */}
+              <div className="text-xs text-zinc-500 flex justify-between">
+                <span>3 операторов</span>
+                <span>Лучшая цена сверху</span>
+              </div>
+              
+              {/* Operator Card */}
+              <div className="bg-zinc-800/50 rounded-lg p-3 border border-emerald-500/30">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-200 font-medium">👤 Пользователь Два</span>
+                      <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Лучшая цена</span>
+                    </div>
+                    <div className="text-xs text-zinc-500 mt-1">✓ 97%  •  70 сделок</div>
+                    <div className="flex gap-2 mt-2">
+                      <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Карта</span>
+                      <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">СБП</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-emerald-400 font-bold">1 003,58 RUB</div>
+                    <div className="text-xs text-zinc-500">+0.4%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Another Operator */}
+              <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-zinc-200 font-medium">👤 Пользователь Три</div>
+                    <div className="text-xs text-zinc-500 mt-1">✓ 96%  •  90 сделок</div>
+                    <div className="flex gap-2 mt-2">
+                      <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Карта</span>
+                      <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">СБП</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-zinc-300 font-bold">1 009,97 RUB</div>
+                    <div className="text-xs text-zinc-500">+1%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500 mt-3">
+            Покупатель выбирает оператора → нажимает → видит реквизиты для оплаты
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* UI Example - Payment Screen */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Shield className="w-5 h-5 text-orange-400" />
+            Пример UI: Экран оплаты
+          </CardTitle>
+          <p className="text-sm text-zinc-400 mt-1">После выбора оператора покупатель видит реквизиты</p>
+        </CardHeader>
+        <CardContent>
+          <div className="bg-zinc-950 rounded-lg p-4 border border-zinc-800">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Left side - Payment */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-red-400 text-sm cursor-pointer">✕ Отменить сделку</span>
+                </div>
+                
+                <div className="text-center py-4">
+                  <div className="text-zinc-400 text-sm">Переведите точную сумму</div>
+                  <div className="text-orange-400 text-sm mt-1">⏱️ Осталось: 29:56</div>
+                </div>
+                
+                <div className="bg-zinc-800 rounded-lg p-4 text-center">
+                  <div className="text-zinc-500 text-xs">Сумма к оплате</div>
+                  <div className="text-2xl font-bold text-white mt-1">1 009,98 RUB</div>
+                </div>
+                
+                <div className="bg-zinc-800 rounded-lg p-4">
+                  <div className="flex items-center gap-2 text-purple-400 mb-2">
+                    <span>⚡</span>
+                    <span className="font-medium">СБП</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <code className="text-white font-mono">+7 900 120 30 36</code>
+                    <button className="text-zinc-500 hover:text-white">📋</button>
+                  </div>
+                  <div className="text-zinc-500 text-sm mt-1">ВТБ</div>
+                </div>
+                
+                <button className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-lg font-medium">
+                  ✓ Я оплатил
+                </button>
+              </div>
+              
+              {/* Right side - Chat */}
+              <div className="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
+                <div className="text-sm font-medium text-zinc-300 mb-2">💬 Сообщения</div>
+                <div className="text-xs text-zinc-500 mb-3">Оператор: user3</div>
+                
+                <div className="bg-zinc-900 rounded p-2 text-xs space-y-1">
+                  <div className="text-zinc-500">📋 Сделка #trd_f6880fd4</div>
+                  <div className="text-zinc-400">💰 Сумма: 1,010 ₽</div>
+                  <div className="text-zinc-400">📈 Курс: 79.0 ₽/USDT</div>
+                  <div className="text-zinc-400">⏱ Время: 30 минут</div>
+                  <div className="text-emerald-400 mt-2">🏦 РЕКВИЗИТЫ:</div>
+                  <div className="text-zinc-300">⚡ ВТБ</div>
+                  <div className="text-zinc-300">+7 900 120 30 36</div>
+                </div>
+                
+                <div className="mt-3">
+                  <input 
+                    type="text" 
+                    placeholder="Написать сообщение..." 
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-300"
+                    disabled
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500 mt-3">
+            Покупатель переводит деньги по реквизитам → нажимает "Я оплатил" → оператор подтверждает → вы получаете webhook
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Signature Example */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
