@@ -460,39 +460,9 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
                 {"$set": {"status": "completed"}}
             )
     
-    # Deduct commission from seller's balance (1% from seller, buyer gets full amount)
-    trader_commission = trade.get("trader_commission", 0)
-    if trader_commission > 0:
-        await db.traders.update_one(
-            {"id": trade["trader_id"]},
-            {"$inc": {"balance_usdt": -trader_commission}}
-        )
-        # Record commission deduction as transaction
-        await db.transactions.insert_one({
-            "id": str(uuid.uuid4()),
-            "trader_id": trade["trader_id"],
-            "type": "commission",
-            "amount": -trader_commission,
-            "description": f"Комиссия площадки 1% со сделки #{trade_id[:8]} ({trade['amount_usdt']} USDT)",
-            "reference_trade_id": trade_id,
-            "created_at": now
-        })
-    
-    # Record commission payment
-    commission_doc = {
-        "id": str(uuid.uuid4()),
-        "trade_id": trade_id,
-        "merchant_id": trade.get("merchant_id"),
-        "buyer_id": trade.get("buyer_id"),
-        "trader_id": trade.get("trader_id"),
-        "trader_commission": trader_commission,
-        "merchant_commission": trade.get("merchant_commission", 0),
-        "total_commission": trade.get("total_commission", 0),
-        "created_at": now
-    }
-    await db.commission_payments.insert_one(commission_doc)
-    
     # Update offer's sold_usdt and actual_commission
+    # Commission is already reserved in offer, no need to deduct from trader balance
+    trader_commission = trade.get("trader_commission", 0)
     if trade.get("offer_id"):
         await db.offers.update_one(
             {"id": trade["offer_id"]},
@@ -501,6 +471,18 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
                 "actual_commission": trader_commission
             }}
         )
+        # Log commission deduction from reserved funds
+        if trader_commission > 0:
+            await db.transactions.insert_one({
+                "id": str(uuid.uuid4()),
+                "trader_id": trade["trader_id"],
+                "type": "commission",
+                "amount": -trader_commission,
+                "description": f"Комиссия 1% со сделки #{trade_id[:8]} ({trade['amount_usdt']:.2f} USDT) - из заморозки",
+                "reference_trade_id": trade_id,
+                "from_reserved": True,
+                "created_at": now
+            })
     
     # Process referral earnings
     referral_rate = 0.005  # 0.5%

@@ -197,7 +197,18 @@ export default function TraderOffers() {
                   className="bg-[#1A1A1A] border-white/10 text-white h-12 rounded-xl"
                   data-testid="offer-amount-usdt"
                 />
-                <p className="text-xs text-[#71717A]">{"\u042D\u0442\u0430 \u0441\u0443\u043C\u043C\u0430 \u0431\u0443\u0434\u0435\u0442 \u0437\u0430\u0440\u0435\u0437\u0435\u0440\u0432\u0438\u0440\u043E\u0432\u0430\u043D\u0430 \u0438\u0437 \u0432\u0430\u0448\u0435\u0433\u043E \u0431\u0430\u043B\u0430\u043D\u0441\u0430"}</p>
+                <p className="text-xs text-[#71717A]">{"Эта сумма + 1% комиссии будет заморожена из вашего баланса"}</p>
+                {newOffer.amount_usdt && (
+                  <div className="mt-2 p-3 bg-[#F59E0B]/10 border border-[#F59E0B]/20 rounded-xl">
+                    <p className="text-xs text-[#F59E0B]">
+                      <strong>К заморозке:</strong> {(parseFloat(newOffer.amount_usdt) * 1.01).toFixed(2)} USDT 
+                      <span className="text-[#A1A1AA] ml-1">
+                        ({newOffer.amount_usdt} + {(parseFloat(newOffer.amount_usdt) * 0.01).toFixed(2)} комиссия)
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-[#A1A1AA] mt-1">1% комиссия списывается с каждой сделки</p>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
