@@ -244,6 +244,58 @@ async def get_merchant_trades(
         o["currency"] = "USDT"
         trades.append(o)
     
+    # From merchant_invoices collection (Invoice API payments)
+    if type == "sell":
+        inv_query = {"merchant_id": user_id}
+        if status == "active":
+            inv_query["status"] = {"$in": ["pending", "waiting_requisites", "paid", "waiting"]}
+        elif status == "completed":
+            inv_query["status"] = "completed"
+        elif status == "dispute":
+            inv_query["status"] = {"$in": ["dispute", "disputed"]}
+        elif status == "cancelled":
+            inv_query["status"] = {"$in": ["cancelled", "expired"]}
+        
+        invoices = await db.merchant_invoices.find(inv_query, {"_id": 0}).sort("created_at", -1).to_list(100)
+        for inv in invoices:
+            # Find related trade if exists
+            related_trade = None
+            if inv.get("trade_id"):
+                related_trade = await db.trades.find_one({"id": inv["trade_id"]}, {"_id": 0})
+            
+            # Find conversation
+            conv = await db.unified_conversations.find_one(
+                {"related_id": inv.get("trade_id") or inv["id"]},
+                {"_id": 0, "id": 1}
+            )
+            
+            payment = {
+                "id": inv["id"],
+                "trade_id": inv.get("trade_id"),
+                "invoice_id": inv["id"],
+                "status": inv["status"],
+                "original_amount_rub": inv.get("original_amount_rub"),
+                "amount_rub": inv.get("amount_rub") or inv.get("original_amount_rub"),
+                "amount_usdt": inv.get("amount_usdt"),
+                "amount": inv.get("original_amount_rub") or inv.get("amount_rub", 0),
+                "fiat_amount": inv.get("original_amount_rub") or inv.get("amount_rub", 0),
+                "currency": "RUB",
+                "order_id": inv.get("order_id"),
+                "created_at": inv.get("created_at"),
+                "expires_at": inv.get("expires_at"),
+                "completed_at": inv.get("completed_at"),
+                "conversation_id": conv["id"] if conv else None,
+                "client_nickname": related_trade.get("buyer_nickname") if related_trade else inv.get("buyer_nickname"),
+                "source": "invoice_api"
+            }
+            
+            # Add trade details if available
+            if related_trade:
+                payment["operator_nickname"] = related_trade.get("seller_nickname")
+                payment["requisites"] = related_trade.get("requisites")
+            
+            trades.append(payment)
+    
     # Sort by created_at
     trades.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     
