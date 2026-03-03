@@ -160,9 +160,25 @@ export default function MyMessagesPage() {
     }
   };
 
-  const selectConversation = (conv) => {
+  const selectConversation = async (conv) => {
     setSelectedConv(conv);
+    setSelectedBroadcast(null);
     fetchMessages(conv.id);
+    
+    // Mark conversation as read
+    if (conv.unread_count > 0) {
+      try {
+        await axios.post(`${API}/msg/conversations/${conv.id}/read`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        // Update local state to remove "NEW" badge
+        setConversations(prev => prev.map(c => 
+          c.id === conv.id ? { ...c, unread_count: 0 } : c
+        ));
+      } catch (error) {
+        console.error('Error marking conversation as read:', error);
+      }
+    }
   };
 
   const sendMessage = async () => {
@@ -391,10 +407,8 @@ export default function MyMessagesPage() {
                 const isDispute = conv.status === 'dispute' || conv.status === 'disputed' || conv.type === 'p2p_dispute' || typeConfig.isDispute;
                 const isSelected = selectedConv?.id === conv.id;
                 
-                // Show "NEW" badge for unread messages OR active crypto orders
+                // Show "NEW" badge only for unread messages
                 const hasUnread = (conv.unread_count || 0) > 0;
-                const isActiveCryptoOrder = conv.type === 'crypto_order' && !['completed', 'cancelled', 'rejected'].includes(conv.status);
-                const showNewBadge = hasUnread || isActiveCryptoOrder;
                 
                 return (
                   <div
@@ -414,7 +428,7 @@ export default function MyMessagesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-white text-sm font-medium truncate">{conv.title}</span>
-                          {showNewBadge && (
+                          {hasUnread && (
                             <span className="bg-[#10B981] text-white text-[9px] px-1.5 py-0.5 rounded flex-shrink-0">
                               НОВОЕ
                             </span>

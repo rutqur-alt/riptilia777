@@ -387,6 +387,32 @@ async def send_message_to_conv(
     return msg
 
 
+
+@router.post("/msg/conversations/{conv_id}/read")
+async def mark_conversation_read(conv_id: str, user: dict = Depends(get_current_user)):
+    """Mark all messages in conversation as read for current user"""
+    user_id = user["id"]
+    
+    conv = await db.unified_conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+    
+    # Mark all unread messages as read
+    await db.unified_messages.update_many(
+        {"conversation_id": conv_id, "sender_id": {"$ne": user_id}, "read_by": {"$ne": user_id}},
+        {"$addToSet": {"read_by": user_id}}
+    )
+    
+    # Update conversation unread count for this user
+    await db.unified_conversations.update_one(
+        {"id": conv_id},
+        {"$set": {f"read_status.{user_id}": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"status": "ok", "message": "Сообщения отмечены как прочитанные"}
+
+
+
 @router.delete("/msg/messages/{msg_id}")
 async def delete_message(msg_id: str, user: dict = Depends(get_current_user)):
     """Delete a message (with permission check)"""
