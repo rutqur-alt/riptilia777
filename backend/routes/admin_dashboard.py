@@ -44,11 +44,15 @@ async def get_analytics(period: str = "week", user: dict = Depends(require_role(
     
     total_volume = sum(t.get("amount_usdt", 0) for t in trades)
     total_trades = len(trades)
-    # Commission in USDT = platform_fee_rub / price_rub
-    total_commission_usdt = sum(
-        (t.get("platform_fee_rub", 0) or 0) / (t.get("price_rub", 78) or 78) 
-        for t in trades
-    )
+    
+    # Get base rate from Rapira API settings
+    rate_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
+    
+    # Commission in USDT = platform_fee_rub / base_rate (Rapira exchange rate)
+    total_platform_fee_rub = sum(t.get("platform_fee_rub", 0) or 0 for t in trades)
+    total_commission_usdt = total_platform_fee_rub / base_rate if base_rate > 0 else 0
+    
     total_turnover_rub = sum(t.get("client_amount_rub", 0) or t.get("amount_rub", 0) for t in trades)
     
     # Volume by day

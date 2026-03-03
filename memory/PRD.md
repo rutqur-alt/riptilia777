@@ -123,14 +123,15 @@ P2P криптовалютная биржа с интегрированным м
 - API Secret: `2f48f9c6ab4d8af44b81590338af9c3e`
 
 ## Исправления аналитики (03.03.2026)
-- ✅ Комиссии считаются правильно: `platform_fee_rub / price_rub` (курс из сделки)
-- ✅ Пример для merchant 222: 1,300 RUB ÷ 100 = 13 USDT
+- ✅ Комиссии считаются по базовому курсу Rapira API (~78 RUB/USDT)
+- ✅ Формула: `platform_fee_rub / base_rate` (base_rate из db.settings)
+- ✅ Пример для merchant 222: 1,300 RUB ÷ 78.16 = **16.63 USDT**
 - ✅ Исправлены эндпоинты: `/merchant/analytics`, `/merchants/stats`, `/super-admin/overview`, `/admin/analytics`, `/super-admin/finances`
 - ✅ Пересчитан `total_commission_paid` для всех мерчантов
 - ✅ Результаты:
-  - Admin: Комиссия заработана = 17.4586 USDT (13 сделок)
-  - Merchant 222: Оплачено комиссий = 13.00 USDT (11 сделок, комиссия 10%)
-  - Merchant1: Оплачено комиссий = 4.46 USDT (2 сделки)
+  - Admin: Комиссия заработана = 21.11 USDT (13 сделок)
+  - Merchant 222: Оплачено комиссий = 16.63 USDT (11 сделок)
+  - Merchant1: Оплачено комиссий = 4.48 USDT (2 сделки)
 
 ## Следующие задачи (Backlog)
 - P1: Реализовать функционал открытия спора в тестовом магазине /shop

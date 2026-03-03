@@ -68,11 +68,14 @@ async def get_merchant_stats(user: dict = Depends(require_role(["merchant"]))):
     total_volume_usdt = sum([t.get("amount_usdt", 0) for t in completed_trades])
     
     merchant = await db.merchants.find_one({"id": merchant_id}, {"_id": 0})
-    # Calculate total commission: platform_fee_rub / price_rub (exchange rate)
-    total_commission = sum([
-        (t.get("platform_fee_rub", 0) or 0) / (t.get("price_rub", 78) or 78) 
-        for t in completed_trades
-    ])
+    
+    # Get base rate from Rapira API settings
+    rate_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
+    
+    # Calculate total commission: platform_fee_rub / base_rate (Rapira exchange rate)
+    total_platform_fee_rub = sum([t.get("platform_fee_rub", 0) or 0 for t in completed_trades])
+    total_commission = total_platform_fee_rub / base_rate if base_rate > 0 else 0
     
     avg_payment = total_volume_rub / completed_payments if completed_payments > 0 else 0
     success_rate = (completed_payments / total_payments * 100) if total_payments > 0 else 100
