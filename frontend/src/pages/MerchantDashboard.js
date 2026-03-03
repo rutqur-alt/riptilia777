@@ -1749,6 +1749,18 @@ function MerchantPayments() {
   const disputeCount = payments.filter(p => p.status === "dispute" || p.status === "disputed").length;
 
   const filteredPayments = payments.filter(p => {
+    // First filter by status tab
+    if (filter === "active") {
+      if (!["pending", "active", "paid", "waiting", "processing"].includes(p.status)) return false;
+    } else if (filter === "completed") {
+      if (p.status !== "completed") return false;
+    } else if (filter === "cancelled") {
+      if (!["cancelled", "rejected", "expired"].includes(p.status)) return false;
+    } else if (filter === "dispute") {
+      if (p.status !== "dispute" && p.status !== "disputed") return false;
+    }
+    
+    // Then filter by search query
     if (!searchQuery.trim()) return true;
     const q = searchQuery.trim().toLowerCase();
     return (p.id && p.id.toLowerCase().includes(q)) ||

@@ -200,6 +200,13 @@ function AuthNotificationDropdown({ badges, token, role, prefix }) {
   const buildNotificationList = () => {
     const b = localBadges;
     const items = [];
+    
+    // Main notification item - all event notifications
+    if (b.event_notifications > 0) {
+      items.push({ key: "all_events", label: "Все оповещения", path: `${prefix}`, count: b.event_notifications, isMain: true });
+    }
+    
+    // Individual notification types (show only if there are any)
     if (b.trades > 0) items.push({ key: "trades", label: "Активные сделки", path: role === "merchant" ? `${prefix}/payments` : `${prefix}/sales`, count: b.trades });
     if (role !== "merchant" && b.purchases > 0) items.push({ key: "purchases", label: "Покупки в маркете", path: `${prefix}/my-purchases`, count: b.purchases });
     if (role !== "merchant" && b.guarantor_deals > 0) items.push({ key: "guarantor", label: "Гарант-сделки", path: `${prefix}/my-purchases`, count: b.guarantor_deals });
