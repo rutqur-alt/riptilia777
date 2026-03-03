@@ -420,7 +420,18 @@ async def get_trader_detailed_stats(user: dict = Depends(require_role(["trader"]
     total_volume_rub = sum(t.get("amount_rub", 0) for t in trades if t.get("status") == "completed")
     
     completed_trades = [t for t in trades if t.get("status") == "completed"]
-    avg_rate = sum(t.get("rate", 0) for t in completed_trades) / len(completed_trades) if completed_trades else 0
+    
+    # Calculate average rate - use price_rub or calculate from amounts
+    total_rate = 0
+    rate_count = 0
+    for t in completed_trades:
+        rate = t.get("price_rub") or t.get("rate")
+        if not rate and t.get("amount_rub") and t.get("amount_usdt"):
+            rate = t["amount_rub"] / t["amount_usdt"]
+        if rate and rate > 0:
+            total_rate += rate
+            rate_count += 1
+    avg_rate = total_rate / rate_count if rate_count > 0 else 0
     
     avg_time_minutes = 0
     if completed_trades:
