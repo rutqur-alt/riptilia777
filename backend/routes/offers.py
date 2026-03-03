@@ -306,7 +306,12 @@ async def get_public_offers(
     sort_by: Optional[str] = "price"
 ):
     """Public order book endpoint - no auth required"""
-    query = {"is_active": True, "available_usdt": {"$gt": 0}}
+    query = {
+        "is_active": True, 
+        "available_usdt": {"$gt": 0},
+        "paused_by_trader": {"$ne": True},  # Hide paused by trader
+        "paused_by_admin": {"$ne": True}    # Hide paused by admin
+    }
     
     if payment_method and payment_method != "all":
         query["payment_methods"] = payment_method
@@ -530,16 +535,16 @@ async def delete_offer(offer_id: str, user: dict = Depends(require_role(["trader
     if offer["trader_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Это не ваше объявление")
     
-    # Check for active trades on this offer
+    # Check for active trades - any status except completed and cancelled
     active_trades = await db.trades.count_documents({
         "offer_id": offer_id,
-        "status": {"$in": ["pending", "paid", "dispute", "disputed"]}
+        "status": {"$nin": ["completed", "cancelled"]}
     })
     
     if active_trades > 0:
         raise HTTPException(
             status_code=400, 
-            detail=f"Невозможно закрыть объявление: есть {active_trades} активных сделок. Завершите все сделки перед закрытием."
+            detail=f"Невозможно удалить объявление: есть {active_trades} незавершённых сделок. Дождитесь завершения или отмены всех сделок."
         )
     
     # Calculate refund
@@ -569,3 +574,79 @@ async def delete_offer(offer_id: str, user: dict = Depends(require_role(["trader
         "sold_usdt": round(sold_usdt, 4),
         "actual_commission_paid": round(correct_commission, 4)
     }
+
+
+@router.patch("/offers/{offer_id}/pause")
+async def pause_offer(offer_id: str, user: dict = Depends(require_role(["trader"]))):
+    """Pause an offer - hide from public order book"""
+    offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Объявление не найдено")
+    if offer["trader_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Это не ваше объявление")
+    
+    if offer.get("paused_by_trader"):
+        raise HTTPException(status_code=400, detail="Объявление уже на паузе")
+    
+    await db.offers.update_one(
+        {"id": offer_id},
+        {"$set": {"paused_by_trader": True, "paused_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"status": "paused", "message": "Объявление поставлено на паузу"}
+
+
+@router.patch("/offers/{offer_id}/resume")
+async def resume_offer(offer_id: str, user: dict = Depends(require_role(["trader"]))):
+    """Resume a paused offer - show in public order book"""
+    offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Объявление не найдено")
+    if offer["trader_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Это не ваше объявление")
+    
+    if offer.get("paused_by_admin"):
+        raise HTTPException(status_code=400, detail="Объявление приостановлено модератором. Обратитесь в поддержку.")
+    
+    if not offer.get("paused_by_trader"):
+        raise HTTPException(status_code=400, detail="Объявление не на паузе")
+    
+    await db.offers.update_one(
+        {"id": offer_id},
+        {"$set": {"paused_by_trader": False}, "$unset": {"paused_at": ""}}
+    )
+    
+    return {"status": "resumed", "message": "Объявление возобновлено"}
+
+
+@router.get("/offers/{offer_id}/trades")
+async def get_offer_trades(offer_id: str, user: dict = Depends(require_role(["trader"]))):
+    """Get all trades for a specific offer"""
+    offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Объявление не найдено")
+    if offer["trader_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Это не ваше объявление")
+    
+    trades = await db.trades.find(
+        {"offer_id": offer_id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Get summary
+    total = len(trades)
+    completed = len([t for t in trades if t.get("status") == "completed"])
+    cancelled = len([t for t in trades if t.get("status") == "cancelled"])
+    active = total - completed - cancelled
+    
+    return {
+        "offer_id": offer_id,
+        "summary": {
+            "total": total,
+            "completed": completed,
+            "cancelled": cancelled,
+            "active": active
+        },
+        "trades": trades
+    }
+

@@ -10,7 +10,7 @@ import { useAuth, API } from "@/App";
 import axios from "axios";
 import { 
   Plus, ListOrdered, CreditCard, DollarSign, 
-  XCircle, Play, Pause 
+  XCircle, Play, Pause, List, Clock, CheckCircle, AlertTriangle, X
 } from "lucide-react";
 import { PAYMENT_METHODS } from "@/config/paymentMethods";
 
@@ -45,6 +45,9 @@ export default function TraderOffers() {
   const [paymentDetails, setPaymentDetails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [tradesModalOpen, setTradesModalOpen] = useState(false);
+  const [selectedOfferTrades, setSelectedOfferTrades] = useState(null);
+  const [loadingTrades, setLoadingTrades] = useState(false);
   const [newOffer, setNewOffer] = useState({
     amount_usdt: "",
     min_amount: "",
@@ -155,6 +158,56 @@ export default function TraderOffers() {
       const errorMsg = error.response?.data?.detail || "Ошибка удаления";
       toast.error(errorMsg, { duration: 5000 });
     }
+  };
+
+  const handlePauseOffer = async (offerId, isPaused) => {
+    try {
+      const endpoint = isPaused ? 'resume' : 'pause';
+      await axios.patch(`${API}/offers/${offerId}/${endpoint}`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success(isPaused ? "Объявление возобновлено" : "Объявление поставлено на паузу");
+      fetchOffers();
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || "Ошибка";
+      toast.error(errorMsg);
+    }
+  };
+
+  const handleViewTrades = async (offerId) => {
+    setLoadingTrades(true);
+    setTradesModalOpen(true);
+    try {
+      const response = await axios.get(`${API}/offers/${offerId}/trades`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSelectedOfferTrades(response.data);
+    } catch (error) {
+      toast.error("Ошибка загрузки сделок");
+      setTradesModalOpen(false);
+    } finally {
+      setLoadingTrades(false);
+    }
+  };
+
+  const getTradeStatusBadge = (status) => {
+    const statusConfig = {
+      pending: { label: "Ожидает оплаты", color: "bg-yellow-500/20 text-yellow-400", icon: Clock },
+      paid: { label: "Оплачено", color: "bg-blue-500/20 text-blue-400", icon: Clock },
+      completed: { label: "Завершено", color: "bg-green-500/20 text-green-400", icon: CheckCircle },
+      cancelled: { label: "Отменено", color: "bg-gray-500/20 text-gray-400", icon: X },
+      dispute: { label: "Спор", color: "bg-red-500/20 text-red-400", icon: AlertTriangle },
+      disputed: { label: "Спор", color: "bg-red-500/20 text-red-400", icon: AlertTriangle },
+      expired: { label: "Истекло", color: "bg-orange-500/20 text-orange-400", icon: Clock }
+    };
+    const config = statusConfig[status] || statusConfig.pending;
+    const Icon = config.icon;
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${config.color}`}>
+        <Icon className="w-3 h-3" />
+        {config.label}
+      </span>
+    );
   };
 
   const togglePaymentDetail = (detailId) => {
@@ -349,7 +402,12 @@ export default function TraderOffers() {
                     {offer.paused_by_admin ? (
                       <span className="px-2 py-1 bg-[#F59E0B]/10 text-[#F59E0B] text-xs rounded-full font-medium flex items-center gap-1" title={"\u041F\u0440\u0438\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u043C\u043E\u0434\u0435\u0440\u0430\u0442\u043E\u0440\u043E\u043C"}>
                         <Pause className="w-3 h-3" />
-                        {"\u041D\u0430 \u043F\u0430\u0443\u0437\u0435"}
+                        {"Заблокировано"}
+                      </span>
+                    ) : offer.paused_by_trader ? (
+                      <span className="px-2 py-1 bg-[#F59E0B]/10 text-[#F59E0B] text-xs rounded-full font-medium flex items-center gap-1" title="Вы поставили на паузу">
+                        <Pause className="w-3 h-3" />
+                        {"На паузе"}
                       </span>
                     ) : offer.is_active ? (
                       <span className="px-2 py-1 bg-[#10B981]/10 text-[#10B981] text-xs rounded-full font-medium flex items-center gap-1">
@@ -389,20 +447,120 @@ export default function TraderOffers() {
                     })}
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDeleteOffer(offer.id)}
-                  className="text-[#EF4444] hover:text-[#EF4444] hover:bg-[#EF4444]/10 ml-2"
-                  data-testid="delete-offer-btn"
-                >
-                  <XCircle className="w-5 h-5" />
-                </Button>
+                
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 ml-2">
+                  {/* Trades list button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleViewTrades(offer.id)}
+                    className="text-[#A1A1AA] hover:text-white hover:bg-white/10"
+                    title="Список сделок"
+                    data-testid="view-trades-btn"
+                  >
+                    <List className="w-5 h-5" />
+                  </Button>
+                  
+                  {/* Pause/Resume button - only for active offers not paused by admin */}
+                  {offer.is_active && !offer.paused_by_admin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handlePauseOffer(offer.id, offer.paused_by_trader)}
+                      className={offer.paused_by_trader 
+                        ? "text-[#10B981] hover:text-[#10B981] hover:bg-[#10B981]/10" 
+                        : "text-[#F59E0B] hover:text-[#F59E0B] hover:bg-[#F59E0B]/10"
+                      }
+                      title={offer.paused_by_trader ? "Возобновить" : "Поставить на паузу"}
+                      data-testid="pause-offer-btn"
+                    >
+                      {offer.paused_by_trader ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+                    </Button>
+                  )}
+                  
+                  {/* Delete button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteOffer(offer.id)}
+                    className="text-[#EF4444] hover:text-[#EF4444] hover:bg-[#EF4444]/10"
+                    title="Удалить объявление"
+                    data-testid="delete-offer-btn"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
+      
+      {/* Trades Modal */}
+      <Dialog open={tradesModalOpen} onOpenChange={setTradesModalOpen}>
+        <DialogContent className="bg-[#0A0A0A] border-white/10 max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <List className="w-5 h-5" />
+              Сделки по объявлению
+            </DialogTitle>
+          </DialogHeader>
+          
+          {loadingTrades ? (
+            <div className="flex justify-center py-8">
+              <div className="spinner" />
+            </div>
+          ) : selectedOfferTrades ? (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="bg-white/5 rounded-lg p-3">
+                  <div className="text-xl font-bold text-white">{selectedOfferTrades.summary.total}</div>
+                  <div className="text-xs text-[#71717A]">Всего</div>
+                </div>
+                <div className="bg-green-500/10 rounded-lg p-3">
+                  <div className="text-xl font-bold text-green-400">{selectedOfferTrades.summary.completed}</div>
+                  <div className="text-xs text-[#71717A]">Завершено</div>
+                </div>
+                <div className="bg-yellow-500/10 rounded-lg p-3">
+                  <div className="text-xl font-bold text-yellow-400">{selectedOfferTrades.summary.active}</div>
+                  <div className="text-xs text-[#71717A]">Активных</div>
+                </div>
+                <div className="bg-gray-500/10 rounded-lg p-3">
+                  <div className="text-xl font-bold text-gray-400">{selectedOfferTrades.summary.cancelled}</div>
+                  <div className="text-xs text-[#71717A]">Отменено</div>
+                </div>
+              </div>
+              
+              {/* Trades list */}
+              {selectedOfferTrades.trades.length === 0 ? (
+                <div className="text-center py-8 text-[#71717A]">
+                  Сделок пока нет
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {selectedOfferTrades.trades.map((trade) => (
+                    <div key={trade.id} className="bg-white/5 rounded-lg p-4 flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white font-medium">{trade.amount_usdt?.toFixed(2)} USDT</span>
+                          <span className="text-[#71717A]">→</span>
+                          <span className="text-[#A1A1AA]">{trade.amount_rub?.toFixed(0)} ₽</span>
+                        </div>
+                        <div className="text-xs text-[#52525B] mt-1">
+                          {new Date(trade.created_at).toLocaleString('ru-RU')}
+                        </div>
+                      </div>
+                      {getTradeStatusBadge(trade.status)}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

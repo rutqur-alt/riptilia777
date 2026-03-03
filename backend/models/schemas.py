@@ -165,6 +165,8 @@ class OfferResponse(BaseModel):
     conditions: Optional[str] = None
     is_active: Optional[bool] = False
     status: Optional[str] = None
+    paused_by_trader: Optional[bool] = False
+    paused_by_admin: Optional[bool] = False
     created_at: Optional[str] = None
     trades_count: Optional[int] = 0
     success_rate: Optional[float] = 100.0
