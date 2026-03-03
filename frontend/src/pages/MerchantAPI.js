@@ -693,49 +693,59 @@ document.getElementById('payButton').onclick = async () => {
         </CardContent>
       </Card>
 
-      {/* Node.js SDK */}
+      {/* Проверка подписи webhook (вместо SDK) */}
       <Card className="bg-zinc-900 border-zinc-800">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Code className="w-5 h-5 text-green-400" />
-            Node.js SDK
+            Проверка подписи Webhook
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-zinc-400">
-            Официальный SDK для быстрой интеграции с Node.js / TypeScript:
+            При получении webhook всегда проверяйте подпись для безопасности:
           </p>
           <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800">
-{`npm install reptiloid-sdk
+{`// Node.js / Express пример
+const crypto = require('crypto');
 
-// Использование
-const ReptiloidSDK = require('reptiloid-sdk');
+const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
 
-const sdk = new ReptiloidSDK({
-  apiKey: '${merchant?.api_key || 'YOUR_API_KEY'}',
-  secretKey: '${merchant?.api_secret || 'YOUR_SECRET_KEY'}',
-  merchantId: '${merchant?.id || 'YOUR_MERCHANT_ID'}',
-  baseUrl: '${BASE_URL}'
-});
+// Поля которые участвуют в подписи
+const SIGN_FIELDS = ['order_id', 'payment_id', 'status', 'amount', 'timestamp'];
 
-// Создание платежа
-const invoice = await sdk.createInvoice({
-  orderId: 'ORDER_123',
-  amount: 1500,
-  callbackUrl: 'https://yoursite.com/webhook',
-  paymentMethod: 'card'
-});
+function verifyWebhookSignature(payload, receivedSign) {
+  const signParams = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null) continue;
+    let v = value;
+    if (typeof v === 'number' && Number.isInteger(v)) v = Math.floor(v);
+    signParams[key] = v;
+  }
+  
+  const sortedKeys = Object.keys(signParams).sort();
+  const signString = sortedKeys.map(k => \`\${k}=\${signParams[k]}\`).join('&') + SECRET_KEY;
+  
+  const expectedSign = crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(signString)
+    .digest('hex');
+  
+  return expectedSign === receivedSign;
+}
 
-// Открыть страницу оплаты
-window.open(invoice.paymentUrl, '_blank');
-
-// Проверка webhook
+// Обработка webhook
 app.post('/webhook', (req, res) => {
   const { sign, ...payload } = req.body;
-  if (!sdk.verifyWebhook(payload, sign)) {
-    return res.status(401).json({ status: 'error' });
+  
+  if (!verifyWebhookSignature(payload, sign)) {
+    return res.status(401).json({ status: 'error', message: 'Invalid signature' });
   }
-  // Обработка...
+  
+  // Обработка платежа
+  console.log('Webhook received:', payload.status, payload.payment_id);
+  
+  // ВАЖНО: Всегда отвечайте { status: 'ok' }
   res.json({ status: 'ok' });
 });`}
           </pre>

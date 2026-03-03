@@ -25,8 +25,28 @@ async def _ws_broadcast(channel: str, data: dict):
 
 # Import webhook sender
 async def send_merchant_webhook_on_trade(trade: dict, status: str, extra_data: dict = None):
-    """Send webhook to merchant when trade status changes"""
+    """Send webhook to merchant when trade status changes.
+    Supports both old payment_link system and new Invoice API.
+    Also syncs invoice status with trade status.
+    """
     try:
+        # Try Invoice API webhook first (new system)
+        if trade.get("invoice_id"):
+            from routes.invoice_api import send_webhook_notification
+            
+            # Sync invoice status with trade status
+            await db.merchant_invoices.update_one(
+                {"id": trade["invoice_id"]},
+                {"$set": {
+                    "status": status,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            
+            await send_webhook_notification(trade["invoice_id"], status, extra_data)
+            return
+        
+        # Fallback to old merchant_api webhook
         from routes.merchant_api import send_merchant_webhook
         if trade.get("merchant_id") and trade.get("payment_link_id"):
             await send_merchant_webhook(

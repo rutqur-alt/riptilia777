@@ -269,6 +269,34 @@ Endpoint `/api/notifications/sidebar-badges` использовал `max(event_n
   - Обновлена секция вебхука `cancelled`
   - Добавлена таблица возможных значений `reason`: `auto_timeout`, `buyer_cancelled`, `seller_cancelled`, `admin_cancelled`
 
+## Invoice API Webhooks полностью реализованы (03.03.2026)
+
+### Проблема:
+Документация мерчанта обещала вебхуки (`paid`, `cancelled`, `expired`, `completed`), но код их **НЕ отправлял** для Invoice API.
+
+### Исправлено:
+- ✅ **Backend** (`/app/backend/routes/trades.py`):
+  - Функция `send_merchant_webhook_on_trade()` теперь поддерживает Invoice API
+  - При наличии `invoice_id` в trade, вебхук отправляется через `send_webhook_notification()`
+  - Статус invoice синхронизируется со статусом trade
+
+- ✅ **Backend** (`/app/backend/routes/invoice_api.py`):
+  - Endpoint `link-trade` теперь сохраняет `invoice_id` в trade
+  - Это позволяет системе вебхуков знать, что trade связан с Invoice API
+
+- ✅ **Frontend** (`/app/frontend/src/pages/MerchantAPI.js`):
+  - Убран несуществующий `reptiloid-sdk`
+  - Добавлен пример проверки подписи webhook на Node.js
+
+### Вебхуки которые теперь работают для Invoice API:
+| Статус | Когда отправляется |
+|--------|-------------------|
+| `pending` | Создана сделка (покупатель выбрал оператора) |
+| `paid` | Покупатель нажал "Я оплатил" |
+| `completed` | Трейдер подтвердил получение оплаты |
+| `cancelled` | Сделка отменена (вручную или по таймауту) |
+| `disputed` | Открыт спор |
+
 ## Следующие задачи (Backlog)
 - P2: Telegram уведомления для споров
 - P2: Улучшение мобильной адаптации

@@ -770,6 +770,12 @@ async def link_trade_to_invoice(invoice_id: str, request: LinkTradeRequest):
         }}
     )
     
+    # Also update trade with invoice_id (needed for webhook routing)
+    await db.trades.update_one(
+        {"id": request.trade_id},
+        {"$set": {"invoice_id": invoice_id}}
+    )
+    
     return {"status": "success", "message": "Trade linked to invoice"}
 
 
