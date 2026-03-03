@@ -195,6 +195,20 @@ async def send_webhook_notification(invoice_id: str, new_status: str, extra_data
         }
         await db.webhook_history.insert_one(webhook_record)
         
+        # If callback_url is our test receiver, save to test_webhooks for demo display
+        if "test-webhook-receiver" in callback_url or "webhook.site" in callback_url:
+            test_webhook = {
+                "id": f"twh_{secrets.token_hex(8)}",
+                "merchant_id": invoice.get("merchant_id"),
+                "payload": callback_data,
+                "received_at": datetime.now(timezone.utc).isoformat(),
+                "status": new_status,
+                "payment_id": invoice_id,
+                "order_id": callback_data.get("order_id"),
+                "amount": callback_data.get("amount")
+            }
+            await db.test_webhooks.insert_one(test_webhook)
+        
         # Send webhook
         success = await send_webhook(callback_url, callback_data, 0)
         
@@ -1099,3 +1113,74 @@ async def merchant_send_dispute_message(
             "created_at": msg["created_at"]
         }
     }
+
+
+
+# ================== WEBHOOK TESTING FOR DEMO SHOP ==================
+
+@router.post("/test-webhook-receiver")
+async def test_webhook_receiver(request: Request):
+    """
+    Test webhook receiver for demo shop.
+    Stores incoming webhooks in DB for display in demo shop UI.
+    This endpoint receives webhooks from the system (no auth required).
+    """
+    body = await request.json()
+    
+    # Extract merchant_id from payment_id (invoice)
+    payment_id = body.get("payment_id")
+    merchant_id = None
+    
+    if payment_id:
+        invoice = await db.merchant_invoices.find_one({"id": payment_id}, {"_id": 0})
+        if invoice:
+            merchant_id = invoice.get("merchant_id")
+    
+    # Store webhook for demo display
+    webhook_record = {
+        "id": f"twh_{secrets.token_hex(8)}",
+        "merchant_id": merchant_id,
+        "payload": body,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "status": body.get("status"),
+        "payment_id": payment_id,
+        "order_id": body.get("order_id"),
+        "amount": body.get("amount")
+    }
+    await db.test_webhooks.insert_one(webhook_record)
+    
+    return {"status": "ok"}
+
+
+@router.get("/test-webhooks")
+async def get_test_webhooks(
+    limit: int = 20,
+    x_api_key: str = Header(..., alias="X-Api-Key")
+):
+    """
+    Get list of received test webhooks for demo shop.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    webhooks = await db.test_webhooks.find(
+        {"merchant_id": merchant["id"]},
+        {"_id": 0}
+    ).sort("received_at", -1).limit(limit).to_list(limit)
+    
+    return {"webhooks": webhooks}
+
+
+@router.delete("/test-webhooks")
+async def clear_test_webhooks(x_api_key: str = Header(..., alias="X-Api-Key")):
+    """
+    Clear all test webhooks for demo shop.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    await db.test_webhooks.delete_many({"merchant_id": merchant["id"]})
+    
+    return {"status": "ok", "message": "Webhooks cleared"}

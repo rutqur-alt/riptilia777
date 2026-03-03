@@ -5,10 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import { API } from '@/App';
 import axios from 'axios';
+import CryptoJS from 'crypto-js';
 import {
   CheckCircle, Copy, AlertTriangle, Shield, Timer,
   RefreshCw, Loader2, Check, Clock, X, History,
-  CreditCard, Smartphone, Phone, QrCode
+  CreditCard, Smartphone, Phone, QrCode, AlertCircle
 } from 'lucide-react';
 import { PAYMENT_METHODS, getPaymentMethod } from '@/config/paymentMethods';
 
@@ -21,7 +22,8 @@ import {
   OperatorSelector,
   PaymentCard,
   ChatPanel,
-  SettingsDialog
+  SettingsDialog,
+  WebhookPanel
 } from './shop';
 
 // Helper functions
@@ -88,6 +90,7 @@ export default function BuyerShop() {
   const [amount, setAmount] = useState('');
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [activeInvoice, setActiveInvoice] = useState(null);
+  const [noOperatorsError, setNoOperatorsError] = useState(false);
 
   // === Operator selection ===
   const [step, setStep] = useState('idle');
@@ -119,6 +122,29 @@ export default function BuyerShop() {
   const [transactions, setTransactions] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // ========== HMAC Signature Generation (same as backend) ==========
+  const generateSignature = (params, secretKey) => {
+    const SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url'];
+    
+    const signParams = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null || value === undefined) {
+        continue;
+      }
+      let v = value;
+      // Convert float to int if whole number
+      if (typeof v === 'number' && Number.isInteger(v)) {
+        v = Math.floor(v);
+      }
+      signParams[key] = v;
+    }
+    
+    const sortedKeys = Object.keys(signParams).sort();
+    const signString = sortedKeys.map(k => `${k}=${signParams[k]}`).join('&') + secretKey;
+    
+    return CryptoJS.HmacSHA256(signString, secretKey).toString();
+  };
 
   // ========== Effects ==========
   useEffect(() => {
@@ -287,26 +313,50 @@ export default function BuyerShop() {
     }
 
     setTopUpLoading(true);
+    setNoOperatorsError(false);
+    
     try {
-      const res = await axios.post(`${API}/merchant/v1/invoice/create`, {
-        api_key: apiKey,
-        api_secret: apiSecret,
+      // Use Invoice API v1 with HMAC signature (like real merchant integration)
+      const orderId = `ORDER_${Date.now()}`;
+      const callbackUrl = `${API}/v1/invoice/test-webhook-receiver`;
+      
+      const params = {
         merchant_id: merchantId,
-        amount_rub: numAmount,
-        description: `Пополнение на ${numAmount.toLocaleString()} руб.`
+        order_id: orderId,
+        amount: numAmount,
+        currency: 'RUB',
+        callback_url: callbackUrl,
+        user_id: null
+      };
+      
+      // Generate HMAC-SHA256 signature
+      params.sign = generateSignature(params, apiSecret);
+      params.description = `Тестовое пополнение ${numAmount.toLocaleString()} руб.`;
+
+      const res = await axios.post(`${API}/v1/invoice/create`, params, {
+        headers: { 
+          'X-Api-Key': apiKey,
+          'Content-Type': 'application/json'
+        }
       });
 
-      if (res.data.success) {
+      if (res.data.status === 'success') {
+        const invoiceId = res.data.payment_id;
         setActiveInvoice({
-          ...res.data,
+          invoice_id: invoiceId,
+          payment_url: res.data.payment_url,
           client_amount_rub: numAmount,
-          merchant_receives_rub: res.data.merchant_receives_rub
+          merchant_receives_rub: res.data.details?.total_amount || numAmount,
+          amount_usdt: res.data.details?.amount_usdt
         });
         setDepositAmount(numAmount);
-        await loadOperators(res.data.invoice_id, numAmount);
+        await loadOperators(invoiceId, numAmount);
+      } else {
+        throw new Error(res.data.message || 'Ошибка создания инвойса');
       }
     } catch (e) {
-      toast.error('Ошибка создания платежа');
+      const errMsg = e.response?.data?.detail || e.message || 'Ошибка создания платежа';
+      toast.error(errMsg);
     } finally {
       setTopUpLoading(false);
     }
@@ -314,12 +364,18 @@ export default function BuyerShop() {
 
   const loadOperators = async (invoiceId, amountRub) => {
     try {
-      const invRes = await axios.get(`${API}/shop/pay/${invoiceId}`);
       const params = new URLSearchParams();
       if (amountRub) params.set("amount_rub", amountRub);
 
       const opRes = await axios.get(`${API}/public/operators?${params}`);
       const ops = opRes.data.operators || [];
+
+      // Check if there are any operators
+      if (ops.length === 0) {
+        setNoOperatorsError(true);
+        setStep('no_operators');
+        return;
+      }
 
       const allMethods = Object.keys(PAYMENT_METHODS);
       setAvailableMethods(allMethods);
@@ -342,6 +398,8 @@ export default function BuyerShop() {
       setStep('select_operator');
     } catch (e) {
       toast.error('Ошибка загрузки операторов');
+      setNoOperatorsError(true);
+      setStep('no_operators');
     }
   };
 
@@ -474,6 +532,7 @@ export default function BuyerShop() {
     setAmount('');
     setCanDispute(false);
     setDisputeCountdown(null);
+    setNoOperatorsError(false);
   };
 
   const getDisplayRequisite = () => {
@@ -539,6 +598,9 @@ export default function BuyerShop() {
               topUpLoading={topUpLoading}
               startTopUp={startTopUp}
             />
+
+            {/* Webhook Panel */}
+            <WebhookPanel apiKey={apiKey} />
 
             {/* Transaction History */}
             {showHistory && (
@@ -606,6 +668,29 @@ export default function BuyerShop() {
             openOperatorDialog={openOperatorDialog}
             resetFlow={resetFlow}
           />
+        )}
+
+        {/* No Operators State */}
+        {step === 'no_operators' && (
+          <div className="bg-[#121212] rounded-2xl p-8 border border-white/5 text-center max-w-md mx-auto">
+            <div className="w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-8 h-8 text-orange-400" />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">Нет доступных операторов</h2>
+            <p className="text-[#71717A] mb-4">
+              К сожалению, сейчас нет активных объявлений для приёма платежей на сумму{' '}
+              <span className="text-white font-medium">{depositAmount.toLocaleString()} RUB</span>
+            </p>
+            <p className="text-[#52525B] text-sm mb-6">
+              Попробуйте позже или измените сумму пополнения
+            </p>
+            <Button 
+              onClick={resetFlow} 
+              className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-xl"
+            >
+              Назад
+            </Button>
+          </div>
         )}
 
         {/* Payment Step */}
