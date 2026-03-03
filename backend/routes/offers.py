@@ -523,24 +523,12 @@ async def get_operators_for_payment(
 
 @router.delete("/offers/{offer_id}")
 async def delete_offer(offer_id: str, user: dict = Depends(require_role(["trader"]))):
-    """Delete an offer and refund unused funds"""
+    """Delete an offer permanently and refund unused funds"""
     offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
     if not offer:
-        raise HTTPException(status_code=404, detail="Offer not found")
+        raise HTTPException(status_code=404, detail="Объявление не найдено")
     if offer["trader_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Not your offer")
-    
-    # Check if already closed and funds already returned
-    if not offer.get("is_active", True) and offer.get("available_usdt", 0) == 0:
-        return {
-            "status": "already_deleted",
-            "returned_usdt": 0,
-            "commission_refund": 0,
-            "total_refund": 0,
-            "sold_usdt": offer.get("sold_usdt", 0),
-            "actual_commission_paid": offer.get("actual_commission", 0),
-            "message": "Объявление уже закрыто, средства были возвращены ранее"
-        }
+        raise HTTPException(status_code=403, detail="Это не ваше объявление")
     
     # Calculate refund
     available_usdt = offer.get("available_usdt", 0)
@@ -558,16 +546,8 @@ async def delete_offer(offer_id: str, user: dict = Depends(require_role(["trader
             {"$inc": {"balance_usdt": total_refund}}
         )
     
-    # Close offer AND zero out the balances to prevent double refund
-    await db.offers.update_one(
-        {"id": offer_id}, 
-        {"$set": {
-            "is_active": False,
-            "available_usdt": 0,
-            "reserved_commission": 0,
-            "closed_at": datetime.now(timezone.utc).isoformat()
-        }}
-    )
+    # ПОЛНОСТЬЮ УДАЛЯЕМ объявление из базы данных
+    await db.offers.delete_one({"id": offer_id})
     
     return {
         "status": "deleted",
