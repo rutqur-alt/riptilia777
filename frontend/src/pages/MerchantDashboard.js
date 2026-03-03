@@ -2567,19 +2567,6 @@ function MerchantSettings() {
           {saving ? <Loader className="w-4 h-4 animate-spin" /> : "Сменить пароль"}
         </Button>
       </div>
-
-      <div className="bg-[#121212] border border-white/5 rounded-2xl p-6 space-y-4">
-        <h3 className="text-lg font-medium text-white flex items-center gap-2"><Key className="w-5 h-5" /> API ключ</h3>
-        <div className="p-4 bg-[#0A0A0A] rounded-xl">
-          <div className="text-sm text-[#71717A] mb-1">Текущий API ключ</div>
-          <div className="text-white font-['JetBrains_Mono'] text-sm break-all">{user?.api_key || "Не создан"}</div>
-        </div>
-        <Button onClick={handleRegenerateApiKey} disabled={regenerating} variant="outline" className="border-white/10 text-white hover:bg-white/5 rounded-xl">
-          {regenerating ? <Loader className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-          Перегенерировать
-        </Button>
-        <p className="text-xs text-[#52525B]">Внимание: после перегенерации старый ключ перестанет работать.</p>
-      </div>
     </div>
   );
 }
