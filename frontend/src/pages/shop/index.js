@@ -7,4 +7,3 @@ export { default as PaymentCard } from './PaymentCard';
 export { default as ChatPanel } from './ChatPanel';
 export { default as TransactionHistory } from './TransactionHistory';
 export { default as SettingsDialog } from './SettingsDialog';
-export { default as WebhookPanel } from './WebhookPanel';

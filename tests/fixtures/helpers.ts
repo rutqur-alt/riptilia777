@@ -1,6 +1,6 @@
 import { Page, expect } from '@playwright/test';
 
-const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://exchange-platform-8.preview.emergentagent.com';
+const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://reptiloid-preview.preview.emergentagent.com';
 
 export async function waitForAppReady(page: Page) {
   await page.waitForLoadState('domcontentloaded');

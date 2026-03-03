@@ -5,28 +5,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import { API } from '@/App';
 import axios from 'axios';
-import CryptoJS from 'crypto-js';
 import {
-  CheckCircle, Copy, AlertTriangle, Shield, Timer,
-  RefreshCw, Loader2, Check, Clock, X, History,
-  CreditCard, Smartphone, Phone, QrCode, AlertCircle
+  Wallet, Settings, Store, CreditCard, Smartphone, QrCode, Phone,
+  CheckCircle, Copy, AlertTriangle, Shield, MessageCircle, Timer,
+  RefreshCw, Send, Loader2, Check, User, ChevronDown, Clock,
+  ArrowRight, Eye, EyeOff, Save, Plug, History, X, ExternalLink
 } from 'lucide-react';
-import { PAYMENT_METHODS, getPaymentMethod } from '@/config/paymentMethods';
+import { PAYMENT_METHODS, getPaymentMethod, PAYMENT_METHOD_OPTIONS } from '@/config/paymentMethods';
 
-// Import modular components
-import {
-  ShopHeader,
-  ApiConnectionForm,
-  BalanceCard,
-  TopUpForm,
-  OperatorSelector,
-  PaymentCard,
-  ChatPanel,
-  SettingsDialog,
-  WebhookPanel
-} from './shop';
-
-// Helper functions
 const getRequisiteIcon = (type) => {
   switch (type) {
     case "card": return CreditCard;
@@ -49,28 +35,6 @@ const getRequisiteLabel = (type) => {
 
 const fmtTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
-const getStatusBadge = (status) => {
-  const styles = {
-    completed: "bg-green-500/10 text-green-400",
-    pending: "bg-yellow-500/10 text-yellow-400",
-    paid: "bg-blue-500/10 text-blue-400",
-    disputed: "bg-orange-500/10 text-orange-400",
-    cancelled: "bg-zinc-500/10 text-zinc-400"
-  };
-  const labels = {
-    completed: "Завершено",
-    pending: "Ожидание",
-    paid: "Оплачено",
-    disputed: "Спор",
-    cancelled: "Отменено"
-  };
-  return (
-    <span className={`px-2 py-1 rounded-full text-xs ${styles[status] || styles.pending}`}>
-      {labels[status] || status}
-    </span>
-  );
-};
-
 export default function BuyerShop() {
   // === API Connection ===
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('shop_api_key') || '');
@@ -90,10 +54,9 @@ export default function BuyerShop() {
   const [amount, setAmount] = useState('');
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [activeInvoice, setActiveInvoice] = useState(null);
-  const [noOperatorsError, setNoOperatorsError] = useState(false);
 
-  // === Operator selection ===
-  const [step, setStep] = useState('idle');
+  // === Operator selection (stak) ===
+  const [step, setStep] = useState('idle'); // idle, select_operator, payment, waiting, completed, disputed
   const [operators, setOperators] = useState([]);
   const [filteredOperators, setFilteredOperators] = useState([]);
   const [selectedFilter, setSelectedFilter] = useState('all');
@@ -123,34 +86,14 @@ export default function BuyerShop() {
   const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // ========== HMAC Signature Generation (same as backend) ==========
-  const generateSignature = (params, secretKey) => {
-    const SIGN_FIELDS = ['merchant_id', 'order_id', 'amount', 'currency', 'user_id', 'callback_url'];
-    
-    const signParams = {};
-    for (const [key, value] of Object.entries(params)) {
-      if (!SIGN_FIELDS.includes(key) || key === 'sign' || value === null || value === undefined) {
-        continue;
-      }
-      let v = value;
-      // Convert float to int if whole number
-      if (typeof v === 'number' && Number.isInteger(v)) {
-        v = Math.floor(v);
-      }
-      signParams[key] = v;
-    }
-    
-    const sortedKeys = Object.keys(signParams).sort();
-    const signString = sortedKeys.map(k => `${k}=${signParams[k]}`).join('&') + secretKey;
-    
-    return CryptoJS.HmacSHA256(signString, secretKey).toString();
-  };
-
-  // ========== Effects ==========
+  // ========== Auto-connect on mount ==========
   useEffect(() => {
-    if (apiKey && !connected) connectApi(true);
+    if (apiKey && !connected) {
+      connectApi(true);
+    }
   }, []);
 
+  // ========== Timer for pending trade ==========
   useEffect(() => {
     if (trade?.status === "pending" && trade?.expires_at) {
       const timer = setInterval(() => {
@@ -162,105 +105,101 @@ export default function BuyerShop() {
     }
   }, [trade]);
 
+  // ========== Dispute countdown ==========
   useEffect(() => {
-    if (trade?.paid_at) {
+    if (trade?.status === "paid" && trade?.paid_at) {
       const updateDispute = () => {
-        const paidAt = new Date(trade.paid_at);
-        const diff = Math.floor((new Date() - paidAt) / 1000);
-        if (diff >= 600) {
+        const paidTime = new Date(trade.paid_at);
+        const now = new Date();
+        const minutesPassed = (now - paidTime) / 60000;
+        if (minutesPassed >= 10) {
           setCanDispute(true);
-          setDisputeCountdown(0);
+          setDisputeCountdown(null);
         } else {
           setCanDispute(false);
-          setDisputeCountdown(600 - diff);
+          setDisputeCountdown(Math.max(0, Math.ceil((10 - minutesPassed) * 60)));
         }
       };
       updateDispute();
       const i = setInterval(updateDispute, 1000);
       return () => clearInterval(i);
     }
-  }, [trade?.paid_at]);
+  }, [trade]);
 
+  // ========== Fetch messages ==========
   useEffect(() => {
-    if (trade && ["payment", "waiting", "disputed"].includes(step)) {
+    if (trade && !["completed", "cancelled"].includes(trade.status)) {
       fetchMessages();
-      const i = setInterval(fetchMessages, 5000);
+      const i = setInterval(fetchMessages, 3000);
       return () => clearInterval(i);
     }
-  }, [trade, step]);
+  }, [trade]);
 
+  // ========== Poll trade status ==========
   useEffect(() => {
-    if (trade && step === "waiting") {
+    if (trade && !["completed", "cancelled"].includes(trade.status)) {
       const poll = setInterval(async () => {
         try {
           const res = await axios.get(`${API}/trades/${trade.id}/public`);
-          setTrade(res.data);
-          if (res.data.status === "completed") {
-            setStep("completed");
-            toast.success("Оплата зачислена!");
-            loadBalance();
-            clearInterval(poll);
-          } else if (res.data.status === "disputed") {
-            setStep("disputed");
-          } else if (res.data.status === "cancelled") {
-            resetFlow();
-            toast.info("Сделка отменена");
+          if (res.data.status !== trade.status) {
+            setTrade(res.data);
+            if (res.data.status === "completed") {
+              setStep("completed");
+              toast.success("Оплата зачислена!");
+              loadBalance();
+            } else if (res.data.status === "disputed") {
+              setStep("disputed");
+            }
           }
         } catch (e) { }
-      }, 3000);
+      }, 5000);
       return () => clearInterval(poll);
     }
-  }, [trade, step]);
+  }, [trade]);
 
+  // ========== Scroll messages ==========
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ========== Filter operators ==========
   useEffect(() => {
-    if (!operators.length) return;
     if (selectedFilter === "all") {
       setFilteredOperators(operators);
     } else {
-      const filtered = operators.filter(op =>
+      setFilteredOperators(operators.filter(op =>
         op.requisites?.some(r => r.type === selectedFilter)
-      );
-      setFilteredOperators(filtered);
+      ));
     }
   }, [selectedFilter, operators]);
 
-  // ========== API Functions ==========
+  // ========== API FUNCTIONS ==========
+
   const connectApi = async (silent = false) => {
-    if (!apiKey || !apiSecret || !merchantId) {
-      if (!silent) toast.error('Заполните все поля');
+    if (!apiKey) {
+      if (!silent) toast.error('Введите API ключ');
       return;
     }
     setConnecting(true);
     try {
-      const res = await axios.post(`${API}/merchant/v1/auth`, {
-        api_key: apiKey,
-        api_secret: apiSecret,
-        merchant_id: merchantId
-      });
-      
-      if (res.data.success) {
-        setMerchantName(res.data.merchant_name || 'Магазин');
-        setBalance({
-          balance_usdt: res.data.balance_usdt || 0,
-          total_client_rub: res.data.total_client_rub || 0,
-          total_received_rub: res.data.total_received_rub || 0,
-          transactions_count: res.data.transactions_count || 0
-        });
+      const res = await axios.get(`${API}/shop/merchant-info/${apiKey}`);
+      if (res.data) {
+        const mid = res.data.merchant_id || res.data.id || '';
+        const mname = res.data.company_name || res.data.name || res.data.shop_name || 'Магазин';
+        setMerchantId(mid);
+        setMerchantName(mname);
+        setBalance({ balance_usdt: res.data.balance_usdt || 0, total_received: res.data.total_received || 0, total_transactions: res.data.total_transactions || 0 });
         setConnected(true);
         localStorage.setItem('shop_api_key', apiKey);
         localStorage.setItem('shop_api_secret', apiSecret);
-        localStorage.setItem('shop_merchant_id', merchantId);
-        localStorage.setItem('shop_merchant_name', res.data.merchant_name);
+        localStorage.setItem('shop_merchant_id', mid);
+        localStorage.setItem('shop_merchant_name', mname);
         if (!silent) toast.success('Подключено!');
+        loadBalance();
         loadTransactions();
       }
     } catch (e) {
-      const errMsg = e.response?.data?.detail?.message || 'Ошибка авторизации';
-      if (!silent) toast.error(errMsg);
+      if (!silent) toast.error('Неверный API ключ');
       setConnected(false);
     } finally {
       setConnecting(false);
@@ -268,20 +207,15 @@ export default function BuyerShop() {
   };
 
   const loadBalance = async () => {
-    if (!apiKey || !apiSecret || !merchantId) return;
+    if (!apiKey) return;
     setLoadingBalance(true);
     try {
-      const res = await axios.post(`${API}/merchant/v1/balance`, {
-        api_key: apiKey,
-        api_secret: apiSecret,
-        merchant_id: merchantId
-      });
-      if (res.data.success) {
+      const res = await axios.get(`${API}/shop/merchant-info/${apiKey}`);
+      if (res.data) {
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
-          total_client_rub: res.data.total_client_rub || 0,
-          total_received_rub: res.data.total_received_rub || 0,
-          transactions_count: res.data.transactions_count || 0
+          total_received: res.data.total_received || 0,
+          total_transactions: res.data.total_transactions || 0
         });
       }
     } catch (e) { }
@@ -289,23 +223,19 @@ export default function BuyerShop() {
   };
 
   const loadTransactions = async () => {
-    if (!apiKey || !apiSecret || !merchantId) return;
+    if (!apiKey || !merchantId) return;
     setLoadingHistory(true);
     try {
-      const res = await axios.post(`${API}/merchant/v1/transactions`, {
-        api_key: apiKey,
-        api_secret: apiSecret,
-        merchant_id: merchantId,
-        limit: 20
+      const res = await axios.get(`${API}/v1/invoice/transactions`, {
+        params: { merchant_id: merchantId, limit: 20 },
+        headers: { 'X-Api-Key': apiKey }
       });
-      if (res.data.success) {
-        setTransactions(res.data.transactions || []);
-      }
+      setTransactions(res.data.transactions || res.data || []);
     } catch (e) { }
     finally { setLoadingHistory(false); }
   };
 
-  const startTopUp = async () => {
+  const createTopUp = async () => {
     const numAmount = parseInt(amount);
     if (!numAmount || numAmount < 100) {
       toast.error('Минимальная сумма 100 рублей');
@@ -313,50 +243,21 @@ export default function BuyerShop() {
     }
 
     setTopUpLoading(true);
-    setNoOperatorsError(false);
-    
     try {
-      // Use Invoice API v1 with HMAC signature (like real merchant integration)
-      const orderId = `ORDER_${Date.now()}`;
-      const callbackUrl = `${API}/v1/invoice/test-webhook-receiver`;
-      
-      const params = {
-        merchant_id: merchantId,
-        order_id: orderId,
-        amount: numAmount,
-        currency: 'RUB',
-        callback_url: callbackUrl,
-        user_id: null
-      };
-      
-      // Generate HMAC-SHA256 signature
-      params.sign = generateSignature(params, apiSecret);
-      params.description = `Тестовое пополнение ${numAmount.toLocaleString()} руб.`;
-
-      const res = await axios.post(`${API}/v1/invoice/create`, params, {
-        headers: { 
-          'X-Api-Key': apiKey,
-          'Content-Type': 'application/json'
-        }
+      // Use the quick-payment endpoint for simplicity
+      const res = await axios.post(`${API}/shop/quick-payment`, {
+        amount_rub: numAmount,
+        description: `Пополнение на ${numAmount.toLocaleString()} руб.`
       });
 
-      if (res.data.status === 'success') {
-        const invoiceId = res.data.payment_id;
-        setActiveInvoice({
-          invoice_id: invoiceId,
-          payment_url: res.data.payment_url,
-          client_amount_rub: numAmount,
-          merchant_receives_rub: res.data.details?.total_amount || numAmount,
-          amount_usdt: res.data.details?.amount_usdt
-        });
+      if (res.data.invoice_id) {
+        setActiveInvoice(res.data);
         setDepositAmount(numAmount);
-        await loadOperators(invoiceId, numAmount);
-      } else {
-        throw new Error(res.data.message || 'Ошибка создания инвойса');
+        // Load operators for this invoice
+        await loadOperators(res.data.invoice_id, numAmount);
       }
     } catch (e) {
-      const errMsg = e.response?.data?.detail || e.message || 'Ошибка создания платежа';
-      toast.error(errMsg);
+      toast.error('Ошибка создания платежа');
     } finally {
       setTopUpLoading(false);
     }
@@ -364,44 +265,42 @@ export default function BuyerShop() {
 
   const loadOperators = async (invoiceId, amountRub) => {
     try {
-      // Use white-label API endpoint (same as real merchant would)
-      const opRes = await axios.get(`${API}/v1/invoice/${invoiceId}/operators`, {
-        headers: { 'X-Api-Key': apiKey }
-      });
-      const ops = opRes.data.operators || [];
+      const invRes = await axios.get(`${API}/shop/pay/${invoiceId}`);
+      const inv = invRes.data.order;
 
-      // Check if there are any operators
-      if (ops.length === 0) {
-        setNoOperatorsError(true);
-        setStep('no_operators');
-        return;
-      }
+      const params = new URLSearchParams();
+      if (amountRub) params.set("amount_rub", amountRub);
+
+      const opRes = await axios.get(`${API}/public/operators?${params}`);
+      const ops = opRes.data.operators || [];
 
       const allMethods = Object.keys(PAYMENT_METHODS);
       setAvailableMethods(allMethods);
 
       const exchangeRate = opRes.data.exchange_rate || 78;
-      const operatorsWithPrice = ops.map(op => ({
-        ...op,
-        toPayRub: op.amount_to_pay,
-        commissionPercent: op.commission_percent || 0
-      }));
+      const operatorsWithPrice = ops.map(op => {
+        let toPayRub = op.amount_to_pay_rub || Math.round((amountRub / exchangeRate) * op.price_rub);
+        if (amountRub > 0) toPayRub = Math.max(toPayRub, amountRub);
+        const commissionPercent = ((op.price_rub - exchangeRate) / exchangeRate * 100).toFixed(1);
+        return {
+          ...op,
+          toPayRub,
+          commissionPercent: Math.max(0, parseFloat(commissionPercent))
+        };
+      });
 
       operatorsWithPrice.sort((a, b) => a.toPayRub - b.toPayRub);
       setOperators(operatorsWithPrice);
       setFilteredOperators(operatorsWithPrice);
       setStep('select_operator');
     } catch (e) {
-      const errMsg = e.response?.data?.detail?.message || 'Ошибка загрузки операторов';
-      toast.error(errMsg);
-      setNoOperatorsError(true);
-      setStep('no_operators');
+      toast.error('Ошибка загрузки операторов');
     }
   };
 
   const openOperatorDialog = (operator) => {
     setSelectedOperator(operator);
-    if (operator.requisites?.length > 0) {
+    if (operator.requisites?.length === 1) {
       setSelectedRequisite(operator.requisites[0]);
     } else {
       setSelectedRequisite(null);
@@ -412,78 +311,55 @@ export default function BuyerShop() {
 
   const startTrade = async () => {
     if (!selectedOperator || !activeInvoice) return;
-    
-    // payment_methods come from API (e.g., ['card', 'sbp'])
-    const paymentMethods = selectedOperator.payment_methods || [];
-    if (paymentMethods.length === 0) {
-      toast.error("Нет доступных способов оплаты у этого оператора");
+    if (selectedOperator.requisites?.length > 1 && !selectedRequisite) {
+      toast.error("Выберите способ оплаты");
       return;
     }
-    
-    // Use selected requisite type or first available payment method
-    const paymentMethod = selectedRequisite?.type || selectedRequisite?.payment_method || paymentMethods[0];
+
+    const requisiteToUse = selectedRequisite || selectedOperator.requisites?.[0];
+    if (!requisiteToUse) {
+      toast.error("Нет доступных реквизитов");
+      return;
+    }
 
     setCreating(true);
     try {
-      // Use white-label API: select-operator endpoint
-      const res = await axios.post(
-        `${API}/v1/invoice/${activeInvoice.invoice_id}/select-operator`,
-        {
-          offer_id: selectedOperator.offer_id,
-          payment_method: paymentMethod
-        },
-        { headers: { 'X-Api-Key': apiKey } }
-      );
+      const invRes = await axios.get(`${API}/shop/pay/${activeInvoice.invoice_id}`);
+      const inv = invRes.data.order;
 
-      if (res.data.status !== 'success') {
-        throw new Error(res.data.message || 'Ошибка выбора оператора');
+      const res = await axios.post(`${API}/trades`, {
+        amount_usdt: inv.amount_usdt,
+        price_rub: selectedOperator.price_rub,
+        trader_id: selectedOperator.trader_id,
+        payment_link_id: activeInvoice.invoice_id,
+        offer_id: selectedOperator.offer_id,
+        requisite_ids: [requisiteToUse.id],
+        buyer_type: "client"
+      });
+
+      setSavedRequisite(requisiteToUse);
+
+      const tradeRes = await axios.get(`${API}/trades/${res.data.id}/public`);
+      setTrade(tradeRes.data);
+      if (!tradeRes.data.requisites?.length) {
+        setTrade({ ...tradeRes.data, requisites: [requisiteToUse] });
       }
 
-      // Map response to trade format (matching PaymentCard expected format)
-      const requisites = res.data.payment.requisites;
-      const mappedRequisite = {
-        type: requisites.type,
-        data: {
-          card_number: requisites.type === 'card' ? requisites.number : null,
-          phone: requisites.type === 'sbp' ? requisites.number : null,
-          bank_name: requisites.bank,
-          card_holder: requisites.holder
-        }
-      };
-      
-      const tradeData = {
-        id: res.data.trade_id,
-        status: 'pending',
-        amount_rub: res.data.payment.amount,
-        expires_at: res.data.expires_at,
-        requisites: [mappedRequisite],
-        operator: res.data.operator
-      };
-
-      setSavedRequisite(mappedRequisite);
-      setTrade(tradeData);
+      await axios.patch(`${API}/v1/invoice/${activeInvoice.invoice_id}/link-trade`, { trade_id: res.data.id }).catch(() => { });
       setShowOperatorDialog(false);
       setStep("payment");
     } catch (e) {
-      const errMsg = e.response?.data?.detail?.message || e.response?.data?.detail || e.message || "Ошибка создания сделки";
-      toast.error(errMsg);
+      toast.error(e.response?.data?.detail || "Ошибка создания сделки");
     } finally { setCreating(false); }
   };
 
   const markPaid = async () => {
     try {
-      // Use white-label API: mark-paid endpoint
-      await axios.post(
-        `${API}/v1/invoice/${activeInvoice.invoice_id}/mark-paid`,
-        {},
-        { headers: { 'X-Api-Key': apiKey } }
-      );
+      await axios.post(`${API}/trades/${trade.id}/mark-paid`);
       setTrade({ ...trade, status: "paid", paid_at: new Date().toISOString() });
       setStep("waiting");
       toast.success("Ожидайте подтверждения оператора");
-    } catch (e) { 
-      toast.error(e.response?.data?.detail?.message || "Ошибка"); 
-    }
+    } catch (e) { toast.error("Ошибка"); }
   };
 
   const openDispute = async () => {
@@ -536,23 +412,20 @@ export default function BuyerShop() {
   const resetFlow = () => {
     setStep('idle');
     setTrade(null);
+    setSavedRequisite(null);
     setActiveInvoice(null);
-    setSelectedOperator(null);
-    setSelectedRequisite(null);
+    setOperators([]);
+    setFilteredOperators([]);
     setMessages([]);
     setAmount('');
-    setCanDispute(false);
-    setDisputeCountdown(null);
-    setNoOperatorsError(false);
+    loadBalance();
   };
 
   const getDisplayRequisite = () => {
-    return trade?.requisites?.[0] || savedRequisite;
+    return trade?.requisites?.[0] || savedRequisite || null;
   };
 
   const disconnectApi = () => {
-    setConnected(false);
-    setBalance(null);
     localStorage.removeItem('shop_api_key');
     localStorage.removeItem('shop_api_secret');
     localStorage.removeItem('shop_merchant_id');
@@ -561,59 +434,218 @@ export default function BuyerShop() {
     setApiSecret('');
     setMerchantId('');
     setMerchantName('');
+    setConnected(false);
+    setBalance(null);
+    setTransactions([]);
+    resetFlow();
     toast.success('Отключено');
   };
 
-  // ========== Render ==========
+  const quickAmounts = [500, 1000, 2000, 5000, 10000];
+
+  const getStatusBadge = (status) => {
+    const configs = {
+      pending: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', label: 'Ожидание' },
+      active: { bg: 'bg-blue-500/10', text: 'text-blue-400', label: 'Активный' },
+      paid: { bg: 'bg-blue-500/10', text: 'text-blue-400', label: 'Оплачен' },
+      completed: { bg: 'bg-green-500/10', text: 'text-green-400', label: 'Завершён' },
+      cancelled: { bg: 'bg-red-500/10', text: 'text-red-400', label: 'Отменён' },
+      expired: { bg: 'bg-zinc-500/10', text: 'text-zinc-400', label: 'Истёк' },
+      disputed: { bg: 'bg-orange-500/10', text: 'text-orange-400', label: 'Спор' },
+      dispute: { bg: 'bg-orange-500/10', text: 'text-orange-400', label: 'Спор' },
+      waiting_requisites: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', label: 'Ожидание' }
+    };
+    const c = configs[status] || configs.pending;
+    return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>{c.label}</span>;
+  };
+
+  // ========================================
+  // ============= RENDER =================
+  // ========================================
+
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
-      <ShopHeader
-        connected={connected}
-        merchantName={merchantName}
-        showHistory={showHistory}
-        setShowHistory={setShowHistory}
-        showSettings={showSettings}
-        setShowSettings={setShowSettings}
-        loadTransactions={loadTransactions}
-      />
+      {/* ========== HEADER ========== */}
+      <header className="sticky top-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C3AED] to-[#10B981] flex items-center justify-center">
+              <Store className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-white font-bold text-lg">{connected ? merchantName : 'Магазин'}</h1>
+              <div className="flex items-center gap-1.5">
+                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
+                <span className="text-xs text-[#71717A]">{connected ? 'Подключено' : 'Не подключено'}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {connected && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowHistory(!showHistory)}
+                className="text-[#71717A] hover:text-white"
+              >
+                <History className="w-4 h-4" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSettings(!showSettings)}
+              className="text-[#71717A] hover:text-white"
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </header>
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {/* Not Connected */}
+
+        {/* ========== NOT CONNECTED STATE ========== */}
         {!connected && (
-          <ApiConnectionForm
-            merchantId={merchantId}
-            setMerchantId={setMerchantId}
-            apiKey={apiKey}
-            setApiKey={setApiKey}
-            apiSecret={apiSecret}
-            setApiSecret={setApiSecret}
-            showSecret={showSecret}
-            setShowSecret={setShowSecret}
-            connecting={connecting}
-            connectApi={connectApi}
-          />
+          <div className="bg-[#121212] border border-white/10 rounded-2xl p-6 max-w-md mx-auto">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto bg-gradient-to-br from-[#7C3AED] to-[#10B981] rounded-2xl flex items-center justify-center mb-4">
+                <Plug className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-white mb-1">Подключение к магазину</h2>
+              <p className="text-[#71717A] text-sm">Введите API ключ для начала работы</p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-[#71717A] mb-1.5 block">API Key</label>
+                <Input
+                  type="text"
+                  placeholder="Введите API ключ"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-[#71717A] mb-1.5 block">Secret Key</label>
+                <div className="relative">
+                  <Input
+                    type={showSecret ? 'text' : 'password'}
+                    placeholder="Введите Secret ключ"
+                    value={apiSecret}
+                    onChange={(e) => setApiSecret(e.target.value)}
+                    className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B] pr-10"
+                  />
+                  <button
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#52525B] hover:text-white"
+                  >
+                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <Button
+                onClick={() => connectApi(false)}
+                disabled={connecting || !apiKey}
+                className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-xl"
+              >
+                {connecting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Plug className="w-4 h-4 mr-2" />
+                    Подключить
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         )}
 
-        {/* Connected - Idle State */}
+        {/* ========== CONNECTED: BALANCE + TOPUP ========== */}
         {connected && step === 'idle' && (
           <>
-            <BalanceCard
-              balance={balance?.total_client_rub}
-              loadingBalance={loadingBalance}
-              fetchBalance={loadBalance}
-            />
+            {/* Balance Card */}
+            <div className="bg-gradient-to-br from-[#7C3AED]/20 to-[#10B981]/20 border border-[#7C3AED]/20 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[#A1A1AA] text-sm">Баланс</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={loadBalance}
+                  disabled={loadingBalance}
+                  className="text-[#71717A] hover:text-white p-1"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingBalance ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              <div className="text-4xl font-bold text-white mb-1 font-['JetBrains_Mono']">
+                {balance ? `${(balance.balance_usdt || 0).toFixed(2)} USDT` : '---'}
+              </div>
+              {balance?.total_received != null && (
+                <div className="text-sm text-[#71717A]">
+                  Всего получено: {(balance.total_received || 0).toFixed(2)} USDT
+                </div>
+              )}
+            </div>
 
-            <TopUpForm
-              amount={amount}
-              setAmount={setAmount}
-              topUpLoading={topUpLoading}
-              startTopUp={startTopUp}
-            />
+            {/* Top-up Section */}
+            <div className="bg-[#121212] border border-white/5 rounded-2xl p-6">
+              <h2 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-[#10B981]" />
+                Пополнить баланс
+              </h2>
 
-            {/* Webhook Panel */}
-            <WebhookPanel apiKey={apiKey} />
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-[#71717A] mb-2 block">Сумма в рублях</label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      placeholder="Введите сумму"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="bg-[#0A0A0A] border-white/10 h-14 text-2xl text-center pr-12 text-white placeholder:text-[#52525B] font-['JetBrains_Mono']"
+                      min="100"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#52525B] text-lg">RUB</span>
+                  </div>
+                </div>
 
-            {/* Transaction History */}
+                {/* Quick amounts */}
+                <div className="grid grid-cols-5 gap-2">
+                  {quickAmounts.map((val) => (
+                    <Button
+                      key={val}
+                      variant="outline"
+                      onClick={() => setAmount(String(val))}
+                      className={`border-white/10 text-white hover:bg-white/5 h-11 px-2 text-sm font-medium ${amount === String(val) ? 'bg-[#10B981]/20 border-[#10B981]' : ''
+                        }`}
+                    >
+                      {val >= 1000 ? `${val / 1000}k` : val}
+                    </Button>
+                  ))}
+                </div>
+
+                <Button
+                  onClick={createTopUp}
+                  disabled={!amount || topUpLoading || parseInt(amount) < 100}
+                  className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white text-lg rounded-xl"
+                >
+                  {topUpLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Wallet className="w-5 h-5 mr-2" />
+                      Пополнить
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Transaction History (inline) */}
             {showHistory && (
               <div className="bg-[#121212] border border-white/5 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -635,7 +667,8 @@ export default function BuyerShop() {
                     {transactions.map((tx, i) => (
                       <div key={tx.id || i} className="flex items-center justify-between py-3 px-4 bg-[#0A0A0A] rounded-xl">
                         <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tx.status === 'completed' ? 'bg-green-500/10' : 'bg-zinc-500/10'}`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tx.status === 'completed' ? 'bg-green-500/10' : 'bg-zinc-500/10'
+                            }`}>
                             {tx.status === 'completed' ? (
                               <CheckCircle className="w-4 h-4 text-green-400" />
                             ) : tx.status === 'disputed' || tx.status === 'dispute' ? (
@@ -646,7 +679,7 @@ export default function BuyerShop() {
                           </div>
                           <div>
                             <div className="text-white text-sm font-medium">
-                              {Math.round(tx.client_amount_rub || tx.amount_rub || 0).toLocaleString()} RUB
+                              {(tx.amount_rub || tx.original_amount_rub || 0).toLocaleString()} RUB
                             </div>
                             <div className="text-[#52525B] text-xs">
                               {tx.created_at ? new Date(tx.created_at).toLocaleDateString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
@@ -655,6 +688,9 @@ export default function BuyerShop() {
                         </div>
                         <div className="text-right">
                           {getStatusBadge(tx.status)}
+                          {tx.amount_usdt && (
+                            <div className="text-xs text-[#71717A] mt-1">{tx.amount_usdt} USDT</div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -665,69 +701,246 @@ export default function BuyerShop() {
           </>
         )}
 
-        {/* Operator Selection */}
+        {/* ========== SELECT OPERATOR (STAK) ========== */}
         {step === 'select_operator' && (
-          <OperatorSelector
-            depositAmount={depositAmount}
-            operators={operators}
-            filteredOperators={filteredOperators}
-            selectedFilter={selectedFilter}
-            setSelectedFilter={setSelectedFilter}
-            availableMethods={availableMethods}
-            showMethodsDropdown={showMethodsDropdown}
-            setShowMethodsDropdown={setShowMethodsDropdown}
-            openOperatorDialog={openOperatorDialog}
-            resetFlow={resetFlow}
-          />
-        )}
-
-        {/* No Operators State */}
-        {step === 'no_operators' && (
-          <div className="bg-[#121212] rounded-2xl p-8 border border-white/5 text-center max-w-md mx-auto">
-            <div className="w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center mx-auto mb-4">
-              <AlertCircle className="w-8 h-8 text-orange-400" />
+          <div>
+            {/* Back button + amount header */}
+            <div className="flex items-center justify-between mb-4">
+              <Button
+                variant="ghost"
+                onClick={resetFlow}
+                className="text-[#71717A] hover:text-white"
+              >
+                <X className="w-4 h-4 mr-1" /> Отмена
+              </Button>
+              <div className="text-right">
+                <div className="text-[#71717A] text-xs">Пополнение</div>
+                <div className="text-xl font-bold text-white font-['JetBrains_Mono']">
+                  {depositAmount.toLocaleString()} RUB
+                </div>
+              </div>
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">Нет доступных операторов</h2>
-            <p className="text-[#71717A] mb-4">
-              К сожалению, сейчас нет активных объявлений для приёма платежей на сумму{' '}
-              <span className="text-white font-medium">{depositAmount.toLocaleString()} RUB</span>
+
+            {/* Payment method filter */}
+            <div className="relative mb-4">
+              <button
+                onClick={() => setShowMethodsDropdown(!showMethodsDropdown)}
+                className="flex items-center justify-between gap-3 px-4 py-3 bg-[#121212] border border-white/10 rounded-xl hover:border-white/20 transition-colors min-w-[200px]"
+              >
+                <span className="text-white">
+                  {selectedFilter === "all" ? "Все методы оплаты" : getPaymentMethod(selectedFilter).name}
+                </span>
+                <ChevronDown className={`w-4 h-4 text-[#71717A] transition-transform ${showMethodsDropdown ? 'rotate-180' : ''}`} />
+              </button>
+              {showMethodsDropdown && (
+                <div className="absolute top-full left-0 mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl overflow-hidden z-20 shadow-xl min-w-[200px]">
+                  <button
+                    onClick={() => { setSelectedFilter("all"); setShowMethodsDropdown(false); }}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/5 transition-colors ${selectedFilter === "all" ? "text-white" : "text-[#A1A1AA]"}`}
+                  >
+                    <span>Все методы</span>
+                    {selectedFilter === "all" && <Check className="w-4 h-4 text-white" />}
+                  </button>
+                  {availableMethods.map(methodType => {
+                    const info = getPaymentMethod(methodType);
+                    return (
+                      <button
+                        key={methodType}
+                        onClick={() => { setSelectedFilter(methodType); setShowMethodsDropdown(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${selectedFilter === methodType ? "bg-[#7C3AED] text-white" : "text-[#A1A1AA] hover:bg-white/5"}`}
+                      >
+                        <span className="text-lg">{info.emoji}</span>
+                        <span className="flex-1 text-left">{info.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Operators count */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[#71717A] text-sm">
+                {filteredOperators.length} {filteredOperators.length === 1 ? 'оператор' : 'операторов'}
+              </span>
+              <span className="text-xs text-[#52525B]">Лучшая цена сверху</span>
+            </div>
+
+            {/* Operators list */}
+            {filteredOperators.length === 0 ? (
+              <div className="bg-[#121212] rounded-2xl p-8 text-center border border-white/5">
+                <AlertTriangle className="w-12 h-12 text-[#F59E0B] mx-auto mb-3" />
+                <h2 className="text-lg font-semibold text-white mb-2">Нет доступных операторов</h2>
+                <p className="text-[#71717A] text-sm">
+                  {selectedFilter !== "all" ? "Попробуйте другой способ оплаты" : "Попробуйте позже"}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredOperators.map((op, index) => {
+                  const bestPrice = filteredOperators[0]?.toPayRub || depositAmount;
+                  const isBest = op.toPayRub === bestPrice;
+                  const diff = op.toPayRub - bestPrice;
+                  const uniqueTypes = [...new Set(op.requisites?.map(r => r.type) || [])];
+
+                  return (
+                    <div
+                      key={op.offer_id}
+                      onClick={() => openOperatorDialog(op)}
+                      className={`bg-[#121212] border hover:bg-[#1A1A1A] rounded-xl p-4 cursor-pointer transition-all ${isBest ? "border-[#10B981]/30" : "border-white/5 hover:border-[#7C3AED]/30"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="relative">
+                            <div className="w-10 h-10 rounded-full bg-[#1A1A1A] flex items-center justify-center">
+                              <User className="w-5 h-5 text-[#52525B]" />
+                            </div>
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#121212] ${op.is_online ? 'bg-[#10B981]' : 'bg-[#52525B]'}`} />
+                          </div>
+                          <div>
+                            <div className="text-white font-medium text-sm flex items-center gap-2">
+                              {op.nickname || op.trader_login}
+                              {isBest && (
+                                <span className="px-2 py-0.5 bg-[#10B981]/10 text-[#10B981] text-xs rounded-full">
+                                  Лучшая цена
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-[#52525B]">
+                              <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-[#10B981]" />{op.success_rate || 100}%</span>
+                              <span>{op.trades_count || 0} сделок</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                          <div className="hidden sm:flex flex-wrap gap-1">
+                            {uniqueTypes.map((type, idx) => {
+                              const Icon = getRequisiteIcon(type);
+                              return (
+                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-1 bg-[#1A1A1A] text-[#A1A1AA] text-xs rounded">
+                                  <Icon className="w-3 h-3" />
+                                  {getRequisiteLabel(type)}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-white font-['JetBrains_Mono']">
+                              {op.toPayRub.toLocaleString()} RUB
+                            </div>
+                            {op.commissionPercent > 0 && (
+                              <div className="text-xs text-[#F59E0B]">+{op.commissionPercent}%</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <p className="text-center text-[#52525B] text-xs mt-6 flex items-center justify-center gap-2">
+              <Shield className="w-4 h-4" /> Безопасная оплата
             </p>
-            <p className="text-[#52525B] text-sm mb-6">
-              Попробуйте позже или измените сумму пополнения
-            </p>
-            <Button 
-              onClick={resetFlow} 
-              className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-xl"
-            >
-              Назад
-            </Button>
           </div>
         )}
 
-        {/* Payment Step */}
+        {/* ========== PAYMENT STEP ========== */}
         {step === 'payment' && trade && (
-          <div className="grid md:grid-cols-2 gap-4">
-            <PaymentCard
-              trade={trade}
-              depositAmount={depositAmount}
-              timeLeft={timeLeft}
-              requisite={getDisplayRequisite()}
-              cancelTrade={cancelTrade}
-              markPaid={markPaid}
-              copy={copy}
-            />
-            <ChatPanel
-              trade={trade}
-              messages={messages}
-              newMessage={newMessage}
-              setNewMessage={setNewMessage}
-              sendMsg={sendMsg}
-              messagesEndRef={messagesEndRef}
-            />
+          <div>
+            <Button variant="ghost" onClick={cancelTrade} className="text-[#71717A] hover:text-white mb-4">
+              <X className="w-4 h-4 mr-1" /> Отменить сделку
+            </Button>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Left: Payment details */}
+              <div className="bg-[#121212] rounded-2xl p-6 border border-white/5">
+                <div className="text-center mb-4">
+                  <div className="w-14 h-14 rounded-2xl bg-[#F59E0B]/10 flex items-center justify-center mx-auto mb-3">
+                    <Timer className="w-7 h-7 text-[#F59E0B]" />
+                  </div>
+                  <h2 className="text-lg font-bold text-white">Переведите точную сумму</h2>
+                  {timeLeft != null && (
+                    <div className="text-sm text-[#F59E0B] mt-1">
+                      Осталось: {fmtTime(timeLeft)}
+                    </div>
+                  )}
+                </div>
+
+                {(() => {
+                  const requisite = getDisplayRequisite();
+                  if (!requisite) return (
+                    <div className="text-center py-4 text-[#71717A]">
+                      <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[#F59E0B]" />
+                      <p>Реквизиты загружаются...</p>
+                    </div>
+                  );
+                  const ReqIcon = getRequisiteIcon(requisite.type);
+                  return (
+                    <div className="space-y-3">
+                      {/* Amount */}
+                      <div className="bg-[#0A0A0A] rounded-xl p-4 text-center">
+                        <div className="text-[#71717A] text-xs mb-1">Сумма к оплате</div>
+                        <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
+                          {(trade.amount_rub || depositAmount).toLocaleString()} RUB
+                        </div>
+                      </div>
+
+                      {/* Requisite details */}
+                      <div className="bg-[#0A0A0A] rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <ReqIcon className="w-4 h-4 text-[#7C3AED]" />
+                          <span className="text-[#71717A] text-sm">{getRequisiteLabel(requisite.type)}</span>
+                        </div>
+
+                        {requisite.data?.card_number && (
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-white font-mono text-lg tracking-wider">{requisite.data.card_number}</span>
+                            <button onClick={() => copy(requisite.data.card_number)} className="text-[#7C3AED] hover:text-white p-1">
+                              <Copy className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                        {requisite.data?.phone && (
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-white font-mono text-lg">{requisite.data.phone}</span>
+                            <button onClick={() => copy(requisite.data.phone)} className="text-[#7C3AED] hover:text-white p-1">
+                              <Copy className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                        {requisite.data?.bank_name && (
+                          <div className="text-[#52525B] text-sm">{requisite.data.bank_name}</div>
+                        )}
+                        {requisite.data?.card_holder && (
+                          <div className="text-[#71717A] text-sm mt-1">{requisite.data.card_holder}</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <Button onClick={markPaid} className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white text-lg rounded-xl mt-4">
+                  <Check className="w-6 h-6 mr-2" /> Я оплатил
+                </Button>
+              </div>
+
+              {/* Right: Chat */}
+              <ChatPanel
+                trade={trade}
+                messages={messages}
+                newMessage={newMessage}
+                setNewMessage={setNewMessage}
+                sendMsg={sendMsg}
+                messagesEndRef={messagesEndRef}
+              />
+            </div>
           </div>
         )}
 
-        {/* Waiting Step */}
+        {/* ========== WAITING STEP ========== */}
         {step === 'waiting' && trade && (
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-4">
@@ -743,7 +956,7 @@ export default function BuyerShop() {
                 <div className="bg-[#0A0A0A] rounded-xl p-4 mb-4">
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-[#71717A]">Сумма</span>
-                    <span className="text-white font-medium">{Math.round(trade.amount_rub || depositAmount || 0).toLocaleString()} RUB</span>
+                    <span className="text-white font-medium">{(trade.amount_rub || depositAmount).toLocaleString()} RUB</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-[#71717A]">Оператор</span>
@@ -751,6 +964,7 @@ export default function BuyerShop() {
                   </div>
                 </div>
 
+                {/* Dispute */}
                 {canDispute ? (
                   <Button onClick={openDispute} variant="outline" className="w-full border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/10">
                     <AlertTriangle className="w-4 h-4 mr-2" />
@@ -766,6 +980,7 @@ export default function BuyerShop() {
                 )}
               </div>
             </div>
+
             <ChatPanel
               trade={trade}
               messages={messages}
@@ -777,7 +992,7 @@ export default function BuyerShop() {
           </div>
         )}
 
-        {/* Completed Step */}
+        {/* ========== COMPLETED ========== */}
         {step === 'completed' && (
           <div className="bg-[#121212] rounded-2xl p-8 border border-white/5 text-center max-w-md mx-auto">
             <div className="w-20 h-20 rounded-full bg-[#10B981]/10 flex items-center justify-center mx-auto mb-6">
@@ -789,7 +1004,7 @@ export default function BuyerShop() {
               <div className="bg-[#0A0A0A] rounded-xl p-4 text-left mb-6">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Сумма</span>
-                  <span className="text-white">{Math.round(trade.amount_rub || depositAmount || 0).toLocaleString()} RUB</span>
+                  <span className="text-white">{(trade.amount_rub || depositAmount).toLocaleString()} RUB</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-[#71717A]">Оператор</span>
@@ -803,7 +1018,7 @@ export default function BuyerShop() {
           </div>
         )}
 
-        {/* Disputed Step */}
+        {/* ========== DISPUTED ========== */}
         {step === 'disputed' && trade && (
           <div className="grid md:grid-cols-2 gap-4">
             <div className="bg-[#121212] rounded-2xl p-6 border border-white/5">
@@ -818,7 +1033,7 @@ export default function BuyerShop() {
               <div className="bg-[#0A0A0A] rounded-xl p-4 mb-4">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Сумма</span>
-                  <span className="text-white">{Math.round(trade.amount_rub || depositAmount || 0).toLocaleString()} RUB</span>
+                  <span className="text-white">{(trade.amount_rub || depositAmount).toLocaleString()} RUB</span>
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-[#71717A]">Оператор</span>
@@ -847,96 +1062,192 @@ export default function BuyerShop() {
         )}
       </div>
 
-      {/* Settings Dialog */}
-      <SettingsDialog
-        open={showSettings}
-        onOpenChange={setShowSettings}
-        connected={connected}
-        merchantId={merchantId}
-        setMerchantId={setMerchantId}
-        apiKey={apiKey}
-        setApiKey={setApiKey}
-        apiSecret={apiSecret}
-        setApiSecret={setApiSecret}
-        showSecret={showSecret}
-        setShowSecret={setShowSecret}
-        merchantName={merchantName}
-        disconnectApi={disconnectApi}
-        connectApi={connectApi}
-      />
+      {/* ========== SETTINGS MODAL ========== */}
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="bg-[#121212] border-white/10 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Настройки</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-[#71717A] mb-1.5 block">API Key</label>
+              <Input
+                type="text"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="bg-[#0A0A0A] border-white/10 text-white font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-sm text-[#71717A] mb-1.5 block">Secret Key</label>
+              <Input
+                type={showSecret ? 'text' : 'password'}
+                value={apiSecret}
+                onChange={(e) => setApiSecret(e.target.value)}
+                className="bg-[#0A0A0A] border-white/10 text-white font-mono text-sm"
+              />
+            </div>
+            {connected && (
+              <div className="bg-[#0A0A0A] rounded-xl p-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-[#71717A]">Merchant ID</span>
+                  <span className="text-white font-mono text-xs">{merchantId}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#71717A]">Магазин</span>
+                  <span className="text-white">{merchantName}</span>
+                </div>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                onClick={() => { connectApi(false); setShowSettings(false); }}
+                className="flex-1 bg-[#7C3AED] hover:bg-[#6D28D9] text-white"
+              >
+                <Save className="w-4 h-4 mr-2" /> Сохранить
+              </Button>
+              {connected && (
+                <Button
+                  onClick={() => { disconnectApi(); setShowSettings(false); }}
+                  variant="outline"
+                  className="border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/10"
+                >
+                  Отключить
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Operator Selection Dialog */}
+      {/* ========== OPERATOR DIALOG ========== */}
       <Dialog open={showOperatorDialog} onOpenChange={setShowOperatorDialog}>
         <DialogContent className="bg-[#121212] border-white/10 text-white max-w-md">
           <DialogHeader>
-            <DialogTitle>Выбор оператора</DialogTitle>
+            <DialogTitle className="text-white">Оплата через {selectedOperator?.nickname || 'оператора'}</DialogTitle>
           </DialogHeader>
-
-          {selectedOperator && (
-            <div className="space-y-4 mt-4">
-              <div className="bg-[#0A0A0A] rounded-xl p-4">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-[#71717A]">Оператор</span>
-                  <span className="text-white">{selectedOperator.nickname || selectedOperator.trader_login}</span>
-                </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-[#71717A]">Сумма к оплате</span>
-                  <span className="text-white font-bold">{Math.round(selectedOperator.toPayRub || 0).toLocaleString()} RUB</span>
-                </div>
+          <div className="space-y-4">
+            <div className="bg-[#0A0A0A] rounded-xl p-4">
+              <div className="flex justify-between items-center">
+                <span className="text-[#71717A]">Сумма пополнения</span>
+                <span className="text-white font-medium">{depositAmount.toLocaleString()} RUB</span>
               </div>
-
-              {selectedOperator.requisites?.length > 1 && (
-                <div>
-                  <label className="text-sm text-[#71717A] mb-2 block">Способ оплаты</label>
-                  <div className="space-y-2">
-                    {selectedOperator.requisites.map((req, idx) => {
-                      const Icon = getRequisiteIcon(req.type);
-                      return (
-                        <button
-                          key={idx}
-                          onClick={() => setSelectedRequisite(req)}
-                          className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                            selectedRequisite?.id === req.id
-                              ? 'border-[#7C3AED] bg-[#7C3AED]/10'
-                              : 'border-white/10 hover:border-white/20'
-                          }`}
-                        >
-                          <Icon className="w-5 h-5 text-[#7C3AED]" />
-                          <span className="text-white">{getRequisiteLabel(req.type)}</span>
-                          {selectedRequisite?.id === req.id && (
-                            <Check className="w-4 h-4 text-[#7C3AED] ml-auto" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div className="flex justify-between items-center mt-2">
+                <span className="text-[#71717A]">К оплате</span>
+                <span className="text-xl font-bold text-white">{selectedOperator?.toPayRub?.toLocaleString()} RUB</span>
+              </div>
+              {selectedOperator?.commissionPercent > 0 && (
+                <div className="flex justify-between items-center mt-1">
+                  <span className="text-[#52525B] text-sm">Комиссия оператора</span>
+                  <span className="text-sm text-[#F59E0B]">+{selectedOperator?.commissionPercent}%</span>
                 </div>
               )}
-
-              <div className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={rulesAccepted}
-                  onChange={(e) => setRulesAccepted(e.target.checked)}
-                  className="mt-1"
-                />
-                <span className="text-[#71717A] text-sm">
-                  Я подтверждаю, что переведу <span className="text-white font-bold">{Math.round(selectedOperator.toPayRub || 0).toLocaleString()} RUB</span> в течение 15 минут
-                </span>
-              </div>
-
-              <Button
-                onClick={startTrade}
-                disabled={!rulesAccepted || creating}
-                className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9]"
-              >
-                {creating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                Подтвердить
-              </Button>
             </div>
-          )}
+
+            {selectedOperator?.requisites?.length > 1 && (
+              <div>
+                <div className="text-sm text-[#71717A] mb-2">Выберите способ оплаты:</div>
+                <div className="space-y-2">
+                  {selectedOperator.requisites.map((req) => {
+                    const Icon = getRequisiteIcon(req.type);
+                    const isSelected = selectedRequisite?.id === req.id;
+                    return (
+                      <button
+                        key={req.id}
+                        onClick={() => setSelectedRequisite(req)}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors ${isSelected ? 'bg-[#7C3AED]/10 border-[#7C3AED]' : 'bg-[#0A0A0A] border-white/5 hover:border-white/20'}`}
+                      >
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isSelected ? 'bg-[#7C3AED]/20' : 'bg-white/5'}`}>
+                          <Icon className={`w-5 h-5 ${isSelected ? 'text-[#7C3AED]' : 'text-[#71717A]'}`} />
+                        </div>
+                        <div className="text-left">
+                          <div className="text-white font-medium">{req.data?.bank_name || getRequisiteLabel(req.type)}</div>
+                          <div className="text-xs text-[#52525B]">{getRequisiteLabel(req.type)}</div>
+                        </div>
+                        {isSelected && <Check className="w-5 h-5 text-[#7C3AED] ml-auto" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rulesAccepted}
+                onChange={(e) => setRulesAccepted(e.target.checked)}
+                className="mt-1 w-4 h-4 rounded border-white/20 bg-transparent checked:bg-[#7C3AED]"
+              />
+              <span className="text-sm text-[#71717A]">
+                Я принимаю правила сервиса и обязуюсь совершить перевод точной суммы без комментария
+              </span>
+            </label>
+
+            <Button
+              onClick={startTrade}
+              disabled={creating || !rulesAccepted || (selectedOperator?.requisites?.length > 1 && !selectedRequisite)}
+              className="w-full h-12 bg-[#10B981] hover:bg-[#059669] text-white rounded-xl"
+            >
+              {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Перейти к оплате'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ========== CHAT PANEL COMPONENT ==========
+function ChatPanel({ trade, messages, newMessage, setNewMessage, sendMsg, messagesEndRef }) {
+  return (
+    <div className="bg-[#121212] rounded-2xl border border-white/5 flex flex-col h-[500px]">
+      <div className="p-4 border-b border-white/5">
+        <h3 className="text-white font-semibold flex items-center gap-2">
+          <MessageCircle className="w-4 h-4" />
+          Сообщения
+        </h3>
+        <p className="text-[#52525B] text-xs mt-1">Оператор: {trade?.trader_login || 'Загрузка...'}</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.length === 0 ? (
+          <div className="text-center text-[#52525B] text-sm py-8">
+            <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            Начните диалог с оператором
+          </div>
+        ) : (
+          messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.sender_type === 'client' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[80%] px-4 py-2 rounded-2xl ${msg.sender_type === 'client'
+                ? 'bg-[#7C3AED] text-white rounded-br-sm'
+                : 'bg-white/5 text-[#E4E4E7] rounded-bl-sm'
+                }`}>
+                <p className="text-sm">{msg.content}</p>
+                <p className="text-[10px] opacity-50 mt-1">
+                  {new Date(msg.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="p-4 border-t border-white/5">
+        <div className="flex gap-2">
+          <Input
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && sendMsg()}
+            placeholder="Написать сообщение..."
+            className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
+          />
+          <Button onClick={sendMsg} className="bg-[#7C3AED] hover:bg-[#6D28D9]">
+            <Send className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -116,8 +116,7 @@ export default function OperatorSelector({
           {filteredOperators.map((op) => {
             const bestPrice = filteredOperators[0]?.toPayRub || depositAmount;
             const isBest = op.toPayRub === bestPrice;
-            // Support both requisites (old) and payment_methods (new white-label API)
-            const uniqueTypes = [...new Set(op.payment_methods || op.requisites?.map(r => r.type) || [])];
+            const uniqueTypes = [...new Set(op.requisites?.map(r => r.type) || [])];
 
             return (
               <div
@@ -163,7 +162,7 @@ export default function OperatorSelector({
                     </div>
                     <div className="text-right">
                       <div className="text-lg font-bold text-white font-['JetBrains_Mono']">
-                        {Math.round(op.toPayRub).toLocaleString()} RUB
+                        {op.toPayRub.toLocaleString()} RUB
                       </div>
                       {op.commissionPercent > 0 && (
                         <div className="text-xs text-[#F59E0B]">+{op.commissionPercent}%</div>

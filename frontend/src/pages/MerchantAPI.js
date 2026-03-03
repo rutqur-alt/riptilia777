@@ -419,6 +419,8 @@ async function processPayment(amount) {
               { method: 'GET', path: '/api/v1/invoice/{id}/operators', desc: 'Получить операторов для инвойса' },
               { method: 'POST', path: '/api/v1/invoice/{id}/select-operator', desc: 'Выбрать оператора, получить реквизиты' },
               { method: 'POST', path: '/api/v1/invoice/{id}/mark-paid', desc: 'Отметить как оплачено' },
+              { method: 'GET', path: '/api/v1/invoice/{id}/messages', desc: 'Получить сообщения чата' },
+              { method: 'POST', path: '/api/v1/invoice/{id}/messages', desc: 'Отправить сообщение в чат' },
               { method: 'GET', path: '/api/v1/invoice/status', desc: 'Проверить статус платежа' },
               { method: 'GET', path: '/api/v1/invoice/transactions', desc: 'Список всех транзакций' },
             ].map((endpoint, idx) => (
@@ -603,6 +605,40 @@ async function processPayment(amount) {
 
 // Вам придёт webhook "paid", затем "completed" когда оператор подтвердит`}
           </pre>
+        </CardContent>
+      </Card>
+
+      {/* Chat API */}
+      <Card className="bg-zinc-900 border-zinc-800">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ExternalLink className="w-5 h-5 text-purple-400" />
+            Chat API — чат с оператором
+          </CardTitle>
+          <p className="text-sm text-zinc-400 mt-1">Интегрируйте чат поддержки на ваш сайт</p>
+        </CardHeader>
+        <CardContent>
+          <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
+{`// GET /{id}/messages — Получить сообщения
+{
+  "status": "success",
+  "messages": [
+    { "id": "...", "sender": "system", "text": "Сделка создана", "timestamp": "..." },
+    { "id": "...", "sender": "operator", "text": "Здравствуйте!", "timestamp": "..." },
+    { "id": "...", "sender": "client", "text": "Оплатил", "timestamp": "..." }
+  ]
+}
+
+// POST /{id}/messages — Отправить сообщение от клиента
+// Body: { "text": "Сообщение клиента" }
+{
+  "status": "success",
+  "message": { "id": "...", "sender": "client", "text": "...", "timestamp": "..." }
+}`}
+          </pre>
+          <p className="text-xs text-zinc-500 mt-3">
+            Polling: запрашивайте сообщения каждые 3-5 секунд для real-time обновлений.
+          </p>
         </CardContent>
       </Card>
 

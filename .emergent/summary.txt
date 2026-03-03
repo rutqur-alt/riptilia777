@@ -1,166 +1,134 @@
 <analysis>**original_problem_statement:**
 The initial request was to build a P2P cryptocurrency exchange platform named Reptiloid. The scope has since expanded to include:
-1.  **Complete Merchant API**: A production-ready API for merchants.
+1.  **Complete Merchant API**: A production-ready API for merchants to accept payments.
 2.  **Implement All Webhooks**: Server-to-server notifications for all critical payment status changes.
-3.  **Comprehensive API Documentation**: Detailed API documentation with examples.
-4.  **UI/UX Refinements (from user feedback):** The platform has undergone numerous UI/UX fixes and feature implementations based on user requests.
-5.  **New Major Feature: Centralized Notification System**: A site-wide notification system (bell icon) that aggregates all important events for users and merchants.
-6.  **Critical Bug Reports:**
-    *   An ad is visible in the public order book but missing from the trader's My Ads page.
-    *   Funds are stuck in closed ads and not returned to the trader's balance.
-    *   Message sorting is incorrect.
-    *   Notification counts are inconsistent across the application.
-    *   Merchants can bypass restrictions on buying crypto.
+3.  **Comprehensive API Documentation**: Detailed API documentation with examples, accessible to merchants.
+4.  **UI/UX Refinements**: The platform has undergone numerous UI/UX fixes and feature implementations based on user requests.
+5.  **New Major Feature: Centralized Notification System**: A site-wide notification system.
+6.  **Critical Bug Reports:** An ad is visible in the public order book but missing from the trader's My Ads page; funds are stuck in closed ads; message sorting is incorrect; notification counts are inconsistent; merchants can bypass restrictions on buying crypto.
 
 **User's preferred language**: Russian
 
 **what currently exists?**
-The platform is a full-stack P2P crypto exchange with functional trader, merchant, and admin dashboards. This session focused heavily on fixing critical bugs and implementing user-requested features, significantly improving the platform's stability and usability.
+A full-stack P2P crypto exchange with trader, merchant, and admin dashboards. The previous session resolved a critical notification count bug and added a missing webhook for auto-cancelled trades.
 
-**Key achievements in this session:**
-*   **Ad Management Overhaul:** Fixed a critical bug where ads were not visible to traders. The entire ad lifecycle has been reworked: ads are now hard-deleted (instead of soft-deleted), and a feature has been added to prevent deletion if active trades exist.
-*   **Critical Funds Bug Fixed:** Resolved a severe issue where traders' funds were not returned to their balance after closing an ad. A migration script was run to return all stuck funds.
-*   **New Ad Features:** Implemented user-requested features to Pause/Resume ads and view a list of all trades associated with a specific ad.
-*   **UI/UX Fixes:**
-    *   Resolved a recurring message sorting bug.
-    *   Unified notification displays and fixed inconsistent counts between different parts of the UI.
-    *   Corrected broken filters on the merchant's payment history page.
-    *   Streamlined admin panel notifications to simple red-dot indicators.
-    *   Re-enforced the rule preventing merchants from buying USDT.
+The agent then attempted a major refactor of the merchant integration into a white-label API, where the end-user would never leave the merchant's website. The user was extremely dissatisfied with this change as it broke the existing logic for calculating prices, which included trader-specific markups. Following a strong request from the user, the agent has reverted all frontend changes related to the test shop () back to the original redirect-based implementation.
 
 **Last working item**:
-*   **Last item agent was working:** The agent was fixing a discrepancy where the notification count in the main header (e.g., 5 событий) did not match the count on the user's dashboard page (e.g., 8 событий). The agent successfully unified the frontend components to use a single notification dropdown but discovered the root cause of the count mismatch is a faulty backend endpoint.
-*   **Status:** IN PROGRESS
-*   **Agent Testing Done:** N
-*   **Which testing method agent to use?** backend testing agent. The core issue is that  returns an incorrect count. A test is needed to assert that its  matches the unread count from the  endpoint to ensure data consistency.
-*   **User Testing Done:** N
+- **Last item agent was working:** The agent was reverting the white-label merchant integration changes for the test shop () back to the previous, user-approved implementation. The user was unhappy because the new integration failed to correctly calculate prices with trader markups. The agent successfully restored the previous versions of , , and , and deleted the new  component.
+- **Status:** USER VERIFICATION PENDING
+- **Agent Testing Done:** Y (Agent performed a visual check via screenshots to confirm the old UI and functionality were restored).
+- **Which testing method agent to use?** screenshot tool. The agent should take a screenshot of the reverted  page, showing the operator list with the correct, markup-inclusive pricing, and ask the user for explicit confirmation that this is the correct state.
+- **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-*   **Issue 1: Inconsistent Notification Count (P0)**
-    *   **Description:** The notification count in the main header (, from ) shows a different number than the actual list of notifications and the count on the dashboard (, from ). This confuses the user.
-    *   **Status:** IN PROGRESS
-    *   **Is recurring issue?** Y
-    *   **Should Test frontend/backend/both after fix?** backend
-    *   **Blocked on other issue:** None
-
-*   **Issues Detail:**
-    *   **Issue 1: Inconsistent Notification Count**
-        *   **Attempted fixes:** The agent has already unified the frontend components to fetch from a single source for the list itself. The remaining issue is the badge count in the header.
-        *   **Next debug checklist:**
-            1.  Modify the backend endpoint  located in .
-            2.  Change its logic to calculate the  unread count by querying the  and legacy  collections with , exactly like the  endpoint does.
-            3.  This will ensure both the header badge and the dropdown list derive their numbers from the same source of truth.
-        *   **Why fix this issue and what will be achieved with the fix?** To eliminate user confusion and provide a consistent and reliable user experience for notifications, which is a core feature.
+- **Issue 1: Inconsistent Merchant API and Documentation (P0)**
+    - **Description:** After reverting the frontend test shop to the old redirect-based flow, the backend () and the merchant-facing API documentation () were NOT reverted. They still contain the code and documentation for the rejected white-label API. This has created a critical inconsistency in the codebase.
+    - **Attempted fixes:** None. This is a new issue resulting from the partial revert.
+    - **Next debug checklist:**
+        1.  Review  and remove the unused white-label endpoints (, , , chat APIs, etc.). Ensure the core  endpoint functions correctly for the redirect flow.
+        2.  Review  and rewrite the documentation to accurately describe the redirect-based flow ( -> get  -> ). Remove all references to the white-label endpoints and flow.
+    - **Why fix this issue and what will be achieved with the fix?** To restore consistency across the application, prevent future confusion for developers, and ensure merchants see documentation that matches the actual, working integration method.
+    - **Status:** NOT STARTED
+    - **Is recurring issue?** N
+    - **Should Test frontend/backend/both after fix?** Both. Test the backend API and screenshot the updated documentation page for the user.
+    - **Blocked on other issue:** None, but should be done after user confirms the  revert.
 
 **In progress Task List**:
-*   None.
+- **Task 1: Verify Reverted Test Shop Integration (P0)**
+    - **Where to resume:** Present the user with a screenshot of the reverted  page. Explicitly ask for confirmation that the functionality, especially the price calculation with markups, is now correct and matches their expectation before the white-label changes.
+    - **What will be achieved with this?** This will confirm the user's critical revert request is complete, restore their confidence, and unblock further development on the merchant API.
+    - **Status:** IN PROGRESS
+    - **Should Test frontend/backend/both after fix?** Frontend (user verification required).
+    - **Blocked on something:** This is the highest priority and blocks everything else.
 
 **Upcoming and Future Tasks**
-*   **Upcoming Task (P1): Implement  Webhook**
-    *   Description: Create a background task to find trades/orders that have passed their payment time limit, update their status to , and trigger a corresponding webhook notification.
-*   **Future Task (P2): Deprecate Old Merchant API**
-    *   Description: Investigate the file  to determine if it is a legacy, insecure API that should be deprecated or removed.
-*   **Future Task (P3): Standardize Backend Route Directories**
-    *   Description: Consolidate all backend route files, which are currently split between  and , into a single, consistent directory structure (e.g., moving everything to ).
-*   **Future Task (P3): Migrate Legacy Notifications**
-    *   Description: Create a migration script to move all data from the legacy  collection to the new  collection. Then, refactor the backend to remove all dependencies on the old collection.
+- **Upcoming Tasks:**
+    - **(P1) Clean up Merchant API and Docs:** After user confirmation of the revert, fix the inconsistency described in Pending/In progress Issue list.
+    - **(P2) Implement  Webhook:** Create a background task to find trades that have passed their payment time limit, update their status to , and trigger a corresponding webhook. This was mentioned in the PRD and is a natural extension of the  webhook fix.
+- **Future Tasks:**
+    - **(P2) Deprecate Old Merchant API:** Investigate  to see if it is a legacy, insecure API that should be removed.
+    - **(P3) Standardize Backend Route Directories:** Consolidate backend route files from  and  into a single  directory.
+    - **(P3) Migrate Legacy Notifications:** Create a script to move all data from the  collection to  and refactor the backend to remove dependencies on the old collection.
 
 **Completed work in this session**
--   **Critical Ad Discrepancy Bug Fixed:** Resolved the issue where a trader's ad was visible publicly but not in their My Ads list.
--   **Critical Fund Return Bug Fixed:** Fixed a bug where funds were not returned to a trader's balance when an ad was closed. A migration was run to return over 800 USDT in stuck funds.
--   **Ad Deletion Logic Changed to Hard Delete:** Per user request, ad deletion now completely removes the ad from the database instead of marking it inactive.
--   **Ad Management Features Added:** Implemented Pause/Resume functionality and a button to view a list of trades for a specific ad.
--   **Ad Deletion Blocked for Active Trades:** Implemented a backend check to prevent an ad from being deleted if it has any non-completed/non-cancelled trades.
--   **Message Sorting & Read Status Fixed:** Corrected the logic in  to sort all conversations by date and properly handle the NEW badge disappearing on click.
--   **Merchant Buy USDT Restriction Fixed:** Added checks in  and  to show a Not Available button for logged-in merchants, preventing them from initiating a purchase.
--   **Merchant Payment Filtering Fixed:** Corrected the filtering logic in  so that the status tabs (Active, Completed, Cancelled, Disputes) work correctly.
--   **Admin Notification UI Streamlined:** Reworked  to remove all notification counts except for red-dot indicators next to All Chats and Staff.
--   **Trader Notification UI Unified:** Removed a redundant notification box from  and updated  to show a full list of notifications on the main page, matching the dashboard.
--   **Dispute Notification Bug Fixed:** Corrected logic in  to ensure dispute notifications are created for all relevant parties in the new  system.
+- **Inconsistent Notification Count Fixed:** Corrected the logic in  () to properly sum counts from both new and legacy notification collections. Verified with automated tests.
+- **'Cancelled' Webhook Added for Auto-Expired Trades:** Added a webhook call to the  background task () to notify merchants of automatically cancelled trades.
+- **White-Label Integration and Full Revert:** Implemented a new white-label merchant integration. After strong negative feedback from the user that it broke crucial business logic (price calculation), all frontend changes for the test shop were successfully reverted to the previous state.
 
 **Earlier issues found/mentioned but not fixed**
-*   None.
+- None.
 
 **Known issue recurrence from previous fork**
-*   None.
+- None.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-*   **Frontend:** React, Redux, Axios, Tailwind CSS
-*   **Backend:** FastAPI, Pydantic, Motor (async MongoDB)
-*   **Database:** MongoDB
-*   **Authentication:** JWT
+- **Frontend:** React, Redux, Axios, Tailwind CSS, crypto-js
+- **Backend:** FastAPI, Pydantic, Motor (async MongoDB), APScheduler
+- **Database:** MongoDB
+- **Key Concepts:** Webhooks, HMAC Signatures, Background Tasks, White-Label vs. Redirect API integration strategies.
 
 **key DB schema**
-*   **offers:** The schema was normalized and the lifecycle management was completely changed. Offers are now hard-deleted instead of being marked with . A new  field was added.
-*   **event_notifications:** The primary collection for user notifications.
-*   **notifications:** Legacy collection. The backend now temporarily reads from both  and  to create a unified view for the user until a full migration can be performed.
+- **invoices:**  is used to send webhooks.
+- **trades:** The  field links a trade to a merchant invoice, enabling status updates and webhooks.
+- **offers:** Used to find available traders/operators for an invoice.
 
 **changes in tech stack**
-*   None.
+- None.
 
 **All files of reference**
-*   : Location of the buggy  endpoint that needs to be fixed.
-*   : Contains the new logic for hard-deleting, pausing, and checking for active trades on an offer.
-*   : Contains the new frontend UI for the pause/resume and trade list features.
-*   : The refactored component that now shows a unified notification list on the main page header.
-*   : Contains the fixed filtering logic for merchant payments.
-*   : Contains the streamlined notification logic for the admin sidebar.
+- : The test shop. It has been reverted to its previous state. **DO NOT MODIFY** towards a white-label API without user approval.
+- : Contains merchant API logic. **It is out of sync** with the reverted frontend and needs to be cleaned up.
+- : Displays merchant API documentation. **It is out of sync** and documents the rejected API flow.
 
-**Areas that need refactoring**
-*   The backend's notification system is a temporary hybrid, reading from both  and the legacy  collections. A task should be created to migrate the old data and remove dependency on the legacy collection.
-*   The  endpoint is a source of inconsistency and should be refactored to use the same data query as the main notification fetching endpoints.
+**Areas that need refactoring**:
+- **:** Contains numerous endpoints for a white-label API that was rejected by the user. These should be removed to avoid confusion and align the backend with the current frontend implementation.
+- **:** The documentation component needs to be completely rewritten to reflect the user-approved, redirect-based integration flow, removing all mentions of the white-label API.
 
 **key api endpoints**
-*   : **(CRITICAL - BUGGY)** This endpoint returns an inconsistent notification count, causing UI discrepancies.
-*   : Overhauled. Now checks for active trades and performs a hard delete from the database.
-*   : New endpoint to pause an ad.
-*   : New endpoint to resume a paused ad.
-*   : New endpoint to get a list of trades for a specific ad.
-*   : New endpoint to mark a conversation as read.
-*   : Now aggregates data from both new and legacy notification collections.
+- : (Correct, In Use) Creates an invoice and returns a  for redirect.
+- , : (Incorrect, Not In Use) These white-label endpoints still exist in the backend code but are no longer used by the reverted frontend and should be removed.
 
 **Critical Info for New Agent**
-*   The user is highly attentive to financial data integrity (e.g., balance updates, stuck funds) and UI consistency (e.g., matching numbers, correct sorting). All fixes in these areas must be thorough.
-*   Your immediate priority is to fix the notification count discrepancy by correcting the logic in the  backend endpoint.
-*   The ad management lifecycle was significantly changed in this session. Ads are now **hard-deleted**. Do not re-introduce soft-deletion logic.
-*   The notification system is currently a hybrid of two database collections. Be aware of this when working on notification-related tasks.
+- **Your first action MUST be to confirm the revert with the user.** Show them a screenshot of the  page and ask if the price calculation is correct now.
+- **DO NOT** attempt to re-implement a white-label solution. The user was extremely frustrated by the last attempt because it broke critical business logic. The current, user-approved flow involves redirecting the end-user to the platform's domain via a .
+- The codebase is currently in an **inconsistent state**. After confirming the revert, your next priority is to clean up the backend () and the API documentation () to remove all traces of the rejected white-label API.
+- The user is Russian-speaking. Always respond in Russian and maintain a professional, direct, problem-solving tone. Acknowledge issues clearly and focus on the solution.
 
 **documents and test reports created in this job**
-*   
-*   
-*   
-*   
-*   
+- 
+-  (was updated multiple times, may need review after the revert is confirmed)
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User (msg #475):** Clarified that for the admin panel, number counters inside All Chats and Staff should remain, but the sidebar should only get a red dot. All other notifications for admins should be removed.
-2.  **User (msg #477):** Confirmed the agent's refined plan for admin notifications.
-3.  **User (msg #504):** Reported multiple issues: 1) A redundant notification box with a red border is showing for traders. 2) Notification counts are different on the main page vs. the dashboard.
-4.  **User (msg #506):** Added another requirement: the notification dropdown on the main page should show the full list of notifications, just like on the dashboard page.
-5.  **User (msg #507):** Confirmed the agent's plan to fix the notification UI and count issues.
-The remaining messages were the agent implementing the fixes for the notifications.
+10.  User asks the agent to verify the entire production-like integration, check documentation, error handling, calculations, and asks for a plan, specifically about how the chat would work in a white-label scenario.
+9.  User becomes extremely frustrated, stating the agent ruined everything. They explain that the previous integration correctly calculated prices with trader markups and included important rules in the chat. They demand the agent revert everything to the state before the white-label integration attempt.
+8.  Agent acknowledges the user's frustration and begins the process of reverting the changes by finding the correct commit.
+7.  Agent restores .
+6.  Agent checks .
+5.  Agent deletes the  he created.
+4.  Agent confirms the old version of the shop is restored and prepares to test it.
+3.  Agent confirms the shop connection works.
+2.  Agent confirms the operators list is showing with the correct markup-based pricing.
+1.  Agent confirms the operator selection dialog shows the correct final price and rules, confirming the revert was successful from a technical standpoint.
 
 **Project Health Check:**
-*   **Broken:** The main site-wide notification counter in the header is unreliable and shows a different number than the actual list of notifications. This is a high-visibility UI bug.
-*   **Mocked:** N/A
+- **Broken:** The backend merchant API () and its public documentation () describe a white-label system, while the actual, user-approved test shop () uses a completely different redirect-based system. This is a critical inconsistency.
 
 **3rd Party Integrations**
-*   None.
+- None.
 
 **Testing status**
-*   **Testing agent used after significant changes:** YES, but only once early in the session. Many critical fixes and new features were added afterward and tested manually.
-*   **Troubleshoot agent used after agent stuck in loop:** NO
-*   **Test files created:** []
-*   **Known regressions:** None.
+- **Testing agent used after significant changes:** YES, for the notification fix.
+- **Test files created:** None.
+- **Known regressions:** A major functional regression was introduced with the white-label API and then fixed by reverting the code.
 
 **Credentials to test flow:**
-*   **Super Admin:**  / 
-*   **Trader 111:**  / 
-*   **Merchant 222:**  / 
+- **Super Admin:**  / 
+- **Trader 111:**  / 
+- **Merchant 222:**  / 
 
 **What agent forgot to execute**
-*   The agent identified the root cause of the inconsistent notification count (the  endpoint) but did not implement the backend fix before the session ended.
-*   The upcoming tasks from the previous handoff ( webhook, API deprecation, route standardization) were not addressed, as the session was fully consumed by fixing numerous critical bugs and implementing high-priority user requests.</analysis>
+- After reverting the frontend files for the test shop, the agent did not revert or clean up the corresponding backend API endpoints in  or the API documentation in . This has left the codebase in an inconsistent and confusing state.</analysis>

@@ -195,21 +195,7 @@ async def send_webhook_notification(invoice_id: str, new_status: str, extra_data
         }
         await db.webhook_history.insert_one(webhook_record)
         
-        # If callback_url is our test receiver, save to test_webhooks for demo display
-        if "test-webhook-receiver" in callback_url or "webhook.site" in callback_url:
-            test_webhook = {
-                "id": f"twh_{secrets.token_hex(8)}",
-                "merchant_id": invoice.get("merchant_id"),
-                "payload": callback_data,
-                "received_at": datetime.now(timezone.utc).isoformat(),
-                "status": new_status,
-                "payment_id": invoice_id,
-                "order_id": callback_data.get("order_id"),
-                "amount": callback_data.get("amount")
-            }
-            await db.test_webhooks.insert_one(test_webhook)
-        
-        # Send webhook
+        # Send webhook (test_webhooks will be saved by test-webhook-receiver endpoint)
         success = await send_webhook(callback_url, callback_data, 0)
         
         await db.webhook_history.update_one(
@@ -512,7 +498,7 @@ async def create_invoice(
     
     if not base_url:
         import os
-        base_url = os.environ.get("SITE_URL", "https://exchange-platform-8.preview.emergentagent.com")
+        base_url = os.environ.get("SITE_URL", "https://reptiloid-preview.preview.emergentagent.com")
     
     # URL на страницу выбора оператора
     payment_url = f"{base_url}/select-operator/{invoice_id}"
@@ -535,10 +521,10 @@ async def create_invoice(
 
 @router.get("/status")
 async def get_invoice_status(
-    merchant_id: str,
     order_id: Optional[str] = None,
     payment_id: Optional[str] = None,
-    sign: str = None,
+    merchant_id: Optional[str] = None,
+    sign: Optional[str] = None,
     x_api_key: str = Header(..., alias="X-Api-Key")
 ):
     """Проверка статуса платежа"""
@@ -558,8 +544,11 @@ async def get_invoice_status(
             "message": f"Превышен лимит запросов. Повторите через {rate_info['reset_in']} сек."
         })
     
+    # Use merchant_id from API key if not provided
+    effective_merchant_id = merchant_id or merchant["id"]
+    
     # Find invoice
-    query = {"merchant_id": merchant_id}
+    query = {"merchant_id": effective_merchant_id}
     if payment_id:
         query["id"] = payment_id
     elif order_id:
@@ -584,7 +573,7 @@ async def get_invoice_status(
         "data": {
             "order_id": invoice.get("external_order_id"),
             "payment_id": invoice["id"],
-            "status": invoice["status"],
+            "status": invoice.get("status", "created"),
             "amount": invoice.get("original_amount_rub"),
             "total_amount": invoice.get("amount_rub"),
             "amount_usdt": invoice.get("amount_usdt"),
@@ -907,6 +896,110 @@ async def mark_invoice_paid(
         "trade_status": "paid"
     }
 
+
+@router.get("/{invoice_id}/messages")
+async def get_invoice_messages(
+    invoice_id: str,
+    x_api_key: str = Header(..., alias="X-Api-Key")
+):
+    """
+    White-label: Получить сообщения чата для инвойса.
+    Мерчант может отображать чат на СВОЁМ сайте.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail={"status": "error", "message": "Неверный API ключ"})
+    
+    invoice = await db.merchant_invoices.find_one({"id": invoice_id, "merchant_id": merchant["id"]}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Инвойс не найден"})
+    
+    trade_id = invoice.get("trade_id")
+    if not trade_id:
+        return {"status": "success", "messages": []}
+    
+    messages = await db.trade_messages.find(
+        {"trade_id": trade_id},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(100)
+    
+    # Format messages for client
+    formatted = []
+    for msg in messages:
+        formatted.append({
+            "id": msg.get("id"),
+            "sender": "system" if msg.get("sender_type") == "system" else ("operator" if msg.get("sender_type") == "trader" else "client"),
+            "text": msg.get("content"),
+            "timestamp": msg.get("created_at")
+        })
+    
+    return {"status": "success", "messages": formatted}
+
+
+class SendMessageRequest(BaseModel):
+    text: str
+
+
+@router.post("/{invoice_id}/messages")
+async def send_invoice_message(
+    invoice_id: str,
+    request: SendMessageRequest,
+    x_api_key: str = Header(..., alias="X-Api-Key")
+):
+    """
+    White-label: Отправить сообщение от клиента в чат.
+    Мерчант отправляет сообщения от имени клиента.
+    """
+    merchant = await db.merchants.find_one({"api_key": x_api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail={"status": "error", "message": "Неверный API ключ"})
+    
+    invoice = await db.merchant_invoices.find_one({"id": invoice_id, "merchant_id": merchant["id"]}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail={"status": "error", "message": "Инвойс не найден"})
+    
+    trade_id = invoice.get("trade_id")
+    if not trade_id:
+        raise HTTPException(status_code=400, detail={"status": "error", "message": "Сначала выберите оператора"})
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    message = {
+        "id": str(uuid.uuid4()),
+        "trade_id": trade_id,
+        "sender_id": f"client_{invoice_id}",
+        "sender_type": "buyer",
+        "content": request.text,
+        "created_at": now
+    }
+    await db.trade_messages.insert_one(message)
+    
+    # Notify trader about new message
+    trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
+    if trade:
+        try:
+            await db.event_notifications.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": trade["trader_id"],
+                "type": "trade_message",
+                "title": "Новое сообщение",
+                "message": f"Клиент: {request.text[:50]}...",
+                "link": "/trader/sales",
+                "read": False,
+                "created_at": now
+            })
+        except:
+            pass
+    
+    return {
+        "status": "success",
+        "message": {
+            "id": message["id"],
+            "sender": "client",
+            "text": request.text,
+            "timestamp": now
+        }
+    }
 
 
 @router.get("/transactions")
