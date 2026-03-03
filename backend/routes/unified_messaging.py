@@ -194,7 +194,65 @@ async def get_user_conversations(user: dict = Depends(get_current_user)):
         conv["last_message"] = last_msg
         conv["unread_count"] = conv.get("unread_counts", {}).get(user_id, 0)
     
-    return conversations
+    # Also add crypto_orders for this user (as buyer or trader)
+    crypto_orders = await db.crypto_orders.find(
+        {"$or": [{"buyer_id": user_id}, {"trader_id": user_id}]},
+        {"_id": 0}
+    ).sort("updated_at", -1).to_list(50)
+    
+    for order in crypto_orders:
+        # Get conversation for this order
+        conv = await db.unified_conversations.find_one(
+            {"related_id": order["id"], "type": "crypto_order"},
+            {"_id": 0}
+        )
+        
+        if conv:
+            # Check unread messages
+            last_msg = await db.unified_messages.find_one(
+                {"conversation_id": conv["id"], "is_deleted": {"$ne": True}},
+                {"_id": 0},
+                sort=[("created_at", -1)]
+            )
+            unread_count = conv.get("unread_counts", {}).get(user_id, 0)
+            
+            conv_entry = {
+                "id": conv["id"],
+                "related_id": order["id"],
+                "type": "crypto_order",
+                "title": f"Покупка {order.get('amount_usdt', '?')} USDT",
+                "status": order.get("status"),
+                "amount_usdt": order.get("amount_usdt"),
+                "amount_rub": order.get("amount_rub"),
+                "last_message": last_msg,
+                "unread_count": unread_count,
+                "updated_at": conv.get("updated_at") or order.get("updated_at") or order.get("created_at"),
+                "created_at": order.get("created_at")
+            }
+            conversations.append(conv_entry)
+    
+    # Sort all conversations: unread first, then by updated_at
+    def sort_key(x):
+        unread = x.get("unread_count") or 0
+        date_str = x.get("updated_at") or x.get("created_at") or "1970-01-01"
+        try:
+            date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            timestamp = date.timestamp()
+        except:
+            timestamp = 0
+        return (-unread, -timestamp)  # Negative for descending order
+    
+    conversations.sort(key=sort_key)
+    
+    # Remove duplicates (same id)
+    seen_ids = set()
+    unique_conversations = []
+    for conv in conversations:
+        if conv["id"] not in seen_ids:
+            seen_ids.add(conv["id"])
+            unique_conversations.append(conv)
+    
+    return unique_conversations
 
 
 @router.get("/msg/conversations/{conv_id}")

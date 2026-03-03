@@ -2,7 +2,7 @@
  * Merchant Messages Page - Messages from administration only
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { 
@@ -186,15 +186,39 @@ export default function MerchantMessagesPage() {
     return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Sort conversations: unread first, then by updated_at
-  const filteredConversations = [...conversations].sort((a, b) => {
-    // Unread messages first
-    const aUnread = (a.unread_count || 0) > 0 ? 1 : 0;
-    const bUnread = (b.unread_count || 0) > 0 ? 1 : 0;
-    if (bUnread !== aUnread) return bUnread - aUnread;
-    // Then by updated_at (newest first)
-    return new Date(b.updated_at || 0) - new Date(a.updated_at || 0);
-  });
+  // Combine broadcasts and conversations, sort by unread + date
+  const allItems = useMemo(() => {
+    // Convert broadcasts to unified format
+    const broadcastItems = broadcasts.map(b => ({
+      id: b.id,
+      type: 'broadcast',
+      title: b.title || 'Рассылка',
+      last_message: { content: b.message },
+      unread_count: b.is_read ? 0 : 1,
+      is_read: b.is_read,
+      updated_at: b.created_at,
+      created_at: b.created_at,
+      original: b
+    }));
+    
+    // Convert conversations
+    const convItems = conversations.map(c => ({
+      ...c,
+      original: c
+    }));
+    
+    // Combine and sort
+    const combined = [...broadcastItems, ...convItems];
+    
+    return combined.sort((a, b) => {
+      const aUnread = (a.unread_count || 0) > 0 ? 1 : 0;
+      const bUnread = (b.unread_count || 0) > 0 ? 1 : 0;
+      if (bUnread !== aUnread) return bUnread - aUnread;
+      const aDate = new Date(a.updated_at || a.created_at || 0).getTime();
+      const bDate = new Date(b.updated_at || b.created_at || 0).getTime();
+      return bDate - aDate;
+    });
+  }, [conversations, broadcasts]);
 
   return (
     <div className="space-y-4" data-testid="merchant-messages-page">
@@ -218,7 +242,7 @@ export default function MerchantMessagesPage() {
         <div className="bg-[#121212] border border-white/5 rounded-xl overflow-hidden flex flex-col">
           <div className="p-3 border-b border-white/5 flex items-center justify-between">
             <h3 className="text-white font-semibold text-sm">
-              Чаты ({filteredConversations.length})
+              Чаты ({allItems.length})
             </h3>
             <Button
               variant="ghost"
@@ -234,7 +258,7 @@ export default function MerchantMessagesPage() {
               <div className="flex items-center justify-center h-40">
                 <Loader className="w-5 h-5 text-[#F97316] animate-spin" />
               </div>
-            ) : filteredConversations.length === 0 && broadcasts.length === 0 ? (
+            ) : allItems.length === 0 ? (
               <div className="p-6 text-center">
                 <MessageCircle className="w-10 h-10 text-[#52525B] mx-auto mb-3" />
                 <p className="text-[#71717A] text-sm">Нет сообщений</p>
@@ -247,18 +271,14 @@ export default function MerchantMessagesPage() {
               </div>
             ) : (
               <>
-              {/* Broadcasts first - unread on top */}
-              {broadcasts.length > 0 && (
-                <>
-                  <div className="px-3 py-2 bg-[#F59E0B]/10 border-b border-[#F59E0B]/20">
-                    <span className="text-[#F59E0B] text-xs font-medium flex items-center gap-1">
-                      <Shield className="w-3 h-3" />
-                      Рассылки от администрации ({broadcasts.length})
-                    </span>
-                  </div>
-                  {[...broadcasts].sort((a, b) => (b.is_read ? 0 : 1) - (a.is_read ? 0 : 1)).map((b) => (
+              {/* Unified list: broadcasts + conversations */}
+              {allItems.map((item) => {
+                // Broadcast item
+                if (item.type === 'broadcast') {
+                  const b = item.original;
+                  return (
                     <div
-                      key={b.id}
+                      key={`broadcast-${b.id}`}
                       onClick={() => {
                         setSelectedConv(null);
                         setSelectedBroadcast(b);
@@ -289,12 +309,11 @@ export default function MerchantMessagesPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
-                </>
-              )}
-              
-              {/* Chats */}
-              {filteredConversations.map((conv) => {
+                  );
+                }
+                
+                // Conversation item
+                const conv = item;
                 const typeConfig = TYPE_CONFIG[conv.type] || TYPE_CONFIG.support_ticket;
                 const TypeIcon = typeConfig.icon;
                 const isDispute = conv.status === 'dispute' || conv.status === 'disputed' || conv.type === 'p2p_dispute' || typeConfig.isDispute;
