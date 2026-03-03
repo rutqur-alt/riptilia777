@@ -89,8 +89,7 @@ export default function MerchantDashboard() {
       notifyKey: "trades",
       items: [
         { path: "/merchant/withdrawal-requests", icon: ArrowUpRight, label: "Заявки на выплаты", notifyKey: "withdrawals" },
-        { path: "/merchant/payments", icon: DollarSign, label: "Платежи", notifyKey: "payments" },
-        { path: "/merchant/disputes", icon: AlertTriangle, label: "Споры", notifyKey: "disputes" },
+        { path: "/merchant/payments", icon: DollarSign, label: "Платежи", notifyKey: "payments" }
       ]
     },
     {
@@ -1433,8 +1432,6 @@ function MerchantWithdrawalRequests() {
         data = data.filter(r => r.status === "completed" || r.status === "sold");
       } else if (filter === "cancelled") {
         data = data.filter(r => r.status === "cancelled");
-      } else if (filter === "dispute") {
-        data = data.filter(r => r.status === "dispute");
       }
       setRequests(data);
     } catch (error) {
@@ -1489,8 +1486,6 @@ function MerchantWithdrawalRequests() {
     }
   };
 
-  const disputeCount = requests.filter(r => r.status === "dispute").length;
-
   const filteredRequests = requests.filter(r => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.trim().toLowerCase();
@@ -1538,16 +1533,15 @@ function MerchantWithdrawalRequests() {
         {[
           { key: "active", label: "Активные" },
           { key: "completed", label: "Завершённые" },
-          { key: "cancelled", label: "Отменённые" },
-          { key: "dispute", label: `Споры${disputeCount > 0 ? ` (${disputeCount})` : ""}`, danger: true }
+          { key: "cancelled", label: "Отменённые" }
         ].map(f => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
             className={`px-4 py-2 rounded-lg text-sm transition-colors ${
               filter === f.key
-                ? f.danger ? "bg-[#EF4444]/20 text-[#EF4444]" : "bg-white/10 text-white"
-                : f.danger && disputeCount > 0 ? "text-[#EF4444] hover:bg-[#EF4444]/10" : "text-[#71717A] hover:bg-white/5"
+                ? "bg-white/10 text-white"
+                : "text-[#71717A] hover:bg-white/5"
             }`}
           >
             {f.label}
@@ -1643,14 +1637,12 @@ function MerchantWithdrawalRequests() {
         <div className="text-center py-20">
           <ArrowUpRight className="w-16 h-16 text-[#52525B] mx-auto mb-4" />
           <h3 className="text-lg font-medium text-white mb-2">Нет заявок</h3>
-          <p className="text-[#71717A]">{filter === "dispute" ? "Нет открытых споров" : "Создайте первую заявку на выплату"}</p>
+          <p className="text-[#71717A]">Создайте первую заявку на выплату</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredRequests.map(req => (
-            <div key={req.id} className={`bg-[#121212] border rounded-xl p-4 ${
-              req.status === "dispute" ? "border-[#EF4444]/30 bg-[#EF4444]/5" : "border-white/5"
-            }`}>
+            <div key={req.id} className="bg-[#121212] border rounded-xl p-4 border-white/5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
