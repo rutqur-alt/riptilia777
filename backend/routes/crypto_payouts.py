@@ -859,10 +859,11 @@ async def admin_update_crypto_payout_status(
                 {"$inc": {"balance_usdt": usdt_from_merchant, "frozen_balance": -usdt_from_merchant}}
             )
             
+            # Return offer back to active state so it appears in the order book again
             await db.crypto_sell_offers.update_one(
                 {"id": order.get("offer_id")},
                 {"$set": {
-                    "status": "cancelled",
+                    "status": "active",
                     "current_order_id": None,
                     "updated_at": now_iso
                 }}

@@ -247,6 +247,14 @@ export function ChatActions({
                 label="Завершить"
               />
             )}
+            {selectedConv.status !== "completed" && selectedConv.status !== "cancelled" && (
+              <ActionButton 
+                onClick={() => onDecision("cancel", {})} 
+                color="#EF4444" 
+                icon="❌" 
+                label="Отменить"
+              />
+            )}
           </>
         )}
 
