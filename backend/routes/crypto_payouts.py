@@ -576,9 +576,15 @@ async def get_payout_settings(user: dict = Depends(require_role(["admin", "mod_p
 
 ⚠️ Внимание: возврат средств возможен только через спор""",
             "base_rate": 100.0,
-            "sell_rate": 110.0,
+            "sell_rate": 101.0,
+            "markup_percent": 1.0,
             "dispute_window_days": 5
         }
+    # Ensure markup_percent is returned
+    if "markup_percent" not in settings and settings.get("base_rate"):
+        base = settings["base_rate"]
+        sell = settings.get("sell_rate", base * 1.01)
+        settings["markup_percent"] = round(((sell / base) - 1) * 100, 1) if base > 0 else 1.0
     return settings
 
 
@@ -590,13 +596,17 @@ async def update_payout_settings(
     """Update payout rules and settings"""
     now = datetime.now(timezone.utc).isoformat()
     
+    # Support both exchange_rate and base_rate keys
+    base_rate = data.get("exchange_rate") or data.get("base_rate", 100.0)
+    
     await db.settings.update_one(
         {"type": "payout_settings"},
         {"$set": {
             "type": "payout_settings",
             "rules": data.get("rules", ""),
-            "base_rate": data.get("base_rate", 100.0),
+            "base_rate": base_rate,
             "sell_rate": data.get("sell_rate", 110.0),
+            "markup_percent": data.get("markup_percent", 1.0),
             "dispute_window_days": data.get("dispute_window_days", 5),
             "updated_at": now,
             "updated_by": user["id"]

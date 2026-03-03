@@ -10,11 +10,14 @@ export function PayoutRulesSettings() {
   const { token } = useAuth();
   const [rules, setRules] = useState("");
   const [exchangeRate, setExchangeRate] = useState(96.5);
-  const [sellRate, setSellRate] = useState(110);
+  const [markupPercent, setMarkupPercent] = useState(1); // Наценка в процентах
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [liveRate, setLiveRate] = useState(null);
   const [refreshingRate, setRefreshingRate] = useState(false);
+
+  // Рассчитываем курс продажи автоматически
+  const sellRate = exchangeRate * (1 + markupPercent / 100);
 
   useEffect(() => { 
     fetchSettings(); 
@@ -27,8 +30,12 @@ export function PayoutRulesSettings() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setRules(res.data.rules || "");
-      setExchangeRate(res.data.exchange_rate || res.data.base_rate || 96.5);
-      setSellRate(res.data.sell_rate || 110);
+      const baseRate = res.data.exchange_rate || res.data.base_rate || 96.5;
+      setExchangeRate(baseRate);
+      // Рассчитываем процент наценки из сохранённого sell_rate
+      const savedSellRate = res.data.sell_rate || baseRate * 1.01;
+      const calcMarkup = baseRate > 0 ? ((savedSellRate / baseRate) - 1) * 100 : 1;
+      setMarkupPercent(Math.round(calcMarkup * 10) / 10); // Округляем до 1 знака
     } catch (e) {
       console.error(e);
     } finally {
@@ -75,10 +82,10 @@ export function PayoutRulesSettings() {
     setSaving(true);
     try {
       await axios.put(`${API}/admin/payout-settings`, 
-        { rules, exchange_rate: exchangeRate, sell_rate: sellRate },
+        { rules, exchange_rate: exchangeRate, sell_rate: sellRate, markup_percent: markupPercent },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.success("Настройки сохранены");
+      toast.success(`Настройки сохранены: курс продажи ${sellRate.toFixed(2)} ₽/USDT`);
     } catch (e) {
       toast.error("Ошибка сохранения");
     } finally {
@@ -172,7 +179,7 @@ export function PayoutRulesSettings() {
                 onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 0)}
                 className="flex-1 bg-[#0A0A0A] border border-white/10 rounded-lg px-3 py-2 text-white font-mono"
               />
-              <span className="text-[#71717A]">P</span>
+              <span className="text-[#71717A]">₽</span>
               {liveRate?.base_rate && liveRate.base_rate !== exchangeRate && (
                 <Button 
                   onClick={applyLiveRate} 
@@ -181,7 +188,7 @@ export function PayoutRulesSettings() {
                   className="border-[#3B82F6]/30 text-[#3B82F6] text-xs"
                   title="Применить курс с биржи"
                 >
-                  Применить {liveRate.base_rate?.toFixed(2)} P
+                  Применить {liveRate.base_rate?.toFixed(2)} ₽
                 </Button>
               )}
             </div>
@@ -190,25 +197,31 @@ export function PayoutRulesSettings() {
             </p>
           </div>
           <div>
-            <label className="text-[#71717A] text-xs mb-1 block">Курс продажи USDT/RUB</label>
+            <label className="text-[#71717A] text-xs mb-1 block">Наценка платформы</label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                step="0.01"
-                value={sellRate}
-                onChange={(e) => setSellRate(parseFloat(e.target.value) || 0)}
-                className="flex-1 bg-[#0A0A0A] border border-white/10 rounded-lg px-3 py-2 text-white font-mono"
+                step="0.1"
+                min="0"
+                max="100"
+                value={markupPercent}
+                onChange={(e) => setMarkupPercent(parseFloat(e.target.value) || 0)}
+                className="w-24 bg-[#0A0A0A] border border-white/10 rounded-lg px-3 py-2 text-white font-mono"
               />
-              <span className="text-[#71717A]">P</span>
+              <span className="text-[#71717A]">%</span>
+              <div className="flex-1 text-right">
+                <span className="text-[#71717A] text-sm">Курс продажи: </span>
+                <span className="text-[#10B981] font-bold font-mono">{sellRate.toFixed(2)} ₽</span>
+              </div>
             </div>
             <p className="text-[#52525B] text-xs mt-1">
-              Курс по которому покупатель покупает USDT (выше базового = прибыль платформы)
+              Наценка добавляется к базовому курсу = курс продажи для покупателя
             </p>
           </div>
         </div>
         <div className="mt-4 p-3 bg-[#0A0A0A] rounded-lg border border-white/5">
           <div className="text-xs text-[#71717A]">
-            <span className="text-white font-medium">Разница курсов:</span> {(sellRate - exchangeRate).toFixed(2)} P ({exchangeRate > 0 ? ((sellRate / exchangeRate - 1) * 100).toFixed(1) : 0}% наценка)
+            <span className="text-white font-medium">Итого:</span> Базовый {exchangeRate.toFixed(2)} ₽ + {markupPercent}% = <span className="text-[#10B981] font-bold">{sellRate.toFixed(2)} ₽/USDT</span> (прибыль платформы: {(sellRate - exchangeRate).toFixed(2)} ₽ за 1 USDT)
           </div>
         </div>
       </div>
