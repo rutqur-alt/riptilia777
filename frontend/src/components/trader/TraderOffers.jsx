@@ -136,13 +136,23 @@ export default function TraderOffers() {
 
   const handleDeleteOffer = async (offerId) => {
     try {
-      await axios.delete(`${API}/offers/${offerId}`, {
+      const response = await axios.delete(`${API}/offers/${offerId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      toast.success("\u041E\u0431\u044A\u044F\u0432\u043B\u0435\u043D\u0438\u0435 \u0443\u0434\u0430\u043B\u0435\u043D\u043E");
+      const data = response.data;
+      
+      if (data.total_refund > 0) {
+        toast.success(
+          `Объявление закрыто. Возвращено на баланс: ${data.total_refund.toFixed(2)} USDT` +
+          (data.commission_refund > 0 ? ` (включая ${data.commission_refund.toFixed(2)} неиспользованной комиссии)` : ''),
+          { duration: 5000 }
+        );
+      } else {
+        toast.success("Объявление закрыто");
+      }
       fetchOffers();
     } catch (error) {
-      toast.error("\u041E\u0448\u0438\u0431\u043A\u0430 \u0443\u0434\u0430\u043B\u0435\u043D\u0438\u044F");
+      toast.error("Ошибка удаления");
     }
   };
 
