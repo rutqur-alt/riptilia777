@@ -742,24 +742,6 @@ app.post('/webhook', (req, res) => {
         </CardContent>
       </Card>
 
-      {/* Full Documentation Link */}
-      <Card className="bg-gradient-to-r from-emerald-500/10 to-blue-500/10 border-emerald-500/30">
-        <CardContent className="py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-lg">Полная документация</h3>
-              <p className="text-sm text-zinc-400">Все endpoints, примеры, коды ошибок</p>
-            </div>
-            <Button 
-              className="bg-emerald-500 hover:bg-emerald-600"
-              onClick={() => window.open(`${BASE_URL}/api/v1/invoice/docs`, '_blank')}
-            >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Открыть JSON Docs
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };
