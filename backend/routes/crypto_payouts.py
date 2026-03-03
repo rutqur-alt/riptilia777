@@ -292,18 +292,20 @@ async def buy_crypto(
     if not offer:
         raise HTTPException(status_code=404, detail="Заявка не найдена или уже занята")
     
+    # ALWAYS get current sell_rate from settings
+    settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    sell_rate = settings.get("sell_rate", 82.16) if settings else 82.16
+    
     # Get amounts from offer
     rub_amount = offer.get("amount_rub", 0)
-    usdt_for_buyer = offer.get("usdt_for_buyer", 0)
-    usdt_from_merchant = offer.get("usdt_from_merchant", 0)
-    platform_profit = offer.get("platform_profit", 0)
-    sell_rate = offer.get("sell_rate", 110.0)
     
-    # Fallback for old format offers
-    if not usdt_for_buyer and rub_amount:
-        settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
-        sell_rate = settings.get("sell_rate", 110.0) if settings else 110.0
-        usdt_for_buyer = round(rub_amount / sell_rate, 2)
+    # Calculate USDT using current sell_rate
+    usdt_for_buyer = round(rub_amount / sell_rate, 2) if rub_amount > 0 else 0
+    
+    # Calculate merchant's frozen amount and platform profit
+    base_rate = settings.get("base_rate", 78.21) if settings else 78.21
+    usdt_from_merchant = round(rub_amount / base_rate, 2) if rub_amount > 0 else 0
+    platform_profit = round(usdt_from_merchant - usdt_for_buyer, 2) if usdt_from_merchant > usdt_for_buyer else 0
     
     # Get merchant info
     merchant = await db.merchants.find_one({"id": offer.get("merchant_id")}, {"_id": 0})
@@ -859,12 +861,28 @@ async def admin_update_crypto_payout_status(
                 {"$inc": {"balance_usdt": usdt_from_merchant, "frozen_balance": -usdt_from_merchant}}
             )
             
-            # Return offer back to active state so it appears in the order book again
+            # Get current sell_rate from settings to update the offer
+            settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+            current_sell_rate = settings.get("sell_rate", 82.16) if settings else 82.16
+            current_base_rate = settings.get("base_rate", 78.21) if settings else 78.21
+            
+            # Recalculate USDT amounts with current rate
+            amount_rub = offer.get("amount_rub", 0)
+            new_usdt_for_buyer = round(amount_rub / current_sell_rate, 2) if amount_rub > 0 else 0
+            new_usdt_from_merchant = round(amount_rub / current_base_rate, 2) if amount_rub > 0 else 0
+            new_platform_profit = round(new_usdt_from_merchant - new_usdt_for_buyer, 2)
+            
+            # Return offer back to active state with UPDATED sell_rate
             await db.crypto_sell_offers.update_one(
                 {"id": order.get("offer_id")},
                 {"$set": {
                     "status": "active",
                     "current_order_id": None,
+                    "sell_rate": current_sell_rate,
+                    "base_rate": current_base_rate,
+                    "usdt_for_buyer": new_usdt_for_buyer,
+                    "usdt_from_merchant": new_usdt_from_merchant,
+                    "platform_profit": new_platform_profit,
                     "updated_at": now_iso
                 }}
             )
