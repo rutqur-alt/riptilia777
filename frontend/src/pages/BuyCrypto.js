@@ -1,14 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useAuth, API } from "@/App";
 import axios from "axios";
 import { 
-  DollarSign, ArrowLeft, Clock, CheckCircle, AlertTriangle, 
-  User, Search, ArrowRight, Wallet, Shield, Info, FileText
+  DollarSign, ArrowLeft, CheckCircle, AlertTriangle, 
+  User, ArrowRight, Info, FileText
 } from "lucide-react";
 
 export default function BuyCrypto() {
@@ -18,12 +17,10 @@ export default function BuyCrypto() {
   const [loading, setLoading] = useState(true);
   const [userStats, setUserStats] = useState(null);
   const [selectedOffer, setSelectedOffer] = useState(null);
-  const [buyAmount, setBuyAmount] = useState("");
-  const [showDialog, setShowDialog] = useState(false);
   const [showRequirementDialog, setShowRequirementDialog] = useState(false);
   const [showRulesDialog, setShowRulesDialog] = useState(false);
   const [rulesText, setRulesText] = useState("");
-  const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [buyingOfferId, setBuyingOfferId] = useState(null);
 
   const MIN_TRADES_REQUIRED = 20;
 
@@ -73,6 +70,7 @@ export default function BuyCrypto() {
     return (userStats.successful_trades || 0) >= MIN_TRADES_REQUIRED;
   };
 
+  // Покупка в один клик - показываем правила, потом сразу создаём сделку
   const handleBuyClick = (offer) => {
     if (!isAuthenticated) {
       navigate("/auth");
@@ -85,56 +83,31 @@ export default function BuyCrypto() {
     }
 
     setSelectedOffer(offer);
-    setBuyAmount("");
-    setRulesAccepted(false);
-    setShowRulesDialog(true);  // Show rules first
+    setShowRulesDialog(true);
   };
 
-  const handleRulesAccept = () => {
-    setRulesAccepted(true);
+  // После принятия правил - сразу создаём сделку на всю сумму
+  const handleRulesAcceptAndBuy = async () => {
+    if (!selectedOffer) return;
+    
+    setBuyingOfferId(selectedOffer.id);
     setShowRulesDialog(false);
-    setShowDialog(true);
-  };
-
-  const handleBuySubmit = async () => {
-    if (!selectedOffer || !buyAmount) return;
-
-    const amount = parseFloat(buyAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error("Введите корректную сумму");
-      return;
-    }
-
-    if (amount < selectedOffer.min_amount) {
-      toast.error(`Минимальная сумма: ${selectedOffer.min_amount} USDT`);
-      return;
-    }
-
-    if (amount > selectedOffer.max_amount) {
-      toast.error(`Максимальная сумма: ${selectedOffer.max_amount} USDT`);
-      return;
-    }
 
     try {
       const response = await axios.post(`${API}/crypto/buy`, {
         offer_id: selectedOffer.id,
-        amount: amount,
         rules_accepted: true
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
       toast.success("Заявка создана! Реквизиты в чате.");
-      setShowDialog(false);
       navigate("/trader/messages");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Ошибка создания заявки");
+    } finally {
+      setBuyingOfferId(null);
     }
-  };
-
-  const getRubAmount = (usdtAmount) => {
-    if (!selectedOffer || !usdtAmount) return 0;
-    return (parseFloat(usdtAmount) * selectedOffer.rate).toFixed(2);
   };
 
   return (
@@ -200,7 +173,13 @@ export default function BuyCrypto() {
               <span className="text-sm text-[#71717A]">{offers.length} предложений</span>
             </div>
 
-            {offers.map((offer) => (
+            {offers.map((offer) => {
+              // Рассчитываем USDT по курсу продажи (sell_rate)
+              const sellRate = offer.sell_rate || offer.rate || 82.16;
+              const usdtAmount = sellRate > 0 ? (offer.amount_rub / sellRate).toFixed(2) : '0.00';
+              const isLoading = buyingOfferId === offer.id;
+              
+              return (
               <div 
                 key={offer.id}
                 className="bg-[#121212] border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors"
@@ -225,98 +204,45 @@ export default function BuyCrypto() {
 
                   <div className="text-right">
                     <div className="text-2xl font-bold text-[#10B981]">
-                      {offer.rate?.toFixed(2)} ₽
+                      {sellRate.toFixed(2)} ₽
                     </div>
                     <div className="text-sm text-[#71717A]">за 1 USDT</div>
                   </div>
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
-                  <div className="flex items-center gap-6 text-sm">
+                {/* Сумма крупно */}
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-[#71717A]">Сумма: </span>
-                      <span className="text-white">{(offer.amount_rub || 0).toLocaleString()} ₽</span>
-                      <span className="text-[#71717A] ml-1">({(offer.available_amount || 0).toFixed(2)} USDT)</span>
+                      <div className="text-4xl font-bold text-white font-mono">
+                        {(offer.amount_rub || 0).toLocaleString('ru-RU')} ₽
+                      </div>
+                      <div className="text-xl text-[#10B981] font-semibold mt-2">
+                        = {usdtAmount} USDT
+                      </div>
                     </div>
-                  </div>
 
-                  <Button 
-                    onClick={() => handleBuyClick(offer)}
-                    className="bg-[#10B981] hover:bg-[#059669] text-white px-6"
-                   title="Купить USDT">
-                    Купить
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
+                    <Button 
+                      onClick={() => handleBuyClick(offer)}
+                      disabled={isLoading}
+                      className="bg-[#10B981] hover:bg-[#059669] text-white px-8 py-3 text-lg h-14"
+                      title="Купить всю сумму">
+                      {isLoading ? (
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          Купить
+                          <ArrowRight className="w-5 h-5 ml-2" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </main>
-
-      {/* Buy Dialog */}
-      <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="bg-[#121212] border-white/10 text-white max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl">Купить USDT</DialogTitle>
-          </DialogHeader>
-
-          {selectedOffer && (
-            <div className="space-y-4">
-              <div className="bg-[#0A0A0A] rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[#71717A]">Продавец</span>
-                  <span className="text-white">{selectedOffer.merchant_name}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#71717A]">Курс</span>
-                  <span className="text-[#10B981] font-medium">{selectedOffer.rate?.toFixed(2)} ₽/USDT</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-[#A1A1AA] mb-2 block">Сумма USDT</label>
-                <Input
-                  type="number"
-                  value={buyAmount}
-                  onChange={(e) => setBuyAmount(e.target.value)}
-                  placeholder={`${selectedOffer.min_amount} - ${selectedOffer.max_amount}`}
-                  className="bg-[#0A0A0A] border-white/10 text-white h-12"
-                />
-                <div className="text-xs text-[#71717A] mt-1">
-                  Лимиты: {(selectedOffer.min_amount || 0).toFixed(2)} - {(selectedOffer.max_amount || 0).toFixed(2)} USDT
-                </div>
-              </div>
-
-              {buyAmount && (
-                <div className="bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#A1A1AA]">К оплате</span>
-                    <span className="text-xl font-bold text-[#10B981]">{getRubAmount(buyAmount)} ₽</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowDialog(false)}
-                  className="flex-1 border-white/10 text-white hover:bg-white/5"
-                 title="Отменить действие">
-                  Отмена
-                </Button>
-                <Button 
-                  onClick={handleBuySubmit}
-                  disabled={!buyAmount}
-                  className="flex-1 bg-[#10B981] hover:bg-[#059669] text-white"
-                 title="Создать новое объявление">
-                  Создать заявку
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Requirement Dialog */}
       <Dialog open={showRequirementDialog} onOpenChange={setShowRequirementDialog}>
@@ -362,22 +288,49 @@ export default function BuyCrypto() {
         </DialogContent>
       </Dialog>
 
-      {/* Rules Dialog - MUST ACCEPT BEFORE BUYING */}
+      {/* Rules Dialog - Принять правила и сразу купить */}
       <Dialog open={showRulesDialog} onOpenChange={setShowRulesDialog}>
         <DialogContent className="bg-[#121212] border-white/10 text-white max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <FileText className="w-6 h-6 text-[#3B82F6]" />
-              Правила покупки криптовалюты
+              Подтверждение покупки
             </DialogTitle>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+            {selectedOffer && (
+              <div className="bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl p-4">
+                <h4 className="text-[#10B981] font-medium mb-3">Вы покупаете:</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#71717A]">Сумма:</span>
+                    <span className="text-2xl font-bold text-white">
+                      {(selectedOffer.amount_rub || 0).toLocaleString('ru-RU')} ₽
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[#71717A]">Вы получите:</span>
+                    <span className="text-xl font-bold text-[#10B981]">
+                      {((selectedOffer.sell_rate || selectedOffer.rate) > 0 
+                        ? (selectedOffer.amount_rub / (selectedOffer.sell_rate || selectedOffer.rate)).toFixed(2) 
+                        : '0.00')} USDT
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-[#71717A]">Курс:</span>
+                    <span className="text-white">
+                      {(selectedOffer.sell_rate || selectedOffer.rate || 0).toFixed(2)} ₽/USDT
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-[#F59E0B]/10 border border-[#F59E0B]/20 rounded-xl p-4 flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-[#F59E0B] flex-shrink-0 mt-0.5" />
               <p className="text-sm text-[#F59E0B]">
-                Внимательно прочитайте правила перед совершением покупки. 
-                Нажимая "Принять и продолжить", вы соглашаетесь с правилами.
+                Нажимая "Купить", вы соглашаетесь с правилами платформы.
               </p>
             </div>
 
@@ -386,26 +339,6 @@ export default function BuyCrypto() {
                 {rulesText || "Правила загружаются..."}
               </pre>
             </div>
-
-            {selectedOffer && (
-              <div className="bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl p-4">
-                <h4 className="text-[#10B981] font-medium mb-2">Выбранное предложение:</h4>
-                <div className="text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-[#71717A]">Курс:</span>
-                    <span className="text-white">{selectedOffer.rate?.toFixed(2)} ₽/USDT</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#71717A]">Доступно:</span>
-                    <span className="text-white">{(selectedOffer.available_amount || 0).toFixed(2)} USDT</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#71717A]">Лимиты:</span>
-                    <span className="text-white">{(selectedOffer.min_amount || 0).toFixed(2)} - {(selectedOffer.max_amount || 0).toFixed(2)} USDT</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex gap-3 mt-4 pt-4 border-t border-white/5">
@@ -413,15 +346,15 @@ export default function BuyCrypto() {
               variant="outline" 
               onClick={() => setShowRulesDialog(false)}
               className="flex-1 border-white/10 text-white hover:bg-white/5"
-             title="Отменить действие">
+              title="Отменить действие">
               Отмена
             </Button>
             <Button 
-              onClick={handleRulesAccept}
+              onClick={handleRulesAcceptAndBuy}
               className="flex-1 bg-[#10B981] hover:bg-[#059669] text-white"
             >
               <CheckCircle className="w-4 h-4 mr-2" />
-              Принять и продолжить
+              Купить за {selectedOffer ? (selectedOffer.amount_rub || 0).toLocaleString('ru-RU') : 0} ₽
             </Button>
           </div>
         </DialogContent>
