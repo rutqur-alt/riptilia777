@@ -925,12 +925,8 @@ async def admin_update_crypto_payout_status(
     
     elif new_status == "cancelled":
         if offer:
-            # Return frozen funds back to merchant's available balance
-            usdt_from_merchant = offer.get("usdt_from_merchant", offer.get("available_amount", 0))
-            await db.merchants.update_one(
-                {"id": offer.get("merchant_id")},
-                {"$inc": {"balance_usdt": usdt_from_merchant, "frozen_balance": -usdt_from_merchant}}
-            )
+            # DON'T change merchant's balance - frozen_balance stays frozen
+            # Just return offer back to active state so it appears on the storefront again
             
             # Get current sell_rate from settings to update the offer
             settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
