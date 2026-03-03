@@ -196,6 +196,11 @@ async def create_trade(data: TradeCreate):
         "trader_commission": round(trader_commission, 4),
         "merchant_commission": round(merchant_commission, 4),
         "total_commission": round(trader_commission + merchant_commission, 4),
+        # New amount tracking fields
+        "client_amount_rub": data.client_amount_rub,  # Сумма пополнения (1000)
+        "client_pays_rub": data.client_pays_rub or round(amount_rub, 2),  # К оплате (1010)
+        "merchant_receives_rub": data.merchant_receives_rub,  # Мерчант получит (970)
+        "merchant_receives_usdt": data.merchant_receives_usdt,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
         "completed_at": None

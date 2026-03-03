@@ -100,6 +100,11 @@ class TradeCreate(BaseModel):
     buyer_type: Optional[str] = None
     client_session_id: Optional[str] = None
     merchant_id: Optional[str] = None
+    # New fields for proper amount tracking
+    client_amount_rub: Optional[float] = None  # Сумма пополнения клиента (1000)
+    client_pays_rub: Optional[float] = None    # Сколько платит клиент (1010)
+    merchant_receives_rub: Optional[float] = None  # Сколько получит мерчант (970)
+    merchant_receives_usdt: Optional[float] = None
 
 class TradeResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")

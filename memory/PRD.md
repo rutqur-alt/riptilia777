@@ -89,6 +89,33 @@ P2P криптовалютная биржа с интегрированным м
 - merchant2: merch_sk_ab7f17e54e7b4f5eaa296e106f1afad3
 - merchant3: merch_sk_49ccfc80e2854bde8acc598f21718a7e
 
+## Боевое API подключение мерчанта (03.03.2026)
+
+### Новая форма подключения:
+- Merchant ID
+- API Key  
+- API Secret (HMAC подпись)
+
+### Новые API endpoints:
+- POST `/merchant/v1/auth` - авторизация (3 параметра)
+- POST `/merchant/v1/invoice/create` - создание счёта
+- POST `/merchant/v1/invoice/status` - статус счёта
+- POST `/merchant/v1/balance` - баланс мерчанта
+- POST `/merchant/v1/transactions` - история
+
+### Правильная логика сумм:
+```
+Клиент вводит: 2,000 RUB
+Клиент платит: 2,003.83 RUB (+ наценка трейдера)
+Клиент получает на сайте мерчанта: 2,000 RUB
+Мерчант получает: 1,990 RUB (минус 0.5% комиссии) = 25.35 USDT
+```
+
+### Тестовые учётные данные merchant1:
+- Merchant ID: `acf5eddc-f179-4e50-bc06-2756080a6562`
+- API Key: `merch_sk_8581cf8f655c4f858511e26d1dc3f3f3`
+- API Secret: `2f48f9c6ab4d8af44b81590338af9c3e`
+
 ## Следующие задачи (Backlog)
 - P2: Telegram уведомления для споров
 - P2: Улучшение мобильной адаптации

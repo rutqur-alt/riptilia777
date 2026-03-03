@@ -176,30 +176,37 @@ export default function BuyerShop() {
   // ========== API FUNCTIONS ==========
 
   const connectApi = async (silent = false) => {
-    if (!apiKey) {
-      if (!silent) toast.error('Введите API ключ');
+    if (!apiKey || !apiSecret || !merchantId) {
+      if (!silent) toast.error('Заполните все поля');
       return;
     }
     setConnecting(true);
     try {
-      const res = await axios.get(`${API}/shop/merchant-info/${apiKey}`);
-      if (res.data) {
-        const mid = res.data.merchant_id || res.data.id || '';
-        const mname = res.data.company_name || res.data.name || res.data.shop_name || 'Магазин';
-        setMerchantId(mid);
-        setMerchantName(mname);
-        setBalance({ balance_usdt: res.data.balance_usdt || 0, total_received: res.data.total_received || 0, total_transactions: res.data.total_transactions || 0 });
+      // Use new secure auth endpoint
+      const res = await axios.post(`${API}/merchant/v1/auth`, {
+        api_key: apiKey,
+        api_secret: apiSecret,
+        merchant_id: merchantId
+      });
+      
+      if (res.data.success) {
+        setMerchantName(res.data.merchant_name || 'Магазин');
+        setBalance({
+          balance_usdt: res.data.balance_usdt || 0,
+          total_received_rub: res.data.total_received_rub || 0,
+          transactions_count: res.data.transactions_count || 0
+        });
         setConnected(true);
         localStorage.setItem('shop_api_key', apiKey);
         localStorage.setItem('shop_api_secret', apiSecret);
-        localStorage.setItem('shop_merchant_id', mid);
-        localStorage.setItem('shop_merchant_name', mname);
+        localStorage.setItem('shop_merchant_id', merchantId);
+        localStorage.setItem('shop_merchant_name', res.data.merchant_name);
         if (!silent) toast.success('Подключено!');
-        loadBalance();
         loadTransactions();
       }
     } catch (e) {
-      if (!silent) toast.error('Неверный API ключ');
+      const errMsg = e.response?.data?.detail?.message || 'Ошибка авторизации';
+      if (!silent) toast.error(errMsg);
       setConnected(false);
     } finally {
       setConnecting(false);
@@ -207,15 +214,19 @@ export default function BuyerShop() {
   };
 
   const loadBalance = async () => {
-    if (!apiKey) return;
+    if (!apiKey || !apiSecret || !merchantId) return;
     setLoadingBalance(true);
     try {
-      const res = await axios.get(`${API}/shop/merchant-info/${apiKey}`);
-      if (res.data) {
+      const res = await axios.post(`${API}/merchant/v1/balance`, {
+        api_key: apiKey,
+        api_secret: apiSecret,
+        merchant_id: merchantId
+      });
+      if (res.data.success) {
         setBalance({
           balance_usdt: res.data.balance_usdt || 0,
-          total_received: res.data.total_received || 0,
-          total_transactions: res.data.total_transactions || 0
+          total_received_rub: res.data.total_received_rub || 0,
+          transactions_count: res.data.transactions_count || 0
         });
       }
     } catch (e) { }
@@ -223,16 +234,18 @@ export default function BuyerShop() {
   };
 
   const loadTransactions = async () => {
-    if (!apiKey || !merchantId) return;
+    if (!apiKey || !apiSecret || !merchantId) return;
     setLoadingHistory(true);
     try {
-      const res = await axios.get(`${API}/v1/invoice/transactions`, {
-        params: { merchant_id: merchantId, limit: 20 },
-        headers: { 'X-Api-Key': apiKey }
+      const res = await axios.post(`${API}/merchant/v1/transactions`, {
+        api_key: apiKey,
+        api_secret: apiSecret,
+        merchant_id: merchantId,
+        limit: 20
       });
-      // API returns {status, data: {transactions: [...]}}
-      const txs = res.data?.data?.transactions || res.data?.transactions || res.data || [];
-      setTransactions(txs);
+      if (res.data.success) {
+        setTransactions(res.data.transactions || []);
+      }
     } catch (e) { }
     finally { setLoadingHistory(false); }
   };
@@ -246,15 +259,21 @@ export default function BuyerShop() {
 
     setTopUpLoading(true);
     try {
-      // Use the quick-payment endpoint with merchant API key
-      const res = await axios.post(`${API}/shop/quick-payment`, {
+      // Create invoice via secure API
+      const res = await axios.post(`${API}/merchant/v1/invoice/create`, {
+        api_key: apiKey,
+        api_secret: apiSecret,
+        merchant_id: merchantId,
         amount_rub: numAmount,
-        description: `Пополнение на ${numAmount.toLocaleString()} руб.`,
-        merchant_api_key: apiKey
+        description: `Пополнение на ${numAmount.toLocaleString()} руб.`
       });
 
-      if (res.data.invoice_id) {
-        setActiveInvoice(res.data);
+      if (res.data.success) {
+        setActiveInvoice({
+          ...res.data,
+          client_amount_rub: numAmount,  // Сумма пополнения клиента
+          merchant_receives_rub: res.data.merchant_receives_rub
+        });
         setDepositAmount(numAmount);
         // Load operators for this invoice
         await loadOperators(res.data.invoice_id, numAmount);
@@ -331,6 +350,12 @@ export default function BuyerShop() {
       const invRes = await axios.get(`${API}/shop/pay/${activeInvoice.invoice_id}`);
       const inv = invRes.data.order;
 
+      // Рассчитываем суммы:
+      // client_amount_rub = сумма пополнения клиента (1000)
+      // client_pays_rub = сумма к оплате (зависит от курса трейдера)
+      const clientAmountRub = activeInvoice.client_amount_rub || depositAmount;
+      const clientPaysRub = Math.round(inv.amount_usdt * selectedOperator.price_rub * 100) / 100;
+
       const res = await axios.post(`${API}/trades`, {
         amount_usdt: inv.amount_usdt,
         price_rub: selectedOperator.price_rub,
@@ -339,7 +364,12 @@ export default function BuyerShop() {
         offer_id: selectedOperator.offer_id,
         requisite_ids: [requisiteToUse.id],
         buyer_type: "client",
-        merchant_id: merchantId || null
+        merchant_id: merchantId || null,
+        // New amount tracking
+        client_amount_rub: clientAmountRub,
+        client_pays_rub: clientPaysRub,
+        merchant_receives_rub: activeInvoice.merchant_receives_rub,
+        merchant_receives_usdt: activeInvoice.merchant_receives_rub ? activeInvoice.merchant_receives_rub / selectedOperator.price_rub : null
       });
 
       setSavedRequisite(requisiteToUse);
@@ -525,10 +555,21 @@ export default function BuyerShop() {
                 <Plug className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-xl font-bold text-white mb-1">Подключение к магазину</h2>
-              <p className="text-[#71717A] text-sm">Введите API ключ для начала работы</p>
+              <p className="text-[#71717A] text-sm">Введите данные API для начала работы</p>
             </div>
 
             <div className="space-y-4">
+              <div>
+                <label className="text-sm text-[#71717A] mb-1.5 block">Merchant ID</label>
+                <Input
+                  type="text"
+                  placeholder="Введите Merchant ID"
+                  value={merchantId}
+                  onChange={(e) => setMerchantId(e.target.value)}
+                  className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
+                  data-testid="merchant-id-input"
+                />
+              </div>
               <div>
                 <label className="text-sm text-[#71717A] mb-1.5 block">API Key</label>
                 <Input
@@ -537,17 +578,19 @@ export default function BuyerShop() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B]"
+                  data-testid="api-key-input"
                 />
               </div>
               <div>
-                <label className="text-sm text-[#71717A] mb-1.5 block">Secret Key</label>
+                <label className="text-sm text-[#71717A] mb-1.5 block">API Secret</label>
                 <div className="relative">
                   <Input
                     type={showSecret ? 'text' : 'password'}
-                    placeholder="Введите Secret ключ"
+                    placeholder="Введите API Secret"
                     value={apiSecret}
                     onChange={(e) => setApiSecret(e.target.value)}
                     className="bg-[#0A0A0A] border-white/10 text-white placeholder:text-[#52525B] pr-10"
+                    data-testid="api-secret-input"
                   />
                   <button
                     onClick={() => setShowSecret(!showSecret)}
@@ -559,8 +602,9 @@ export default function BuyerShop() {
               </div>
               <Button
                 onClick={() => connectApi(false)}
-                disabled={connecting || !apiKey}
+                disabled={connecting || !apiKey || !apiSecret || !merchantId}
                 className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] text-white rounded-xl"
+                data-testid="connect-btn"
               >
                 {connecting ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
