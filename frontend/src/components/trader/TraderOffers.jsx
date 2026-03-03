@@ -368,7 +368,7 @@ export default function TraderOffers() {
                     </div>
                   )}
                   <div className="flex gap-4 text-sm text-[#A1A1AA] flex-wrap">
-                    <span>{"Доступно: "}<span className="text-white font-medium">{(offer.available_usdt || offer.amount_usdt || 0).toFixed(2)}</span> / {(offer.amount_usdt || 0).toFixed(2)} USDT</span>
+                    <span>{"Доступно: "}<span className="text-white font-medium">{(offer.available_usdt ?? offer.amount_usdt ?? 0).toFixed(2)}</span> / {(offer.amount_usdt || 0).toFixed(2)} USDT</span>
                     <span className="text-[#52525B] hidden sm:inline">{"•"}</span>
                     <span>{"Лимит: "}{(offer.min_amount || 1).toFixed(2)} - {(offer.max_amount || offer.amount_usdt || 0).toFixed(2)} USDT</span>
                   </div>
