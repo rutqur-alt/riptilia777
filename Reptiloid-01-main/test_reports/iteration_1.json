@@ -1,0 +1,75 @@
+{
+  "summary": "Completed testing of Invoice API v1, Referral System (3 levels: 5%, 3%, 1%), and Admin Merchant Fee Settings for P2P Crypto Exchange REP01-main with BIT-9-DOK-main integrations",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/merchants/{id}/fee-settings", "issue": "Frontend shows 'Ошибка загрузки настроек' error toast when clicking settings button, but API works correctly via pytest"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Admin Merchant Settings Modal", "issue": "Settings modal shows loading error toast when opened from merchants list, though backend API returns 200", "affected_selectors": ["gear icon button on merchant row"]}
+    ],
+    "design_issues": [
+      {"screen": "Admin Dashboard", "issues": ["Minor: 'Ошибка загрузки данных' error toast appears on initial load"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_invoice_referral_admin.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Investigate frontend error when loading merchant fee settings modal - API works but frontend shows error",
+    "Check admin dashboard data loading error on initial load"
+  ],
+  "critical_code_review_comments": [
+    "Invoice API v1 correctly implements X-Api-Key authentication",
+    "Referral system correctly implements 3-level structure (5%, 3%, 1%)",
+    "Admin merchant fee settings API endpoints work correctly",
+    "Frontend Referrals.js page has proper data-testid attributes for testing"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_invoice_referral_admin.py"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 tests passed)",
+    "frontend": "90% (Referrals page works, Admin merchant settings modal has loading issue)"
+  },
+  "test_credentials": {
+    "admin": {"login": "admin", "password": "admin123"},
+    "test_trader": {"login": "test_ref_31fddc", "password": "testpass123"}
+  },
+  "seed_data_creation": "Created test traders during pytest execution for referral chain testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All backend APIs for Invoice v1, Referral System, and Admin Merchant Fee Settings are working. Frontend Referrals page works correctly with 3-level referral display. Admin merchant settings modal has a frontend loading issue that needs investigation - the API returns correct data but frontend shows error toast.",
+  "tested_features": {
+    "invoice_api_v1": {
+      "GET /api/v1/invoice/docs": "PASS - Returns API documentation without auth",
+      "GET /api/v1/invoice/payment-methods": "PASS - Requires X-Api-Key, returns 401 for invalid key",
+      "POST /api/v1/invoice/create": "PASS - Requires X-Api-Key",
+      "GET /api/v1/invoice/status": "PASS - Requires X-Api-Key"
+    },
+    "referral_system": {
+      "GET /api/referral": "PASS - Returns referral data with 3 levels (5%, 3%, 1%)",
+      "POST /api/referral/withdraw": "PASS - Correctly rejects zero balance",
+      "GET /api/traders/referral": "PASS - Returns trader-specific referral info",
+      "Registration with referral code": "PASS - Creates referral chain correctly"
+    },
+    "admin_merchant_fee_settings": {
+      "GET /api/admin/merchants/{id}/fee-settings": "PASS - Returns fee settings",
+      "PUT /api/admin/merchants/{id}/fee-settings": "PASS - Updates fee model and commission rate",
+      "GET /api/admin/merchants/{id}/method-commissions": "PASS - Returns method commissions",
+      "PUT /api/admin/merchants/{id}/method-commissions": "PASS - Updates method commissions with intervals"
+    },
+    "frontend_referrals_page": {
+      "Page loads": "PASS",
+      "Shows referral code": "PASS",
+      "Shows referral link": "PASS",
+      "Shows 3 levels with percentages": "PASS",
+      "Copy button present": "PASS",
+      "Withdraw button present": "PASS"
+    }
+  }
+}

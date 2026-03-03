@@ -1,0 +1,77 @@
+{
+  "summary": "Comprehensive testing of P2P Marketplace 'Reptiloid' shop features. All 7 requested features tested and working correctly: product purchase, my purchases with content display, balance lock, shop block/unblock, and shop messaging.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/tests/test_marketplace_shop_features.py",
+    "/app/test_reports/pytest/pytest_marketplace_shop_features.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/tests/test_marketplace_shop_features.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin": {"login": "admin", "password": "000000"},
+    "seller": {"login": "trader", "password": "000000"},
+    "buyer": {"login": "trader2", "password": "000000"}
+  },
+  "seed_data_creation": "Created test purchase of 'гекон' product for 1 USDT",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All shop features tested and working. Shop ID for trader: a9bed1fb-a63e-4cfe-aae9-f6b12d08df96. Buyer ID: c27b5ca8-d6e7-40fa-990e-80c607403966. Products 'Чек' (23 USDT) and 'гекон' (1 USDT) are available in marketplace.",
+  "features_tested": {
+    "1_product_purchase": {
+      "status": "PASSED",
+      "endpoint": "POST /api/marketplace/products/{id}/buy",
+      "notes": "Successfully purchased 'гекон' for 1 USDT, received content 'варыры'"
+    },
+    "2_my_purchases": {
+      "status": "PASSED",
+      "endpoint": "GET /api/marketplace/my-purchases",
+      "notes": "Purchases displayed with delivered_content, status 'completed'"
+    },
+    "3_balance_lock": {
+      "status": "PASSED",
+      "endpoint": "POST /api/super-admin/users/{id}/toggle-balance-lock",
+      "notes": "Locked user correctly blocked from creating offers with message 'Ваш баланс заблокирован'"
+    },
+    "4_shop_block": {
+      "status": "PASSED",
+      "endpoint": "POST /api/admin/shops/{id}/block",
+      "notes": "Blocked shop products (2) disappear from marketplace (0)"
+    },
+    "5_shop_unblock": {
+      "status": "PASSED",
+      "endpoint": "POST /api/admin/shops/{id}/block (toggle)",
+      "notes": "Unblocked shop products (2) reappear in marketplace"
+    },
+    "6_send_message_to_shop": {
+      "status": "PASSED",
+      "endpoint": "POST /api/shop/{shop_id}/messages",
+      "notes": "Message sent successfully, conversation_id returned"
+    },
+    "7_shop_owner_view_messages": {
+      "status": "PASSED",
+      "endpoint": "GET /api/shop/messages",
+      "notes": "Shop owner can view all conversations with messages"
+    }
+  },
+  "ui_verification": {
+    "marketplace_page": "Products displayed correctly with 2 product cards",
+    "my_purchases_page": "Shows purchase with product name, price, status, and delivered content",
+    "admin_panel": "Shop management accessible, shows 3 shops",
+    "seller_shop_panel": "Shows shop balance, products, orders, messages tabs"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "summary": "Completed testing of Trader Locked Balance Check and Manual Unfreeze feature. All backend APIs and frontend UI working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_locked_balance_check.py",
+    "/app/test_reports/pytest/test_locked_balance_check.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_locked_balance_check.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin": {"login": "admin", "password": "000000"},
+    "trader": {"login": "111", "password": "000000"}
+  },
+  "seed_data_creation": "Created temporary mismatch scenario by adding 50 USDT to locked balance for testing unfreeze form visibility. Cleaned up after testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Trader locked balance check and unfreeze feature fully tested. Lock button visible in admin Users page for traders. Modal shows balance info, active orders, and mismatch status. Unfreeze form appears only when mismatch detected. All data-testid attributes present: locked-check-btn-{user.id}, unfreeze-amount-input, unfreeze-reason-input, unfreeze-submit-btn.",
+  "test_results": {
+    "backend_api_tests": {
+      "GET /api/admin/traders/{trader_id}/locked-check": {
+        "status": "PASS",
+        "tests": [
+          "Returns correct structure with all required fields",
+          "Returns 404 for non-existent trader",
+          "Requires authentication",
+          "Correctly detects mismatch when locked > orders total"
+        ]
+      },
+      "POST /api/admin/traders/{trader_id}/unfreeze": {
+        "status": "PASS",
+        "tests": [
+          "Requires admin role (not support)",
+          "Validates amount doesn't exceed locked balance",
+          "Validates amount is positive",
+          "Requires reason parameter",
+          "Successfully updates locked and available balances"
+        ]
+      }
+    },
+    "frontend_ui_tests": {
+      "lock_button_visibility": "PASS - Lock button visible for traders in admin Users page",
+      "modal_opens": "PASS - Modal opens on lock button click",
+      "modal_content_no_mismatch": {
+        "status": "PASS",
+        "shows": ["Trader info", "Available balance", "Frozen balance", "Active orders count", "Orders total", "Green block: Balance matches"]
+      },
+      "modal_content_with_mismatch": {
+        "status": "PASS",
+        "shows": ["Red warning block", "Mismatch type message", "Difference amount", "Unfreeze form with amount/reason inputs"]
+      },
+      "unfreeze_form_submission": "PASS - Form submits successfully, shows success toast, updates balance"
+    }
+  },
+  "features_verified": [
+    "Lock button visible for traders in admin Users page",
+    "Modal opens with correct title 'Проверка баланса трейдера'",
+    "Modal shows: available balance, frozen balance, active orders count, orders total",
+    "Green block shown when balance matches orders",
+    "Red block shown when mismatch detected",
+    "Unfreeze form appears only when mismatch exists",
+    "Unfreeze form auto-fills difference amount",
+    "API GET /api/admin/traders/{trader_id}/locked-check works correctly",
+    "API POST /api/admin/traders/{trader_id}/unfreeze works correctly"
+  ]
+}

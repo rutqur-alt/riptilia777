@@ -1,0 +1,522 @@
+"""
+Offers routes - P2P trading offers management
+"""
+from fastapi import APIRouter, HTTPException, Depends
+from datetime import datetime, timezone
+from typing import List, Optional
+import uuid
+
+from core.database import db
+from core.auth import require_role
+from models.schemas import OfferCreate, OfferResponse
+
+router = APIRouter(tags=["offers"])
+
+
+def _payment_detail_to_requisite(detail: dict) -> dict:
+    """Convert payment_details document to legacy requisites shape {id, type, data: {...}} used by frontend."""
+    pt = detail.get("payment_type") or detail.get("type")
+    req_type = pt
+    data = {}
+
+    if pt in ("card", "sng_card"):
+        req_type = "card"
+        holder = detail.get("holder_name")
+        data = {
+            "bank_name": detail.get("bank_name"),
+            "card_number": detail.get("card_number"),
+            "holder_name": holder,
+            "card_holder": holder,
+        }
+    elif pt in ("sbp", "sng_sbp"):
+        req_type = "sbp"
+        data = {
+            "bank_name": detail.get("bank_name"),
+            "phone": detail.get("phone_number"),
+        }
+    elif pt == "sim":
+        req_type = "sim"
+        data = {
+            "operator": detail.get("operator_name") or detail.get("bank_name"),
+            "phone": detail.get("phone_number"),
+        }
+    elif pt == "qr_code":
+        req_type = "qr"
+        data = {
+            "bank_name": detail.get("bank_name"),
+            "qr_data": detail.get("qr_link") or detail.get("qr_data"),
+            "description": detail.get("comment"),
+        }
+    else:
+        req_type = pt or "other"
+        data = {
+            "bank_name": detail.get("bank_name"),
+        }
+
+    clean_data = {k: v for k, v in data.items() if v not in (None, "")}
+    return {
+        "id": detail.get("id"),
+        "trader_id": detail.get("trader_id"),
+        "type": req_type,
+        "data": clean_data,
+    }
+
+
+def _is_legacy_requisite(item: dict) -> bool:
+    """Check if item is already in legacy requisite format {id, type, data: {...}}"""
+    return "data" in item and "type" in item and isinstance(item.get("data"), dict)
+
+
+@router.post("/offers", response_model=OfferResponse)
+async def create_offer(data: OfferCreate, user: dict = Depends(require_role(["trader"]))):
+    """Create a new P2P offer"""
+    trader = await db.traders.find_one({"id": user["id"]}, {"_id": 0})
+    
+    # Check if balance is locked
+    if trader.get("is_balance_locked"):
+        raise HTTPException(status_code=403, detail="Ваш баланс заблокирован. Создание объявлений недоступно.")
+    
+    # Get commission settings
+    settings = await db.commission_settings.find_one({}, {"_id": 0})
+    commission_rate = settings.get("trader_commission", 1.0) if settings else 1.0
+    
+    # Calculate reserved commission (1% of offer amount)
+    reserved_commission = data.amount_usdt * (commission_rate / 100)
+    total_to_reserve = data.amount_usdt + reserved_commission
+    
+    # Check balance (amount + commission)
+    if trader["balance_usdt"] < total_to_reserve:
+        raise HTTPException(status_code=400, detail=f"Недостаточно средств. Нужно: {total_to_reserve:.2f} USDT (включая {commission_rate}% комиссии). Баланс: {trader['balance_usdt']:.2f} USDT")
+    
+    # Validate payment details - load from db.payment_details
+    payment_details = []
+    payment_detail_ids = data.payment_detail_ids or data.requisite_ids or []
+    payment_types_seen = set()
+    
+    if payment_detail_ids:
+        for detail_id in payment_detail_ids:
+            detail = await db.payment_details.find_one({"id": detail_id, "trader_id": user["id"]}, {"_id": 0})
+            if detail:
+                pt = detail.get("payment_type", "")
+                if pt in payment_types_seen:
+                    raise HTTPException(status_code=400, detail=f"Можно выбрать только один реквизит типа '{pt}'")
+                payment_types_seen.add(pt)
+                payment_details.append(detail)
+    
+    # Get trader's trade stats
+    trades_count = await db.trades.count_documents({"trader_id": user["id"], "status": "completed"})
+    total_trades = await db.trades.count_documents({"trader_id": user["id"]})
+    success_rate = (trades_count / total_trades * 100) if total_trades > 0 else 100.0
+    
+    # Validate min/max amounts
+    min_amount = data.min_amount if data.min_amount else 1.0
+    max_amount = data.max_amount if data.max_amount else data.amount_usdt
+    
+    if min_amount < 1.0:
+        raise HTTPException(status_code=400, detail="Минимальная сумма не может быть меньше 1 USDT")
+    if max_amount > data.amount_usdt:
+        raise HTTPException(status_code=400, detail="Максимальная сумма не может превышать сумму к продаже")
+    if min_amount > max_amount:
+        raise HTTPException(status_code=400, detail="Минимальная сумма не может превышать максимальную")
+    
+    # Convert payment_details to legacy requisite format for frontend compatibility
+    requisites_legacy = [_payment_detail_to_requisite(d) for d in payment_details]
+    
+    offer_doc = {
+        "id": str(uuid.uuid4()),
+        "trader_id": user["id"],
+        "trader_login": trader["login"],
+        "amount_usdt": data.amount_usdt,
+        "available_usdt": data.amount_usdt,
+        "min_amount": min_amount,
+        "max_amount": max_amount,
+        "price_rub": data.price_rub,
+        "payment_methods": data.payment_methods,
+        "payment_detail_ids": payment_detail_ids,
+        "requisite_ids": payment_detail_ids,
+        "payment_details": payment_details,
+        "requisites": requisites_legacy,
+        "conditions": data.conditions,
+        "is_active": True,
+        "trades_count": trades_count,
+        "success_rate": round(success_rate, 1),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "commission_rate": commission_rate,
+        "reserved_commission": round(reserved_commission, 4),
+        "sold_usdt": 0.0,
+        "actual_commission": 0.0
+    }
+    
+    # Reserve funds from trader balance
+    await db.traders.update_one(
+        {"id": user["id"]},
+        {"$inc": {"balance_usdt": -total_to_reserve}}
+    )
+    
+    await db.offers.insert_one(offer_doc)
+    return offer_doc
+
+
+def _normalize_offer(offer: dict) -> dict:
+    """Ensure offer has all required fields"""
+    if "amount_usdt" not in offer:
+        offer["amount_usdt"] = offer.get("max_amount", 0)
+    if "available_usdt" not in offer:
+        offer["available_usdt"] = offer.get("max_amount", 0)
+    if "min_amount" not in offer:
+        offer["min_amount"] = 1.0
+    if "max_amount" not in offer:
+        offer["max_amount"] = offer.get("amount_usdt", 0)
+    # Clean _id from embedded payment_details/requisites
+    if offer.get("payment_details"):
+        offer["payment_details"] = [{k: v for k, v in d.items() if k != "_id"} for d in offer["payment_details"]]
+    if offer.get("requisites"):
+        offer["requisites"] = [{k: v for k, v in req.items() if k != "_id"} for req in offer["requisites"]]
+    return offer
+
+
+async def _load_payment_details_for_offer(offer: dict) -> dict:
+    """Load payment details from db.payment_details for an offer and ensure legacy requisites format."""
+    detail_ids = offer.get("payment_detail_ids") or offer.get("requisite_ids") or []
+    if detail_ids:
+        details = []
+        for did in detail_ids:
+            d = await db.payment_details.find_one({"id": did}, {"_id": 0})
+            if d:
+                details.append(d)
+        if details:
+            offer["payment_details"] = details
+            # Always rebuild requisites in legacy format from fresh payment_details
+            offer["requisites"] = [_payment_detail_to_requisite(d) for d in details]
+            offer["requisite_ids"] = detail_ids
+    else:
+        # Check if existing requisites are in legacy format already
+        existing_reqs = offer.get("requisites") or []
+        if existing_reqs and not _is_legacy_requisite(existing_reqs[0]):
+            # They look like raw payment_details, convert them
+            offer["requisites"] = [_payment_detail_to_requisite(d) for d in existing_reqs]
+    return offer
+
+
+@router.get("/offers", response_model=List[OfferResponse])
+async def get_offers(
+    min_amount: Optional[float] = None,
+    max_amount: Optional[float] = None,
+    payment_method: Optional[str] = None,
+    sort_by: Optional[str] = "price"
+):
+    """Get active offers with filters"""
+    query = {"is_active": True, "available_usdt": {"$gt": 0}}
+    
+    if payment_method:
+        query["payment_methods"] = payment_method
+    
+    if min_amount:
+        query["available_usdt"] = {"$gte": min_amount}
+    if max_amount:
+        if "available_usdt" in query:
+            query["available_usdt"]["$lte"] = max_amount
+        else:
+            query["available_usdt"] = {"$lte": max_amount}
+    
+    sort_field = "price_rub"
+    sort_order = 1
+    if sort_by == "amount":
+        sort_field = "available_usdt"
+        sort_order = -1
+    elif sort_by == "rating":
+        sort_field = "success_rate"
+        sort_order = -1
+    
+    offers = await db.offers.find(query, {"_id": 0}).sort(sort_field, sort_order).to_list(100)
+    
+    for offer in offers:
+        # Load payment details from db.payment_details
+        offer = await _load_payment_details_for_offer(offer)
+        offer = _normalize_offer(offer)
+        
+        # Add online status
+        trader = await db.traders.find_one({"id": offer.get("trader_id")}, {"_id": 0, "last_seen": 1})
+        if trader and trader.get("last_seen"):
+            try:
+                last_seen = datetime.fromisoformat(trader["last_seen"].replace("Z", "+00:00"))
+                diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                offer["is_online"] = diff_minutes < 5
+            except:
+                offer["is_online"] = False
+        else:
+            offer["is_online"] = False
+    
+    return offers
+
+
+@router.get("/offers/my", response_model=List[OfferResponse])
+async def get_my_offers(user: dict = Depends(require_role(["trader"]))):
+    """Get current trader's offers"""
+    offers = await db.offers.find({"trader_id": user["id"]}, {"_id": 0}).to_list(100)
+    result = []
+    for offer in offers:
+        offer = await _load_payment_details_for_offer(offer)
+        result.append(_normalize_offer(offer))
+    return result
+
+
+@router.get("/public/offers")
+async def get_public_offers(
+    payment_method: Optional[str] = None,
+    currency: Optional[str] = "RUB",
+    min_amount: Optional[float] = None,
+    max_amount: Optional[float] = None,
+    sort_by: Optional[str] = "price"
+):
+    """Public order book endpoint - no auth required"""
+    query = {"is_active": True, "available_usdt": {"$gt": 0}}
+    
+    if payment_method and payment_method != "all":
+        query["payment_methods"] = payment_method
+    
+    if min_amount:
+        query["available_usdt"] = {"$gte": min_amount}
+    if max_amount:
+        if "available_usdt" in query:
+            query["available_usdt"]["$lte"] = max_amount
+        else:
+            query["available_usdt"] = {"$lte": max_amount}
+    
+    sort_field = "price_rub"
+    sort_order = 1
+    if sort_by == "amount":
+        sort_field = "available_usdt"
+        sort_order = -1
+    elif sort_by == "rating":
+        sort_field = "success_rate"
+        sort_order = -1
+    
+    offers = await db.offers.find(query, {"_id": 0}).sort(sort_field, sort_order).to_list(100)
+    
+    for offer in offers:
+        # Load payment details from db.payment_details and convert to legacy format
+        offer = await _load_payment_details_for_offer(offer)
+        offer = _normalize_offer(offer)
+        
+        # Add trader info
+        trader = await db.traders.find_one({"id": offer.get("trader_id")}, {"_id": 0, "last_seen": 1, "display_name": 1, "login": 1})
+        if trader:
+            offer["trader_display_name"] = trader.get("display_name") or offer.get("trader_login", "")
+            if trader.get("last_seen"):
+                try:
+                    last_seen = datetime.fromisoformat(trader["last_seen"].replace("Z", "+00:00"))
+                    diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                    offer["is_online"] = diff_minutes < 5
+                except:
+                    offer["is_online"] = False
+            else:
+                offer["is_online"] = False
+        else:
+            offer["trader_display_name"] = offer.get("trader_login", "")
+            offer["is_online"] = False
+    
+    return offers
+
+
+
+@router.get("/public/operators")
+async def get_operators_for_payment(
+    payment_method: Optional[str] = None,
+    amount_rub: Optional[float] = None,
+    amount_usdt: Optional[float] = None,
+    currency: str = "RUB"
+):
+    """
+    Получить список операторов (трейдеров) для оплаты.
+    Покупатель видит список доступных трейдеров с офферами и выбирает одного.
+    
+    Parameters:
+    - payment_method: фильтр по методу оплаты (необязательно)
+    - amount_rub: сумма в рублях
+    - amount_usdt: или сумма в USDT
+    """
+    # Получаем текущий курс из Rapira API (хранится в payout_settings)
+    payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    exchange_rate = payout_settings.get("base_rate", 78.0) if payout_settings else 78.0
+    # Фоллбэк на commission_settings если payout_settings пуст
+    if not exchange_rate or exchange_rate <= 0:
+        comm_settings = await db.commission_settings.find_one({}, {"_id": 0})
+        exchange_rate = comm_settings.get("default_price_rub", 78.0) if comm_settings else 78.0
+    
+    # Определяем сумму в USDT для фильтрации по лимитам оффера
+    if amount_usdt:
+        filter_amount_usdt = amount_usdt
+        filter_amount_rub = amount_usdt * exchange_rate
+    elif amount_rub:
+        filter_amount_rub = amount_rub
+        filter_amount_usdt = amount_rub / exchange_rate
+    else:
+        filter_amount_rub = 0
+        filter_amount_usdt = 0
+    
+    # Базовый запрос - активные офферы с доступным балансом
+    query = {
+        "is_active": True,
+        "available_usdt": {"$gt": 0}
+    }
+    
+    # Фильтр по методу оплаты
+    if payment_method and payment_method != "all":
+        query["payment_methods"] = payment_method
+    
+    # Фильтр по лимитам (если указана сумма)
+    if filter_amount_usdt > 0:
+        query["min_amount"] = {"$lte": filter_amount_usdt}
+        query["$or"] = [
+            {"max_amount": {"$gte": filter_amount_usdt}},
+            {"available_usdt": {"$gte": filter_amount_usdt}}
+        ]
+    
+    offers = await db.offers.find(query, {"_id": 0}).sort("price_rub", 1).to_list(50)
+    
+    operators = []
+    seen_traders = set()  # Один трейдер - один оффер (лучший)
+    
+    for offer in offers:
+        trader_id = offer.get("trader_id")
+        
+        # Пропускаем если уже добавили оффер этого трейдера
+        if trader_id in seen_traders:
+            continue
+        
+        # Получаем информацию о трейдере
+        trader = await db.traders.find_one(
+            {"id": trader_id},
+            {"_id": 0, "password_hash": 0, "password": 0}
+        )
+        
+        if not trader:
+            continue
+        
+        # Пропускаем заблокированных трейдеров
+        if trader.get("status") not in [None, "active"]:
+            if trader.get("status") != "active":
+                continue
+        
+        # Проверяем что у оффера достаточно USDT
+        if filter_amount_usdt > 0 and offer.get("available_usdt", 0) < filter_amount_usdt:
+            continue
+        
+        seen_traders.add(trader_id)
+        
+        # Проверяем онлайн статус
+        is_online = False
+        if trader.get("last_seen"):
+            try:
+                last_seen = datetime.fromisoformat(trader["last_seen"].replace("Z", "+00:00"))
+                diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                is_online = diff_minutes < 5
+            except:
+                pass
+        
+        # Получаем реквизиты в legacy формате
+        requisites = offer.get("requisites", [])
+        # Check if requisites are already in legacy format
+        if requisites and not _is_legacy_requisite(requisites[0]):
+            requisites = [_payment_detail_to_requisite(r) for r in requisites]
+        
+        # Если реквизитов нет в оффере, подгружаем из БД
+        if not requisites:
+            detail_ids = offer.get("payment_detail_ids") or offer.get("requisite_ids") or []
+            details = []
+            for did in detail_ids:
+                d = await db.payment_details.find_one({"id": did}, {"_id": 0})
+                if d:
+                    details.append(d)
+            if details:
+                requisites = [_payment_detail_to_requisite(d) for d in details]
+        
+        # Убираем _id из реквизитов
+        requisites = [{k: v for k, v in req.items() if k != "_id"} for req in requisites]
+        
+        # Статистика трейдера
+        trades_count = offer.get("trades_count", 0)
+        success_rate = offer.get("success_rate", 100.0)
+        
+        # Рассчитываем сумму к оплате трейдеру
+        # Логика: клиент хочет пополнить X руб -> amount_usdt = X / базовый_курс
+        # Трейдер продаёт по своему курсу -> к_оплате = amount_usdt * курс_трейдера
+        # Пример: 7800₽ / 78(база) = 100 USDT * 100(трейдер) = 10,000₽ к оплате
+        offer_price_rub = offer.get("price_rub", exchange_rate)
+        if filter_amount_rub > 0:
+            filter_amount_usdt = filter_amount_rub / exchange_rate
+            amount_to_pay_rub = round(filter_amount_usdt * offer_price_rub, 2)
+        else:
+            amount_to_pay_rub = 0
+        
+        operators.append({
+            "trader_id": trader_id,
+            "offer_id": offer["id"],
+            "trader_login": trader.get("login", ""),
+            "nickname": trader.get("nickname") or trader.get("display_name") or trader.get("login", "Оператор"),
+            "is_online": is_online,
+            "trades_count": trades_count,
+            "success_rate": success_rate,
+            "price_rub": offer_price_rub,
+            "min_amount": offer.get("min_amount", 1),
+            "max_amount": min(offer.get("max_amount", 100000), offer.get("available_usdt", 100000)),
+            "available_usdt": offer.get("available_usdt", 0),
+            "payment_methods": offer.get("payment_methods", []),
+            "requisites": requisites,
+            "payment_details": requisites,
+            "requisite_ids": offer.get("payment_detail_ids") or offer.get("requisite_ids", []),
+            "payment_detail_ids": offer.get("payment_detail_ids") or offer.get("requisite_ids", []),
+            "conditions": offer.get("conditions", ""),
+            "amount_to_pay_rub": amount_to_pay_rub
+        })
+    
+    # Сортируем: онлайн вверху, потом по рейтингу
+    operators.sort(key=lambda x: (-int(x["is_online"]), -x["success_rate"], x["price_rub"]))
+    
+    return {
+        "operators": operators,
+        "exchange_rate": exchange_rate,
+        "amount_rub": filter_amount_rub,
+        "amount_usdt": round(filter_amount_usdt, 4),
+        "payment_method": payment_method,
+        "total_operators": len(operators)
+    }
+
+
+
+@router.delete("/offers/{offer_id}")
+async def delete_offer(offer_id: str, user: dict = Depends(require_role(["trader"]))):
+    """Delete an offer and refund unused funds"""
+    offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    if offer["trader_id"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not your offer")
+    
+    # Calculate refund
+    available_usdt = offer.get("available_usdt", 0)
+    reserved_commission = offer.get("reserved_commission", 0)
+    sold_usdt = offer.get("sold_usdt", 0)
+    commission_rate = offer.get("commission_rate", 1.0)
+    
+    correct_commission = sold_usdt * (commission_rate / 100)
+    commission_refund = reserved_commission - correct_commission
+    total_refund = available_usdt + max(0, commission_refund)
+    
+    if total_refund > 0:
+        await db.traders.update_one(
+            {"id": user["id"]},
+            {"$inc": {"balance_usdt": total_refund}}
+        )
+    
+    await db.offers.update_one({"id": offer_id}, {"$set": {"is_active": False}})
+    
+    return {
+        "status": "deleted",
+        "returned_usdt": round(available_usdt, 4),
+        "commission_refund": round(max(0, commission_refund), 4),
+        "total_refund": round(total_refund, 4),
+        "sold_usdt": round(sold_usdt, 4),
+        "actual_commission_paid": round(correct_commission, 4)
+    }

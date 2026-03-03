@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#10B981"/>
+  
+  <!-- Inner dark circle -->
+  <circle cx="256" cy="256" r="200" fill="#09090B"/>
+  
+  <!-- Letter B stylized -->
+  <path d="M180 140 L180 372 L280 372 Q340 372 340 312 Q340 270 300 260 Q330 250 330 210 Q330 140 270 140 L180 140 Z M220 180 L260 180 Q290 180 290 210 Q290 240 260 240 L220 240 L220 180 Z M220 280 L270 280 Q300 280 300 312 Q300 332 270 332 L220 332 L220 280 Z" fill="#10B981"/>
+  
+  <!-- Accent arrow (arbitrage symbol) -->
+  <path d="M320 160 L360 200 L340 200 L340 240 L300 240 L300 200 L280 200 Z" fill="#10B981" opacity="0.7"/>
+</svg>

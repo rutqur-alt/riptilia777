@@ -1,0 +1,183 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "Anti-AI Creative Designer",
+    "principles": [
+      "Fusion over Imitation",
+      "Emotion First",
+      "Content is King",
+      "Zoom In",
+      "Negative Space",
+      "Contrast"
+    ],
+    "anti_patterns": [
+      "Purple/Teal for CTA",
+      "Inter everywhere",
+      "Center-Everything Disease",
+      "Gradient Overload"
+    ]
+  },
+  "project_context": {
+    "app_name": "P2P Exchange",
+    "app_type": "Fintech/Crypto P2P Platform",
+    "target_audience": "Crypto traders, online casinos, streamers in CIS region",
+    "emotional_tone": "Secure, Anonymous, High-Tech, Elite, 'Dark Matter'",
+    "theme": "Dark Mode (Mandatory)",
+    "primary_currency": "RUB"
+  },
+  "typography": {
+    "fonts": {
+      "headings": {
+        "family": "Unbounded",
+        "url": "https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;600;800&display=swap",
+        "usage": "Headings, Hero Text, Big Numbers",
+        "weights": ["300", "400", "600", "800"]
+      },
+      "body": {
+        "family": "Manrope",
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap",
+        "usage": "Body text, UI labels, Inputs",
+        "weights": ["400", "500", "600"]
+      },
+      "mono": {
+        "family": "JetBrains Mono",
+        "url": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
+        "usage": "Transaction Hashes, Wallet Addresses, Code Snippets",
+        "weights": ["400", "500"]
+      }
+    },
+    "rules": [
+      "Headings > 32px must use tracking-tight",
+      "Overlines must be Uppercase + tracking-widest + text-xs",
+      "Never use Inter for headings"
+    ]
+  },
+  "colors": {
+    "palette_name": "Dark Matter & Cyber Violet",
+    "background": {
+      "default": "#0A0A0A",
+      "paper": "#121212",
+      "subtle": "#1A1A1A"
+    },
+    "primary": {
+      "default": "#7C3AED",
+      "hover": "#6D28D9",
+      "foreground": "#FFFFFF"
+    },
+    "secondary": {
+      "default": "#27272A",
+      "foreground": "#FFFFFF"
+    },
+    "accent": {
+      "cyan": "#00E5FF",
+      "neon_green": "#10B981",
+      "electric_red": "#EF4444"
+    },
+    "border": {
+      "default": "#27272A",
+      "active": "#7C3AED"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#52525B"
+    },
+    "forbidden": ["#1B93A4", "#7351B7"]
+  },
+  "layout": {
+    "spacing_system": "Tailwind Scale (p-1 to p-64)",
+    "grid_strategies": {
+      "marketing": {
+        "name": "The Tetris Grid",
+        "classes": "grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-8",
+        "rules": "Asymmetry, overlapping elements, negative space"
+      },
+      "dashboard": {
+        "name": "High Density Bento",
+        "classes": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4",
+        "rules": "100% fill, no jagged bottoms, dense information"
+      }
+    },
+    "container_rules": "Containers with borders must have internal padding (p-6 or p-8)"
+  },
+  "components": {
+    "library": "Shadcn UI",
+    "customization_rules": [
+      "Radius: rounded-lg or rounded-xl for containers, rounded-full for buttons",
+      "Borders: 1px solid border-white/10 for cards",
+      "Shadows: shadow-2xl for floating elements, none for flat cards",
+      "Inputs: bg-white/5 border-white/10 focus:border-primary/50"
+    ],
+    "specific_overrides": {
+      "Button": "h-10 px-6 font-medium tracking-wide",
+      "Card": "bg-card/50 backdrop-blur-xl border-white/5",
+      "Dialog": "bg-[#0A0A0A] border-white/10"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-xl bg-black/40 border border-white/10",
+    "tracing_beam": "Animated gradient border for active states or pricing cards",
+    "noise_texture": "Subtle grain overlay on backgrounds to reduce digital flatness",
+    "gradients": "No full-screen gradients. Use localized 'glow' spots behind elements"
+  },
+  "images": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1642432556591-72cbc671b707?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHw0fHxhYnN0cmFjdCUyMGJsb2NrY2hhaW4lMjBuZXR3b3JrJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzY4NjAzMTg2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract floating crypto coins",
+      "usage": "Hero section background or main visual"
+    },
+    "security_feature": {
+      "url": "https://images.unsplash.com/photo-1639503547276-90230c4a4198?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwxfHxjeWJlcnNlY3VyaXR5JTIwZGlnaXRhbCUyMHNoaWVsZCUyMGRhcmt8ZW58MHx8fHwxNzY4NjAzMTg4fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Digital security shields",
+      "usage": "Security/Trust section"
+    },
+    "trading_dashboard_preview": {
+      "url": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxmdXR1cmlzdGljJTIwZmluYW5jaWFsJTIwZGF0YSUyMHZpc3VhbGl6YXRpb24lMjBkYXJrfGVufDB8fHx8MTc2ODYwMzE5MHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Laptop with trading graphs",
+      "usage": "Feature preview or 'For Traders' section"
+    },
+    "abstract_network": {
+      "url": "https://images.unsplash.com/photo-1748525874503-7ed3db0ccccf?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGJsb2NrY2hhaW4lMjBuZXR3b3JrJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzY4NjAzMTg2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Geometric mirror structure",
+      "usage": "Background texture or footer graphic"
+    }
+  },
+  "icons": {
+    "libraries": [
+      "lucide-react (Default)",
+      "@phosphor-icons/react (For marketing)",
+      "react-icons (For crypto logos)"
+    ],
+    "style": "Thin stroke (1.5px), consistent size"
+  },
+  "motion": {
+    "library": "framer-motion",
+    "types": [
+      "Hover: scale-105 + glow",
+      "Page Load: Staggered fade-in-up",
+      "Scroll: Parallax for background elements"
+    ]
+  },
+  "universal_guidelines": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur)",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file. This disrupts the human natural reading flow of text",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN",
+    "Prioritize using pre-existing components from src/components/ui when applicable",
+    "Create new components that match the style and conventions of existing components when needed",
+    "Examine existing components to understand the project's component patterns before creating new ones",
+    "Components MUST use named exports (export const ComponentName = ...)",
+    "Pages MUST use default exports (export default function PageName() {...})",
+    "Use sonner for toasts",
+    "Sonner component are located in /app/src/components/ui/sonner.tsx"
+  ],
+  "instructions_to_main_agent": "You are the Lead Developer. Follow these guidelines strictly. Your goal is to build a pixel-perfect, high-performance P2P exchange. Start by setting up the global styles and fonts, then build the layout shell, and finally the individual pages. Use the provided image URLs. Do not ask for clarification. Execute."
+}
