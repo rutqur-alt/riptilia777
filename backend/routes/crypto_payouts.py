@@ -452,6 +452,75 @@ async def get_my_crypto_orders(user: dict = Depends(get_current_user)):
     return orders
 
 
+
+@router.post("/crypto/orders/{order_id}/mark-paid")
+async def mark_crypto_order_paid(
+    order_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """Trader marks their crypto order as paid"""
+    if user.get("role") != "trader":
+        raise HTTPException(status_code=403, detail="Только для трейдеров")
+    
+    order = await db.crypto_orders.find_one(
+        {"id": order_id, "buyer_id": user["id"]},
+        {"_id": 0}
+    )
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Заказ не найден")
+    
+    if order.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Нельзя отметить оплату для этого статуса")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Update order status to paid
+    await db.crypto_orders.update_one(
+        {"id": order_id},
+        {
+            "$set": {
+                "status": "paid",
+                "paid_at": now,
+                "updated_at": now
+            },
+            "$push": {
+                "status_history": {
+                    "status": "paid",
+                    "timestamp": now,
+                    "by": user.get("login", user.get("id")),
+                    "role": "trader",
+                    "action": "buyer_marked_paid"
+                }
+            }
+        }
+    )
+    
+    # Update conversation status
+    await db.unified_conversations.update_one(
+        {"related_id": order_id},
+        {"$set": {"status": "paid", "updated_at": now}}
+    )
+    
+    # Add system message to conversation
+    conv = await db.unified_conversations.find_one({"related_id": order_id}, {"_id": 0})
+    if conv:
+        sys_msg = {
+            "id": str(uuid.uuid4()),
+            "conversation_id": conv["id"],
+            "sender_id": "system",
+            "sender_nickname": "Система",
+            "sender_role": "system",
+            "content": f"✅ Покупатель @{user.get('nickname', user.get('login'))} отметил оплату.\n\n⏳ Ожидайте подтверждения от модератора.",
+            "is_system": True,
+            "created_at": now
+        }
+        await db.unified_messages.insert_one(sys_msg)
+    
+    return {"status": "paid", "message": "Оплата отмечена. Ожидайте подтверждения модератора."}
+
+
+
 @router.get("/merchant/deals-archive")
 async def get_merchant_deals_archive(user: dict = Depends(get_current_user)):
     """Get merchant's completed/disputed deals archive with full chat history"""

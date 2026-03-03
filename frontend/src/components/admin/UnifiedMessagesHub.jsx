@@ -535,6 +535,26 @@ function UnifiedMessagesHub() {
           {}, { headers: { Authorization: `Bearer ${token}` } }
         );
         toast.success("Статус обновлён");
+      } else if (selectedConv.type === "crypto_order") {
+        // Handle crypto order completion
+        const orderId = selectedConv.related_id || selectedConv.data?.id;
+        if (!orderId) {
+          toast.error("ID заказа не найден");
+          return;
+        }
+        if (type === "mark_completed") {
+          await axios.post(`${API}/admin/crypto-payouts/${orderId}/update-status`,
+            { status: "completed" },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          toast.success("Сделка завершена! USDT зачислены покупателю.");
+        } else if (type === "cancel") {
+          await axios.post(`${API}/admin/crypto-payouts/${orderId}/update-status`,
+            { status: "cancelled" },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          toast.success("Заказ отменён");
+        }
       }
       // Move conversation to archive after decision
       try {

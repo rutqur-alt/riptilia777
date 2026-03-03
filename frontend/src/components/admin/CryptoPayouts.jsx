@@ -14,8 +14,21 @@ export function CryptoPayouts() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentSellRate, setCurrentSellRate] = useState(null);
 
-  useEffect(() => { fetchPayouts(); }, [filter]);
+  useEffect(() => { 
+    fetchPayouts(); 
+    fetchCurrentRate();
+  }, [filter]);
+
+  const fetchCurrentRate = async () => {
+    try {
+      const response = await axios.get(`${API}/payout-settings/public`);
+      setCurrentSellRate(response.data.sell_rate || 82.16);
+    } catch (error) {
+      console.error("Error fetching current rate");
+    }
+  };
 
   const fetchPayouts = async () => {
     try {
@@ -137,7 +150,12 @@ export function CryptoPayouts() {
         <EmptyState icon={ArrowDownRight} text={searchQuery ? "Ничего не найдено" : "Нет заказов"} />
       ) : (
         <div className="space-y-2">
-          {filtered.map(p => (
+          {filtered.map(p => {
+            // Use actual sell_rate from order, or current rate from settings
+            const effectiveRate = p.sell_rate || currentSellRate || 82.16;
+            const displayUsdt = p.amount_rub ? (p.amount_rub / effectiveRate).toFixed(2) : (p.amount_usdt || 0);
+            
+            return (
             <div 
               key={p.id} 
               className="bg-[#121212] border border-white/5 rounded-xl p-4 hover:border-[#10B981]/30 transition-colors cursor-pointer"
@@ -151,7 +169,9 @@ export function CryptoPayouts() {
                       <ArrowDownRight className="w-5 h-5 text-[#10B981]" />
                     </div>
                     <div>
-                      <div className="text-white font-medium">{p.amount_usdt} USDT</div>
+                      <div className="text-white font-medium">
+                        {displayUsdt} USDT
+                      </div>
                       <div className="text-[#71717A] text-xs">
                         Покупатель: @{p.buyer_nickname} • Мерчант: @{p.merchant_nickname || "неизвестен"}
                       </div>
@@ -161,8 +181,8 @@ export function CryptoPayouts() {
                 
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <div className="text-[#10B981] font-mono text-sm">{(p.amount_rub || 0).toFixed(2)} ₽</div>
-                    <div className="text-[#52525B] text-xs">Курс: {p.rate} ₽</div>
+                    <div className="text-[#10B981] font-mono text-sm">{Math.round(p.amount_rub || 0).toLocaleString('ru-RU')} ₽</div>
+                    <div className="text-[#52525B] text-xs">Курс: {effectiveRate.toFixed(2)} ₽</div>
                   </div>
                   
                   <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[p.status] || statusColors.pending}`}>
@@ -225,7 +245,7 @@ export function CryptoPayouts() {
                 </div>
               </div>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>

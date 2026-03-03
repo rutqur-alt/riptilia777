@@ -36,7 +36,8 @@ const getRoleInfo = (role) => ROLE_CONFIG[role] || ROLE_CONFIG.user;
 const TYPE_CONFIG = {
   support_ticket: { icon: HelpCircle, label: 'Обращение в поддержку', color: 'text-[#3B82F6]' },
   admin_message: { icon: Shield, label: 'Сообщение от администрации', color: 'text-[#EF4444]' },
-  admin_user_chat: { icon: Shield, label: 'Сообщение от администрации', color: 'text-[#EF4444]' }
+  admin_user_chat: { icon: Shield, label: 'Сообщение от администрации', color: 'text-[#EF4444]' },
+  crypto_order: { icon: ArrowRightLeft, label: 'Покупка USDT', color: 'text-[#10B981]' }
 };
 
 export default function MyMessagesPage() {
@@ -50,6 +51,7 @@ export default function MyMessagesPage() {
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [ticketForm, setTicketForm] = useState({ category: 'other', subject: '', message: '' });
   const [leavingChat, setLeavingChat] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
   const messagesEndRef = useRef(null);
 
   // WebSocket for real-time messages in selected conversation
@@ -96,9 +98,11 @@ export default function MyMessagesPage() {
       const response = await axios.get(`${API}/msg/conversations`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Only show support/admin messages
+      // Only show support/admin messages AND crypto orders
       const allConvs = response.data || [];
-      const filtered = allConvs.filter(c => ['support_ticket', 'admin_message', 'admin_user_chat'].includes(c.type));
+      const filtered = allConvs.filter(c => 
+        ['support_ticket', 'admin_message', 'admin_user_chat', 'crypto_order'].includes(c.type)
+      );
       setConversations(filtered);
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -180,6 +184,30 @@ export default function MyMessagesPage() {
     } finally {
       setLeavingChat(false);
     }
+  };
+
+  // Mark crypto order as paid (for traders buying USDT)
+  const handleMarkPaid = async () => {
+    if (!selectedConv || !selectedConv.related_id) return;
+    setMarkingPaid(true);
+    try {
+      await axios.post(`${API}/crypto/orders/${selectedConv.related_id}/mark-paid`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success("Оплата отмечена! Ожидайте подтверждения модератора.");
+      fetchMessages(selectedConv.id);
+      fetchConversations();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Не удалось отметить оплату");
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
+
+  // Check if user can mark order as paid
+  const canMarkPaid = () => {
+    if (!selectedConv) return false;
+    return selectedConv.type === 'crypto_order' && selectedConv.status === 'active';
   };
 
   const canLeaveChat = () => {
@@ -353,6 +381,38 @@ export default function MyMessagesPage() {
                   })}
                 </div>
               </div>
+
+              {/* Action buttons for crypto orders */}
+              {selectedConv.type === 'crypto_order' && (
+                <div className="p-3 border-b border-white/5 bg-[#0A0A0A]">
+                  <div className="text-[10px] text-[#52525B] mb-2">ДЕЙСТВИЯ:</div>
+                  <div className="flex flex-wrap gap-2">
+                    {canMarkPaid() && (
+                      <Button 
+                        onClick={handleMarkPaid}
+                        disabled={markingPaid}
+                        className="bg-[#10B981] hover:bg-[#059669] text-white text-xs h-8 px-4"
+                        data-testid="mark-paid-btn"
+                      >
+                        {markingPaid ? <Loader className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                        Я оплатил
+                      </Button>
+                    )}
+                    {selectedConv.status === 'paid' && (
+                      <div className="flex items-center gap-2 text-[#3B82F6] text-xs">
+                        <Loader className="w-4 h-4 animate-spin" />
+                        Ожидайте подтверждения модератора
+                      </div>
+                    )}
+                    {selectedConv.status === 'completed' && (
+                      <div className="flex items-center gap-2 text-[#10B981] text-xs">
+                        <CheckCircle className="w-4 h-4" />
+                        Сделка завершена! USDT зачислены на ваш баланс
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
