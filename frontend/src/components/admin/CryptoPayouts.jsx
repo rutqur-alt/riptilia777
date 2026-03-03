@@ -10,7 +10,7 @@ import { LoadingSpinner, EmptyState, PageHeader } from "@/components/admin/Share
 export function CryptoPayouts() {
   const { token } = useAuth();
   const navigate = useNavigate();
-  const [payouts, setPayouts] = useState([]);
+  const [allPayouts, setAllPayouts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -19,7 +19,7 @@ export function CryptoPayouts() {
   useEffect(() => { 
     fetchPayouts(); 
     fetchCurrentRate();
-  }, [filter]);
+  }, []);
 
   const fetchCurrentRate = async () => {
     try {
@@ -33,11 +33,11 @@ export function CryptoPayouts() {
   const fetchPayouts = async () => {
     try {
       setLoading(true);
-      const params = filter !== "all" ? `?status=${filter}` : "";
-      const response = await axios.get(`${API}/admin/crypto-payouts${params}`, { 
+      // Always load ALL payouts
+      const response = await axios.get(`${API}/admin/crypto-payouts`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
-      setPayouts(response.data || []);
+      setAllPayouts(response.data || []);
     } catch (error) {
       toast.error("Ошибка загрузки");
     } finally {
@@ -88,17 +88,34 @@ export function CryptoPayouts() {
     { key: "cancelled", label: "Отменённые" }
   ];
 
-  // Filter payouts by search
-  const filtered = payouts.filter(p => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      p.id?.toLowerCase().includes(query) ||
-      p.buyer_nickname?.toLowerCase().includes(query) ||
-      p.merchant_nickname?.toLowerCase().includes(query) ||
-      p.wallet_address?.toLowerCase().includes(query)
-    );
+  // Filter payouts - search works across ALL statuses
+  const filtered = allPayouts.filter(p => {
+    // First apply search filter (searches ALL statuses)
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = (
+        p.id?.toLowerCase().includes(query) ||
+        p.buyer_nickname?.toLowerCase().includes(query) ||
+        p.merchant_nickname?.toLowerCase().includes(query) ||
+        p.wallet_address?.toLowerCase().includes(query) ||
+        String(p.amount_usdt || '').includes(query) ||
+        String(p.amount_rub || '').includes(query)
+      );
+      if (!matchesSearch) return false;
+    }
+    
+    // Then apply status filter (only if no search query)
+    if (!searchQuery && filter !== "all") {
+      if (filter === "active") {
+        return ["pending", "paid"].includes(p.status);
+      }
+      return p.status === filter;
+    }
+    
+    return true;
   });
+
+  const totalCount = allPayouts.length;
 
   return (
     <div className="space-y-4" data-testid="crypto-payouts">
@@ -142,7 +159,7 @@ export function CryptoPayouts() {
 
       {searchQuery && (
         <div className="text-xs text-[#71717A]">
-          Найдено: {filtered.length} из {payouts.length}
+          Найдено: {filtered.length} из {totalCount}
         </div>
       )}
 
