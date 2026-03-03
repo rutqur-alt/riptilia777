@@ -1195,6 +1195,16 @@ async def create_direct_trade(data: DirectTradeCreate, user: dict = Depends(requ
         "status": "pending"
     })
     
+    # Create event notification for the seller
+    await _create_trade_notification(
+        offer["trader_id"],
+        "trade_created",
+        "Новая сделка",
+        f"Создана сделка на {data.amount_usdt:.2f} USDT ({round(amount_rub):,} ₽)",
+        f"/trader/sales/{trade_id}",
+        trade_id
+    )
+    
     # Clean MongoDB _id before returning
     trade_doc.pop("_id", None)
     if trade_doc.get("requisite"):
