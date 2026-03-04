@@ -50,6 +50,7 @@ class MerchantResponse(BaseModel):
     telegram: Optional[str] = None
     status: Optional[str] = None
     balance_usdt: Optional[float] = 0.0
+    frozen_usdt: Optional[float] = 0.0
     commission_rate: Optional[float] = 0.0
     api_key: Optional[str] = None
     created_at: Optional[str] = None
@@ -67,6 +68,7 @@ class TraderResponse(BaseModel):
     nickname: str
     display_name: Optional[str] = None
     balance_usdt: float
+    frozen_usdt: Optional[float] = 0.0
     commission_rate: Optional[float] = None
     accepted_merchant_types: Optional[List[str]] = None
     created_at: str

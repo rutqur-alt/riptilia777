@@ -56,6 +56,7 @@ Build a production-ready P2P crypto exchange platform based on TON blockchain wi
    - Updated traders and merchants registration to include `frozen_usdt` field
    - Migrated existing users to have `frozen_usdt: 0` field
    - Fixed withdrawal validation to check available balance, not total
+   - **Added `frozen_usdt` to `TraderResponse` and `MerchantResponse` models** — this was the root cause of balance desync
 
 ### Mainnet Migration (2026-03-04)
 - TON service switched to mainnet
