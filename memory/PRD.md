@@ -61,6 +61,12 @@ Build a production-ready P2P crypto exchange platform based on TON blockchain wi
    - **Added `refreshUserBalance()` function** to AuthContext — called after every withdrawal/deposit operation
    - **Instant balance updates**: Both sidebar and page content now update simultaneously after any financial operation
 
+
+7. **Withdrawal UI Fix (2026-03-04)**
+   - Fixed misleading withdrawal modal that showed "you'll receive: amount - fee"
+   - New UI clearly shows: "Fee: +1 USDT", "Total deducted: X USDT", "You receive: Y USDT"
+   - Backend commission logic was already correct (fee added on top of withdrawal amount)
+
 ### Mainnet Migration (2026-03-04)
 - TON service switched to mainnet
 - New mainnet wallet generated: `EQCxIoq1inAuvVt3U77cPyopvQXeSQjTfyJzhAVtdfCbqapC`
@@ -71,7 +77,7 @@ Build a production-ready P2P crypto exchange platform based on TON blockchain wi
 ### P0 - Critical (Must be done for production)
 1. ~~Optimize slow admin dashboard~~ ✅ DONE
 2. ~~Switch to TON mainnet~~ ✅ DONE
-3. ~~Verify withdrawal commission logic~~ ✅ DONE (2026-03-04) - Tested: 5 USDT withdrawal + 1 USDT fee correctly freezes 6 USDT
+3. ~~Verify withdrawal commission logic~~ ✅ DONE (2026-03-04) - Backend logic correct. Fixed misleading UI that showed "you'll receive X-fee" instead of "fee added on top"
 4. **User needs to fund the mainnet hot wallet with USDT/TON**
 
 ### P1 - Important

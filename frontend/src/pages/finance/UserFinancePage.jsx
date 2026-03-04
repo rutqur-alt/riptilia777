@@ -540,13 +540,19 @@ export default function UserFinancePage() {
                   <span className="text-white">{withdrawData.amount || '0'} USDT</span>
                 </div>
                 <div className="flex justify-between text-zinc-400">
-                  <span>Комиссия:</span>
-                  <span className="text-orange-400">1 USDT</span>
+                  <span>Комиссия сети:</span>
+                  <span className="text-orange-400">+ 1 USDT</span>
                 </div>
                 <div className="flex justify-between text-zinc-400 border-t border-zinc-700 pt-2">
+                  <span>Итого спишется:</span>
+                  <span className="text-red-400 font-medium">
+                    {((parseFloat(withdrawData.amount) || 0) + 1).toFixed(2)} USDT
+                  </span>
+                </div>
+                <div className="flex justify-between text-zinc-400">
                   <span>Вы получите:</span>
                   <span className="text-emerald-400 font-medium">
-                    {Math.max(0, (parseFloat(withdrawData.amount) || 0) - 1).toFixed(2)} USDT
+                    {(parseFloat(withdrawData.amount) || 0).toFixed(2)} USDT
                   </span>
                 </div>
               </div>
