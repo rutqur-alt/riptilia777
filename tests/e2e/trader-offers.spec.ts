@@ -11,7 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { waitForAppReady, dismissToasts } from '../fixtures/helpers';
 
-const BASE_URL = 'https://reptiloid-preview.preview.emergentagent.com';
+const BASE_URL = 'https://crypto-exchange-demo-1.preview.emergentagent.com';
 
 test.describe('Trader Offers Bug Fix', () => {
   let token: string;

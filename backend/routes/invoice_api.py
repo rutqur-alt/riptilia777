@@ -479,7 +479,7 @@ async def create_invoice(
     # 12. Build payment URL
     # Всегда используем правильный публичный домен для payment_url
     import os
-    base_url = os.environ.get("SITE_URL", "https://reptiloid-preview.preview.emergentagent.com")
+    base_url = os.environ.get("SITE_URL", "https://crypto-exchange-demo-1.preview.emergentagent.com")
     
     # URL на страницу выбора оператора
     payment_url = f"{base_url}/select-operator/{invoice_id}"

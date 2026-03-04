@@ -11,7 +11,7 @@ export default defineConfig({
     ['json', { outputFile: '/root/.emergent/automation_output/20260303_180319/results.json' }],
   ],
   use: {
-    baseURL: 'https://reptiloid-preview.preview.emergentagent.com',
+    baseURL: 'https://crypto-exchange-demo-1.preview.emergentagent.com',
     screenshot: 'only-on-failure',
     trace: 'off',
     headless: true,

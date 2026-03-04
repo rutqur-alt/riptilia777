@@ -1,60 +1,65 @@
 <analysis>**original_problem_statement:**
-The initial request was to build a P2P cryptocurrency exchange platform named Reptiloid. The scope has since expanded to include:
-1.  **Complete Merchant API**: A production-ready API for merchants to accept payments.
-2.  **Implement All Webhooks**: Server-to-server notifications for all critical payment status changes.
-3.  **Comprehensive API Documentation**: Detailed API documentation with examples, accessible to merchants.
-4.  **UI/UX Refinements**: The platform has undergone numerous UI/UX fixes and feature implementations based on user requests.
-5.  **New Major Feature: Centralized Notification System**: A site-wide notification system.
-6.  **Critical Bug Reports:** An ad is visible in the public order book but missing from the trader's My Ads page; funds are stuck in closed ads; message sorting is incorrect; notification counts are inconsistent; merchants can bypass restrictions on buying crypto.
+The initial request was to build a P2P cryptocurrency exchange platform named Reptiloid. The core focus of recent development has been to create a robust, secure, and well-documented redirect-based Merchant API for accepting payments. The user has requested the removal of a previous test shop and the creation of a new, fully-functional demo store that accurately reflects the API's capabilities, including correct balance calculations, transaction history with webhook statuses, and a display of active payments. The user is highly detail-oriented and requires all features to be production-ready, secure, and logically sound, with a strong emphasis on correct ad filtering (e.g., hiding paused or inactive ads) and accurate fund distribution calculations.
 
 **User's preferred language**: Russian
 
 **what currently exists?**
-A full-stack P2P crypto exchange with trader, merchant, and admin dashboards. The previous session resolved a critical notification count bug and added a missing webhook for auto-cancelled trades.
+A full-stack P2P crypto exchange with a functional redirect-based merchant API. The previous  test store has been deleted and replaced with a new  page that serves as a client for the merchant API. This demo store now correctly displays a merchant's balance in RUB, shows a history of orders with their corresponding webhook statuses, and lists active payments.
 
-The agent then attempted a major refactor of the merchant integration into a white-label API, where the end-user would never leave the merchant's website. The user was extremely dissatisfied with this change as it broke the existing logic for calculating prices, which included trader-specific markups. Following a strong request from the user, the agent has reverted all frontend changes related to the test shop () back to the original redirect-based implementation.
+The backend has been significantly improved:
+- The main merchant dashboard now correctly aggregates and displays invoices created via the new API.
+- A critical bug was fixed where the payment URL was generated with an incorrect internal domain, causing 403 errors. The backend now hardcodes the correct public domain.
+- Strict filtering has been implemented to ensure that only active, available, and un-paused trader ads are shown to customers during the payment process.
+- The API documentation has been updated to include the  webhook status, making it more comprehensive.
 
 **Last working item**:
-- **Last item agent was working:** The agent was reverting the white-label merchant integration changes for the test shop () back to the previous, user-approved implementation. The user was unhappy because the new integration failed to correctly calculate prices with trader markups. The agent successfully restored the previous versions of , , and , and deleted the new  component.
-- **Status:** USER VERIFICATION PENDING
-- **Agent Testing Done:** Y (Agent performed a visual check via screenshots to confirm the old UI and functionality were restored).
-- **Which testing method agent to use?** screenshot tool. The agent should take a screenshot of the reverted  page, showing the operator list with the correct, markup-inclusive pricing, and ask the user for explicit confirmation that this is the correct state.
+- **Last item agent was working:** The agent was analyzing the fund distribution for a specific completed trade () at the user's request. The user was confused about the commission structure and wanted a clear breakdown of how much money (in RUB) the merchant ultimately receives after the trader and platform take their cuts. The agent provided a preliminary analysis, but the user requested a more precise and understandable explanation.
+- **Status:** IN PROGRESS
+- **Agent Testing Done:** N
+- **Which testing method agent to use?** The agent should use  shell or  to query the , ,  and any ledger-related collections to trace the exact flow of funds (USDT and RUB) for trade .
 - **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-- **Issue 1: Inconsistent Merchant API and Documentation (P0)**
-    - **Description:** After reverting the frontend test shop to the old redirect-based flow, the backend () and the merchant-facing API documentation () were NOT reverted. They still contain the code and documentation for the rejected white-label API. This has created a critical inconsistency in the codebase.
-    - **Attempted fixes:** None. This is a new issue resulting from the partial revert.
+- **Issue 1: Clarify Fund Distribution for Trade  (P0)**
+    - **Description:** The user does not understand the breakdown of commissions and final amounts credited to the merchant for a given transaction. They need a clear, step-by-step explanation for trade , showing how an initial 10,000 RUB request results in the final credited amount after all commissions are applied.
+    - **Attempted fixes:** The agent provided an initial summary, but it was not clear enough for the user.
     - **Next debug checklist:**
-        1.  Review  and remove the unused white-label endpoints (, , , chat APIs, etc.). Ensure the core  endpoint functions correctly for the redirect flow.
-        2.  Review  and rewrite the documentation to accurately describe the redirect-based flow ( -> get  -> ). Remove all references to the white-label endpoints and flow.
-    - **Why fix this issue and what will be achieved with the fix?** To restore consistency across the application, prevent future confusion for developers, and ensure merchants see documentation that matches the actual, working integration method.
-    - **Status:** NOT STARTED
+        1.  Query the database for the trade with .
+        2.  Identify the associated  and note the  (expected to be 10,000).
+        3.  Find the merchant's  from the  collection.
+        4.  Find the platform's commission from the trade details.
+        5.  Trace the  from the trade.
+        6.  Calculate the exact USDT amount deducted for the merchant's commission.
+        7.  Calculate the final USDT amount that should be credited to the merchant's balance.
+        8.  Explain the flow in simple terms and Russian: Client requested 10,000 RUB. This converted to X USDT. Your commission is 10%, which is Y USDT. The final credited amount to your balance is Z USDT, which is equivalent to 9,000 RUB.
+    - **Why fix this issue and what will be achieved with the fix?** Resolving this will provide clarity on the platform's core business logic, build user trust, and confirm the commission system works as intended.
+    - **Status:** IN PROGRESS
     - **Is recurring issue?** N
-    - **Should Test frontend/backend/both after fix?** Both. Test the backend API and screenshot the updated documentation page for the user.
-    - **Blocked on other issue:** None, but should be done after user confirms the  revert.
+    - **Should Test frontend/backend/both after fix?** Backend (DB analysis).
+    - **Blocked on other issue:** None. This is the highest priority.
 
 **In progress Task List**:
-- **Task 1: Verify Reverted Test Shop Integration (P0)**
-    - **Where to resume:** Present the user with a screenshot of the reverted  page. Explicitly ask for confirmation that the functionality, especially the price calculation with markups, is now correct and matches their expectation before the white-label changes.
-    - **What will be achieved with this?** This will confirm the user's critical revert request is complete, restore their confidence, and unblock further development on the merchant API.
-    - **Status:** IN PROGRESS
-    - **Should Test frontend/backend/both after fix?** Frontend (user verification required).
-    - **Blocked on something:** This is the highest priority and blocks everything else.
+The  issue is the only in-progress task.
 
 **Upcoming and Future Tasks**
 - **Upcoming Tasks:**
-    - **(P1) Clean up Merchant API and Docs:** After user confirmation of the revert, fix the inconsistency described in Pending/In progress Issue list.
-    - **(P2) Implement  Webhook:** Create a background task to find trades that have passed their payment time limit, update their status to , and trigger a corresponding webhook. This was mentioned in the PRD and is a natural extension of the  webhook fix.
+    - **(P1) Cleanup :** Remove the now-unused endpoints related to the rejected white-label API flow (, , etc.) to reduce code clutter and prevent future confusion.
 - **Future Tasks:**
-    - **(P2) Deprecate Old Merchant API:** Investigate  to see if it is a legacy, insecure API that should be removed.
-    - **(P3) Standardize Backend Route Directories:** Consolidate backend route files from  and  into a single  directory.
-    - **(P3) Migrate Legacy Notifications:** Create a script to move all data from the  collection to  and refactor the backend to remove dependencies on the old collection.
+    - **(P2) Deprecate Old Merchant API:** Investigate the legacy API in  and plan for its deprecation and removal.
+    - **(P3) Standardize Backend Route Directories:** Consolidate all route files from  and  into a single, unified  directory for better organization.
+    - **(P3) Migrate Legacy Notifications:** Plan and execute a migration script to move data from the old  collection to the new  collection, refactoring the backend to use only the new system.
 
 **Completed work in this session**
-- **Inconsistent Notification Count Fixed:** Corrected the logic in  () to properly sum counts from both new and legacy notification collections. Verified with automated tests.
-- **'Cancelled' Webhook Added for Auto-Expired Trades:** Added a webhook call to the  background task () to notify merchants of automatically cancelled trades.
-- **White-Label Integration and Full Revert:** Implemented a new white-label merchant integration. After strong negative feedback from the user that it broke crucial business logic (price calculation), all frontend changes for the test shop were successfully reverted to the previous state.
+- **Deleted  Test Store**: Completely removed the old  directory and its associated routes as requested by the user.
+- **Created  Merchant Store**: Implemented a new, superior demo store at  that fully integrates with the redirect-based merchant API.
+- **Fixed Merchant Balance Calculation**: Corrected the logic to ensure the demo store's balance reflects the sum of  from completed invoices, displayed in RUB.
+- **Fixed Transaction History**: Resolved a Javascript error () on the history tab in the demo store.
+- **Added Active Payments to Demo Store**: The demo store now fetches and displays a list of the merchant's active/pending payments.
+- **Unified Merchant Dashboard View**: Updated the primary merchant dashboard ( API) to include invoices created via the , ensuring a single source of truth for merchants.
+- **Fixed 403 Error on Payment Redirect**: Diagnosed and fixed a critical bug where the backend generated a  with an incorrect internal domain. The correct public domain is now hardcoded.
+- **Implemented Strict Ad Filtering**: Enhanced the API that provides trader ads () to rigorously filter out any ads that are paused, inactive, or have insufficient balance, preventing them from being shown to customers.
+- **Resolved API Key & Signature Mismatches**: Systematically debugged multiple payment creation failures reported by the user, tracing them to browser caching of old keys and mismatches. Cleared  usage in the demo shop to ensure fresh keys are always used.
+- **Updated API Documentation**: Added the  webhook status and its description to the  page.
 
 **Earlier issues found/mentioned but not fixed**
 - None.
@@ -66,69 +71,78 @@ The agent then attempted a major refactor of the merchant integration into a whi
 
 
 **Key Technical Concepts**
-- **Frontend:** React, Redux, Axios, Tailwind CSS, crypto-js
-- **Backend:** FastAPI, Pydantic, Motor (async MongoDB), APScheduler
+- **Frontend:** React, Redux, Axios, Tailwind CSS
+- **Backend:** FastAPI, Pydantic, Motor (async MongoDB)
 - **Database:** MongoDB
-- **Key Concepts:** Webhooks, HMAC Signatures, Background Tasks, White-Label vs. Redirect API integration strategies.
+- **Key Concepts:** Redirect-based API, HMAC Signatures, Webhooks, Background Tasks, Commission Logic.
 
 **key DB schema**
-- **invoices:**  is used to send webhooks.
-- **trades:** The  field links a trade to a merchant invoice, enabling status updates and webhooks.
-- **offers:** Used to find available traders/operators for an invoice.
+- **merchant_invoices:** Stores all payment requests created via the API. Fields include , , , , .
+- **trades:** Represents a deal between a customer and a trader. The  field links a trade back to a .
+- **offers:** Trader advertisements. Critical fields for filtering are , , , , .
+- **merchants:** Stores merchant data, including , , and .
 
 **changes in tech stack**
 - None.
 
 **All files of reference**
-- : The test shop. It has been reverted to its previous state. **DO NOT MODIFY** towards a white-label API without user approval.
-- : Contains merchant API logic. **It is out of sync** with the reverted frontend and needs to be cleaned up.
-- : Displays merchant API documentation. **It is out of sync** and documents the rejected API flow.
+- : The new demo store that acts as the primary testbed for the merchant integration.
+- : The core backend logic for the merchant API. Contains the fix for  generation.
+- : Contains the  endpoint with the new strict filtering logic.
+- : The API for the main merchant dashboard, which now aggregates data from .
+- : The merchant-facing API documentation.
 
 **Areas that need refactoring**:
-- **:** Contains numerous endpoints for a white-label API that was rejected by the user. These should be removed to avoid confusion and align the backend with the current frontend implementation.
-- **:** The documentation component needs to be completely rewritten to reflect the user-approved, redirect-based integration flow, removing all mentions of the white-label API.
+- ****: Still contains unused endpoints from the rejected white-label API. These should be removed to clean up the code.
+- **Legacy Merchant API ():** This file likely contains an old, insecure version of the merchant API and should be audited for deprecation.
+- **Backend Directory Structure:** The routes are split between  and . They should be consolidated into a single  directory.
 
 **key api endpoints**
-- : (Correct, In Use) Creates an invoice and returns a  for redirect.
-- , : (Incorrect, Not In Use) These white-label endpoints still exist in the backend code but are no longer used by the reverted frontend and should be removed.
+- : Creates a merchant invoice and returns a .
+- : Fetches a merchant's payment history and active invoices. Used by the demo store.
+- : Fetches a merchant's balance. Used by the demo store.
+- : Provides the filtered list of available traders for a given payment request.
+- : The main endpoint for the merchant's dashboard, showing all their transactions.
 
 **Critical Info for New Agent**
-- **Your first action MUST be to confirm the revert with the user.** Show them a screenshot of the  page and ask if the price calculation is correct now.
-- **DO NOT** attempt to re-implement a white-label solution. The user was extremely frustrated by the last attempt because it broke critical business logic. The current, user-approved flow involves redirecting the end-user to the platform's domain via a .
-- The codebase is currently in an **inconsistent state**. After confirming the revert, your next priority is to clean up the backend () and the API documentation () to remove all traces of the rejected white-label API.
-- The user is Russian-speaking. Always respond in Russian and maintain a professional, direct, problem-solving tone. Acknowledge issues clearly and focus on the solution.
+- **Your immediate priority is to answer the user's question about fund distribution for trade .** You must perform a detailed database analysis and provide a simple, clear, step-by-step breakdown in Russian.
+- The user is extremely frustrated by things not working correctly. Acknowledge this, do not argue, and focus directly on fixing the issue. All communication must be in Russian.
+- The  page is the new, user-approved test environment for the merchant API. The old  is gone. Do not refer to it.
+- The redirect-based API flow is the *only* correct implementation. Do not attempt to implement or suggest any white-label or embedded solutions.
+- When the user reports an issue with the demo store (e.g., payment creation fails), be aware that it could be due to them regenerating API keys on their end. The first step is often to verify the keys in the database match what they are using.
 
 **documents and test reports created in this job**
 - 
--  (was updated multiple times, may need review after the revert is confirmed)
 
 **Last 10 User Messages and any pending HUMAN messages**
-10.  User asks the agent to verify the entire production-like integration, check documentation, error handling, calculations, and asks for a plan, specifically about how the chat would work in a white-label scenario.
-9.  User becomes extremely frustrated, stating the agent ruined everything. They explain that the previous integration correctly calculated prices with trader markups and included important rules in the chat. They demand the agent revert everything to the state before the white-label integration attempt.
-8.  Agent acknowledges the user's frustration and begins the process of reverting the changes by finding the correct commit.
-7.  Agent restores .
-6.  Agent checks .
-5.  Agent deletes the  he created.
-4.  Agent confirms the old version of the shop is restored and prepares to test it.
-3.  Agent confirms the shop connection works.
-2.  Agent confirms the operators list is showing with the correct markup-based pricing.
-1.  Agent confirms the operator selection dialog shows the correct final price and rules, confirming the revert was successful from a technical standpoint.
+10.  User: I've noticed that paused ads are still showing up for merchant customers. There needs to be a strict check to ensure ads are active, not paused, have enough balance, and are within limits before being shown. Explain what you understood.
+9.  Agent: Acknowledged the need for strict filtering (, , balance, limits) on the API endpoint that serves operators to the payment page. Asked for confirmation.
+8.  User:  (yes).
+7.  User: (After agent implemented the fix) Okay, now I'm interested in this specific trade. Explain to me who got what from this deal.
+6.  User: For trade , explain how much was credited to whom.
+5.  Agent: Provided an initial breakdown of the fund distribution for the trade.
+4.  User: I don't understand how much the merchant received. For a 10,000 RUB request and a 10% commission, they should get 9,000 RUB. Look again and explain it properly without changing anything.
+3.  Agent: Understood, re-investigating for a clearer explanation.
+2.  Agent: Started analyzing the database for the trade.
+1.  Agent: Located the trade and invoice details in the database.
 
 **Project Health Check:**
-- **Broken:** The backend merchant API () and its public documentation () describe a white-label system, while the actual, user-approved test shop () uses a completely different redirect-based system. This is a critical inconsistency.
+- **Broken:** None. The application is currently in a stable and consistent state.
+- **Mocked:** The  page serves as a mock frontend for a merchant's website, but it uses the live, production-ready merchant API.
 
 **3rd Party Integrations**
 - None.
 
 **Testing status**
-- **Testing agent used after significant changes:** YES, for the notification fix.
+- **Testing agent used after significant changes:** NO. Agent performed extensive manual testing via  and  tools throughout the session.
+- **Troubleshoot agent used after agent stuck in loop:** NO.
 - **Test files created:** None.
-- **Known regressions:** A major functional regression was introduced with the white-label API and then fixed by reverting the code.
+- **Known regressions:** None.
 
 **Credentials to test flow:**
 - **Super Admin:**  / 
 - **Trader 111:**  / 
-- **Merchant 222:**  / 
+- **Merchant 222:**  /  (Note: User frequently regenerates API keys for this merchant, so they may need to be checked in the DB if authentication fails).
 
 **What agent forgot to execute**
-- After reverting the frontend files for the test shop, the agent did not revert or clean up the corresponding backend API endpoints in  or the API documentation in . This has left the codebase in an inconsistent and confusing state.</analysis>
+- After the user confirmed the redirect-only approach, the agent did not remove the now-obsolete white-label API endpoints from . This is a pending cleanup task.</analysis>
