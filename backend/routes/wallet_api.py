@@ -802,16 +802,29 @@ async def generate_new_wallet(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== FULL ANALYTICS (OPTIMIZED) ====================
+# ==================== FULL ANALYTICS (OPTIMIZED + CACHED) ====================
+
+# Simple in-memory cache for analytics
+_analytics_cache = {}
 
 @router.get("/admin/analytics/full")
 async def get_full_analytics(
     period: str = "7d",
     user: dict = Depends(require_roles(["admin"]))
 ):
-    """Get comprehensive financial analytics - OPTIMIZED with parallel queries"""
+    """Get comprehensive financial analytics - OPTIMIZED with parallel queries and caching"""
     import asyncio
     from datetime import timedelta, timezone
+    
+    # Check cache (30 second TTL)
+    cache_key = f"analytics_{period}"
+    cache_ttl = 30
+    now_ts = datetime.now(timezone.utc).timestamp()
+    
+    if cache_key in _analytics_cache:
+        cached = _analytics_cache[cache_key]
+        if now_ts - cached['time'] < cache_ttl:
+            return cached['data']
     
     days = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
     period_days = days.get(period, 7)
@@ -904,7 +917,7 @@ async def get_full_analytics(
             })
         daily_stats.reverse()
         
-        return {
+        result = {
             "success": True,
             "analytics": {
                 "overview": {
@@ -935,6 +948,14 @@ async def get_full_analytics(
                 "daily_stats": daily_stats
             }
         }
+        
+        # Save to cache
+        _analytics_cache[cache_key] = {
+            'time': now_ts,
+            'data': result
+        }
+        
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

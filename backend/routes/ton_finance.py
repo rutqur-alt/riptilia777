@@ -59,26 +59,21 @@ async def get_deposit_address(user_id: str) -> dict:
 
 
 async def get_hot_wallet_balance() -> dict:
-    """Get hot wallet balance from TON service or fallback to tonapi.io"""
+    """Get hot wallet balance from tonapi.io with caching"""
     import httpx
     
-    # Try TON service first (with short timeout)
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
-                f"{TON_SERVICE_URL}/hot-wallet/balance",
-                headers={"X-API-Key": TON_SERVICE_API_KEY}
-            )
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('success') and (data.get('ton_balance', 0) > 0 or data.get('usdt_balance', 0) > 0):
-                    return data
-    except:
-        pass
+    # Simple in-memory cache
+    cache_key = "hot_wallet_balance"
+    cache_ttl = 30  # 30 seconds
     
-    # Fallback: get balance directly from tonapi.io
+    # Check cache
+    if hasattr(get_hot_wallet_balance, '_cache'):
+        cached = get_hot_wallet_balance._cache.get(cache_key)
+        if cached and (datetime.now(timezone.utc).timestamp() - cached['time']) < cache_ttl:
+            return cached['data']
+    
     try:
-        # Get hot wallet address from health endpoint
+        # Get hot wallet address from health endpoint (fast, local)
         health = await get_ton_service_health()
         address = health.get('hotWallet', '')
         
@@ -86,36 +81,73 @@ async def get_hot_wallet_balance() -> dict:
             return {"balance": 0, "ton_balance": 0, "usdt_balance": 0, "currency": "USDT"}
         
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Get TON balance
-            acc_response = await client.get(f"https://tonapi.io/v2/accounts/{address}")
+            # Get TON balance from tonapi.io
             ton_balance = 0
-            if acc_response.status_code == 200:
-                acc_data = acc_response.json()
-                ton_balance = int(acc_data.get('balance', 0)) / 1e9
+            try:
+                acc_response = await client.get(f"https://tonapi.io/v2/accounts/{address}")
+                if acc_response.status_code == 200:
+                    acc_data = acc_response.json()
+                    raw_balance = int(acc_data.get('balance', 0))
+                    ton_balance = raw_balance / 1e9
+                    
+                    # For uninit wallets, calculate from incoming transactions
+                    if acc_data.get('status') == 'uninit' and ton_balance < 0.01:
+                        events_response = await client.get(f"https://tonapi.io/v2/accounts/{address}/events?limit=20")
+                        if events_response.status_code == 200:
+                            events_data = events_response.json()
+                            total_ton = 0
+                            # Convert our address to raw format for comparison
+                            # EQCxIoq1inAuvVt3U77cPyopvQXeSQjTfyJzhAVtdfCbqapC -> 0:b1228ab58a702ebd5b7753bedc3f2a29bd05de4908d37f227384056d75f09ba9
+                            our_addr_hex = "b1228ab58a702ebd5b7753bedc3f2a29bd05de4908d37f227384056d75f09ba9"
+                            for event in events_data.get('events', []):
+                                for action in event.get('actions', []):
+                                    if action.get('type') == 'TonTransfer':
+                                        transfer = action.get('TonTransfer', {})
+                                        recipient = transfer.get('recipient', {}).get('address', '')
+                                        # Check if we're the recipient (incoming)
+                                        if recipient and our_addr_hex in recipient.lower():
+                                            total_ton += int(transfer.get('amount', 0)) / 1e9
+                            if total_ton > ton_balance:
+                                ton_balance = total_ton
+            except:
+                pass
             
             # Get USDT balance (jettons)
             usdt_balance = 0
-            jettons_response = await client.get(f"https://tonapi.io/v2/accounts/{address}/jettons")
-            if jettons_response.status_code == 200:
-                jettons_data = jettons_response.json()
-                for jetton in jettons_data.get('balances', []):
-                    # Check if it's USDT
-                    jetton_info = jetton.get('jetton', {})
-                    symbol = jetton_info.get('symbol', '')
-                    if symbol.upper() in ['USDT', 'USD₮']:
-                        balance_str = jetton.get('balance', '0')
-                        decimals = jetton_info.get('decimals', 6)
-                        usdt_balance = int(balance_str) / (10 ** decimals)
-                        break
+            try:
+                jettons_response = await client.get(f"https://tonapi.io/v2/accounts/{address}/jettons")
+                if jettons_response.status_code == 200:
+                    jettons_data = jettons_response.json()
+                    for jetton in jettons_data.get('balances', []):
+                        jetton_info = jetton.get('jetton', {})
+                        symbol = jetton_info.get('symbol', '')
+                        if symbol.upper() in ['USDT', 'USD₮']:
+                            balance_str = jetton.get('balance', '0')
+                            decimals = jetton_info.get('decimals', 6)
+                            usdt_balance = int(balance_str) / (10 ** decimals)
+                            break
+            except:
+                pass
             
-            return {
+            result = {
                 "success": True,
                 "address": address,
                 "balance": usdt_balance,
-                "ton_balance": ton_balance,
+                "ton_balance": round(ton_balance, 4),
                 "usdt_balance": usdt_balance,
                 "currency": "USDT"
             }
+            
+            # Save to cache
+            if not hasattr(get_hot_wallet_balance, '_cache'):
+                get_hot_wallet_balance._cache = {}
+            get_hot_wallet_balance._cache[cache_key] = {
+                'time': datetime.now(timezone.utc).timestamp(),
+                'data': result
+            }
+            
+            return result
+            
     except Exception as e:
         return {"balance": 0, "ton_balance": 0, "usdt_balance": 0, "currency": "USDT", "error": str(e)}
 
