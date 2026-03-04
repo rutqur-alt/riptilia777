@@ -282,6 +282,14 @@ async def get_merchant_trades(
             if inv["id"] in existing_invoice_ids:
                 continue
             
+            # IMPORTANT: If invoice has a trade_id, check if trade exists in DB
+            # If trade exists and has different status, skip this invoice to avoid duplicates
+            if inv.get("trade_id"):
+                existing_trade = await db.trades.find_one({"id": inv["trade_id"]}, {"_id": 0, "status": 1})
+                if existing_trade:
+                    # Skip - trade will be shown from trades collection with correct status
+                    continue
+            
             # Find related trade if exists
             related_trade = None
             if inv.get("trade_id"):
