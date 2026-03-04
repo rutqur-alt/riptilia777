@@ -66,6 +66,13 @@ export default function AdminFinancePage() {
   const [newWalletData, setNewWalletData] = useState(null);
   const [seedCopied, setSeedCopied] = useState(false);
   const [seedConfirmed, setSeedConfirmed] = useState(false);
+  
+  // Hot wallet withdrawal
+  const [showHotWalletWithdraw, setShowHotWalletWithdraw] = useState(false);
+  const [hwWithdrawCurrency, setHwWithdrawCurrency] = useState('USDT');
+  const [hwWithdrawAddress, setHwWithdrawAddress] = useState('');
+  const [hwWithdrawAmount, setHwWithdrawAmount] = useState('');
+  const [hwWithdrawLoading, setHwWithdrawLoading] = useState(false);
 
   const isAdmin = user?.admin_role === 'owner' || user?.admin_role === 'admin';
 
@@ -276,6 +283,58 @@ export default function AdminFinancePage() {
       navigator.clipboard.writeText(newWalletData.mnemonic);
       setSeedCopied(true);
       toast.success('Seed-фраза скопирована в буфер обмена');
+    }
+  };
+
+  const handleHotWalletWithdraw = async () => {
+    if (!hwWithdrawAddress || !hwWithdrawAmount) {
+      toast.error('Заполните адрес и сумму');
+      return;
+    }
+    
+    const amount = parseFloat(hwWithdrawAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Неверная сумма');
+      return;
+    }
+    
+    // Check balance
+    if (hwWithdrawCurrency === 'USDT' && amount > (hotWallet?.balance_usdt || 0)) {
+      toast.error('Недостаточно USDT на кошельке');
+      return;
+    }
+    if (hwWithdrawCurrency === 'TON' && amount > (hotWallet?.balance_ton || 0)) {
+      toast.error('Недостаточно TON на кошельке');
+      return;
+    }
+    
+    if (!confirm(`Вы уверены что хотите отправить ${amount} ${hwWithdrawCurrency} на адрес ${hwWithdrawAddress}?`)) {
+      return;
+    }
+    
+    setHwWithdrawLoading(true);
+    
+    try {
+      const endpoint = hwWithdrawCurrency === 'USDT' 
+        ? `${API}/admin/wallet/send-usdt`
+        : `${API}/admin/wallet/send-ton`;
+      
+      const res = await axios.post(endpoint, {
+        to_address: hwWithdrawAddress,
+        amount: amount
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      toast.success(`${amount} ${hwWithdrawCurrency} отправлено! TX: ${res.data.tx_hash || 'pending'}`);
+      setShowHotWalletWithdraw(false);
+      setHwWithdrawAddress('');
+      setHwWithdrawAmount('');
+      fetchData(); // Refresh balances
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Ошибка отправки');
+    } finally {
+      setHwWithdrawLoading(false);
     }
   };
 
@@ -909,7 +968,14 @@ export default function AdminFinancePage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-3">
+                <div className="flex gap-3 flex-wrap">
+                  <Button 
+                    onClick={() => setShowHotWalletWithdraw(true)} 
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <ArrowUpCircle className="w-4 h-4 mr-2" />
+                    Вывести средства
+                  </Button>
                   <Button variant="outline" onClick={() => setShowWalletModal(true)} className="flex-1">
                     <Settings className="w-4 h-4 mr-2" />
                     Сменить кошелёк
@@ -919,6 +985,116 @@ export default function AdminFinancePage() {
                     Сгенерировать новый
                   </Button>
                 </div>
+
+                {/* Hot Wallet Withdraw Modal */}
+                {showHotWalletWithdraw && (
+                  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                    <div className="bg-zinc-900 p-6 rounded-xl max-w-lg w-full mx-4 border border-emerald-500/30">
+                      <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                        <ArrowUpCircle className="w-6 h-6 text-emerald-400" />
+                        Вывод с Hot Wallet
+                      </h3>
+                      
+                      <div className="bg-zinc-800 p-3 rounded-lg mb-4">
+                        <p className="text-sm text-zinc-400">Доступно на кошельке:</p>
+                        <div className="flex gap-4 mt-1">
+                          <span className="text-emerald-400 font-mono">{formatUSDT(hotWallet?.balance_usdt || 0)}</span>
+                          <span className="text-blue-400 font-mono">{(hotWallet?.balance_ton || 0).toFixed(4)} TON</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm text-zinc-400 mb-1 block">Валюта</label>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              onClick={() => setHwWithdrawCurrency('USDT')}
+                              className={`flex-1 ${hwWithdrawCurrency === 'USDT' ? 'bg-emerald-600' : 'bg-zinc-700'}`}
+                            >
+                              USDT
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() => setHwWithdrawCurrency('TON')}
+                              className={`flex-1 ${hwWithdrawCurrency === 'TON' ? 'bg-blue-600' : 'bg-zinc-700'}`}
+                            >
+                              TON
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label className="text-sm text-zinc-400 mb-1 block">Адрес получателя</label>
+                          <Input
+                            value={hwWithdrawAddress}
+                            onChange={(e) => setHwWithdrawAddress(e.target.value)}
+                            placeholder="EQ... или UQ..."
+                            className="bg-zinc-800 border-zinc-700 font-mono"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="text-sm text-zinc-400 mb-1 block">
+                            Сумма ({hwWithdrawCurrency})
+                          </label>
+                          <Input
+                            type="number"
+                            step={hwWithdrawCurrency === 'USDT' ? '0.01' : '0.001'}
+                            value={hwWithdrawAmount}
+                            onChange={(e) => setHwWithdrawAmount(e.target.value)}
+                            placeholder={hwWithdrawCurrency === 'USDT' ? '10.00' : '0.5'}
+                            className="bg-zinc-800 border-zinc-700 font-mono"
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => setHwWithdrawAmount(
+                              hwWithdrawCurrency === 'USDT' 
+                                ? (hotWallet?.balance_usdt || 0).toString()
+                                : (hotWallet?.balance_ton || 0).toString()
+                            )}
+                            className="text-xs text-emerald-400 hover:underline mt-1"
+                          >
+                            Максимум
+                          </button>
+                        </div>
+                        
+                        {hwWithdrawCurrency === 'USDT' && (
+                          <p className="text-xs text-zinc-500">
+                            Комиссия сети: ~0.05 TON (будет списано с баланса TON)
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div className="flex gap-3 mt-6">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            setShowHotWalletWithdraw(false);
+                            setHwWithdrawAddress('');
+                            setHwWithdrawAmount('');
+                          }} 
+                          className="flex-1"
+                          disabled={hwWithdrawLoading}
+                        >
+                          Отмена
+                        </Button>
+                        <Button 
+                          onClick={handleHotWalletWithdraw}
+                          disabled={hwWithdrawLoading || !hwWithdrawAddress || !hwWithdrawAmount}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                        >
+                          {hwWithdrawLoading ? (
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <ArrowUpCircle className="w-4 h-4 mr-2" />
+                          )}
+                          Отправить
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Wallet Change Modal */}
                 {showWalletModal && (
