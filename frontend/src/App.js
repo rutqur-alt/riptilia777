@@ -17,7 +17,6 @@ import TradePage from "@/pages/TradePage";
 import PayPage from "@/pages/PayPage";
 import DepositPage from "@/pages/DepositPage";
 import DemoShop from "@/pages/DemoShop";
-import BuyerShop from "@/pages/BuyerShop";
 import ApiDocs from "@/pages/ApiDocs";
 import DirectBuyPage from "@/pages/DirectBuyPage";
 import Forum from "@/pages/Forum";
@@ -526,7 +525,6 @@ function App() {
             <Route path="/dispute/:tradeId" element={<PublicDisputePage />} />
             <Route path="/select-operator/:invoiceId" element={<SelectOperatorPage />} />
             <Route path="/demo" element={<DemoShop />} />
-            <Route path="/shop" element={<BuyerShop />} />
             <Route path="/docs" element={<ApiDocs />} />
             <Route path="/buy/:offerId" element={<DirectBuyPage />} />
             <Route 
