@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { 
   Users, Search, Filter, Ban, Lock, Unlock, DollarSign, Eye, Trash2,
-  Key, UserCheck, UserX, XCircle, Briefcase, TrendingUp, Activity, Copy
+  Key, UserCheck, UserX, XCircle, Briefcase, TrendingUp, Activity, Copy,
+  ShieldCheck
 } from "lucide-react";
 import { useAuth, API } from "@/App";
 import axios from "axios";
@@ -261,6 +262,19 @@ export default function UsersManagement() {
     }
   };
 
+  const handleToggleTrusted = async (userId, isTrusted) => {
+    try {
+      await axios.post(`${API}/super-admin/users/${userId}/toggle-trusted`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(isTrusted ? "Пользователь больше не доверенный" : "Пользователь теперь доверенный");
+      fetchUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Ошибка");
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     !search || 
     u.login?.toLowerCase().includes(search.toLowerCase()) ||
@@ -365,6 +379,16 @@ export default function UsersManagement() {
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </Button>
+                      {isFullAdmin && (u.user_type === "trader" || u.user_type === "merchant") && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleToggleTrusted(u.id, u.is_trusted)}
+                          className={`h-7 w-7 p-0 ${u.is_trusted ? 'bg-[#10B981]/30 hover:bg-[#10B981]/40 text-[#10B981]' : 'bg-[#EF4444]/20 hover:bg-[#EF4444]/30 text-[#EF4444]'}`}
+                          title={u.is_trusted ? "Доверенный (крупные выводы без подтверждения)" : "Не доверенный (крупные выводы требуют подтверждения)"}
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                       {isFullAdmin && (
                         <>
                           <Button

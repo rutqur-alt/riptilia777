@@ -441,6 +441,26 @@ async def toggle_balance_lock(user_id: str, user: dict = Depends(require_admin_l
     raise HTTPException(status_code=404, detail="Пользователь не найден")
 
 
+@router.post("/users/{user_id}/toggle-trusted")
+async def toggle_trusted_user(user_id: str, user: dict = Depends(require_admin_level(80))):
+    """Toggle trusted status - trusted users can withdraw large amounts without admin approval"""
+    trader = await db.traders.find_one({"id": user_id})
+    if trader:
+        current = trader.get("is_trusted", False)
+        await db.traders.update_one({"id": user_id}, {"$set": {"is_trusted": not current}})
+        await log_admin_action(user["id"], "toggle_trusted", "trader", user_id, {"trusted": not current})
+        return {"status": "success", "is_trusted": not current}
+    
+    merchant = await db.merchants.find_one({"id": user_id})
+    if merchant:
+        current = merchant.get("is_trusted", False)
+        await db.merchants.update_one({"id": user_id}, {"$set": {"is_trusted": not current}})
+        await log_admin_action(user["id"], "toggle_trusted", "merchant", user_id, {"trusted": not current})
+        return {"status": "success", "is_trusted": not current}
+    
+    raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, user: dict = Depends(require_admin_level(100))):
     """Delete user permanently (owner only)"""

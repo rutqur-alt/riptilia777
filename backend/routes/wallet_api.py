@@ -235,16 +235,19 @@ async def withdraw_ton(
         # Get user's current balance from MongoDB FIRST
         trader = await mongodb.traders.find_one({"id": user_id})
         is_trader = bool(trader)
+        is_trusted = False
         
         if trader:
             current_balance = trader.get("balance_usdt", 0) or 0
             frozen_balance = trader.get("frozen_usdt", 0) or 0
+            is_trusted = trader.get("is_trusted", False)
         else:
             merchant = await mongodb.merchants.find_one({"id": user_id})
             if not merchant:
                 raise HTTPException(status_code=404, detail="Пользователь не найден")
             current_balance = merchant.get("balance_usdt", 0) or 0
             frozen_balance = merchant.get("frozen_usdt", 0) or 0
+            is_trusted = merchant.get("is_trusted", False)
         
         available_balance = current_balance - frozen_balance
         
@@ -295,6 +298,10 @@ async def withdraw_ton(
             )
         
         # Balance frozen successfully - now create withdrawal request
+        # Trusted users get auto-approved status
+        withdrawal_status = "approved" if is_trusted else "pending"
+        requires_approval = not is_trusted
+        
         withdrawal_doc = {
             "id": request_id,
             "user_id": user_id,
@@ -304,8 +311,9 @@ async def withdraw_ton(
             "total_frozen": total_amount,
             "to_address": data.to_address,
             "comment": data.comment or '',
-            "status": "pending",
-            "requires_approval": True,
+            "status": withdrawal_status,
+            "requires_approval": requires_approval,
+            "auto_approved": is_trusted,
             "created_at": now,
             "updated_at": now
         }
@@ -320,10 +328,10 @@ async def withdraw_ton(
             "fee": WITHDRAWAL_FEE,
             "currency": "USDT",
             "to_address": data.to_address,
-            "status": "pending",
+            "status": withdrawal_status,
             "withdrawal_id": request_id,
             "created_at": now,
-            "description": f"Запрос на вывод {data.amount} USDT (комиссия {WITHDRAWAL_FEE} USDT)"
+            "description": f"Запрос на вывод {data.amount} USDT (комиссия {WITHDRAWAL_FEE} USDT)" + (" [авто-одобрен]" if is_trusted else "")
         }
         await mongodb.transactions.insert_one(tx_doc)
         
@@ -336,17 +344,24 @@ async def withdraw_ton(
         new_balance_val = updated.get("balance_usdt", 0) or 0
         new_frozen_val = updated.get("frozen_usdt", 0) or 0
         
+        # Different messages for trusted and regular users
+        if is_trusted:
+            message = "Заявка на вывод автоматически одобрена. Средства будут отправлены в ближайшее время."
+        else:
+            message = "Заявка на вывод создана. Ожидает одобрения администратора."
+        
         return {
             "success": True,
             "withdrawal": {
                 "id": request_id,
                 "amount": data.amount,
                 "to_address": data.to_address,
-                "status": "pending",
-                "requires_approval": True,
+                "status": withdrawal_status,
+                "requires_approval": requires_approval,
+                "auto_approved": is_trusted,
                 "frozen_amount": data.amount
             },
-            "message": "Заявка на вывод создана. Ожидает одобрения администратора.",
+            "message": message,
             "new_balance": {
                 "available": new_balance_val - new_frozen_val,
                 "frozen": new_frozen_val
