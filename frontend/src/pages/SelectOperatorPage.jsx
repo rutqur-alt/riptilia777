@@ -999,9 +999,6 @@ export default function SelectOperatorPage() {
 
   // ========== DISPUTED ==========
   if (step === "disputed") {
-    // Генерируем ссылку если её нет
-    const link = disputeLink || `${window.location.origin}/dispute/${trade?.id}?buyer=true`;
-    
     return (
       <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4">
         <div className="text-center max-w-md w-full">
@@ -1009,38 +1006,7 @@ export default function SelectOperatorPage() {
             <AlertTriangle className="w-10 h-10 text-[#F59E0B]" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">Спор открыт</h1>
-          <p className="text-[#71717A] mb-6">Модератор рассмотрит вашу ситуацию</p>
-          
-          <div className="bg-[#121212] rounded-xl p-4 border border-white/5 text-left">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[#71717A] text-sm">Постоянная ссылка на спор:</span>
-              <span className="text-[#10B981] text-xs">Активна до решения</span>
-            </div>
-            <div className="bg-[#0A0A0A] rounded-lg p-3 mb-3">
-              <code className="text-xs text-white break-all">{link}</code>
-            </div>
-            <div className="flex gap-2">
-              <Button 
-                onClick={() => copy(link)} 
-                variant="outline" 
-                className="flex-1 border-white/10 text-white hover:bg-white/5"
-               title="Скопировать в буфер обмена">
-                <Copy className="w-4 h-4 mr-2" />
-                Копировать
-              </Button>
-              <Button 
-                onClick={() => window.open(link, '_blank')}
-                className="flex-1 bg-[#7C3AED] hover:bg-[#6D28D9]"
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Открыть
-              </Button>
-            </div>
-          </div>
-          
-          <p className="text-[#52525B] text-xs mt-4">
-            Сохраните ссылку — она будет работать пока спор не будет решён
-          </p>
+          <p className="text-[#71717A]">Модератор рассмотрит вашу ситуацию</p>
         </div>
       </div>
     );
