@@ -836,6 +836,13 @@ async def cancel_trade(trade_id: str, user: dict = Depends(require_role(["trader
         {"$set": {"status": "cancelled", "cancelled_at": now.isoformat()}}
     )
     
+    # Update invoice status to cancelled
+    if trade.get("invoice_id"):
+        await db.merchant_invoices.update_one(
+            {"id": trade["invoice_id"]},
+            {"$set": {"status": "cancelled", "cancelled_at": now.isoformat()}}
+        )
+    
     # System message
     system_msg = {
         "id": str(uuid.uuid4()),
@@ -1282,6 +1289,13 @@ async def cancel_trade_client(trade_id: str):
         {"id": trade_id},
         {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat(), "cancelled_by": "client"}}
     )
+    
+    # Update invoice status to cancelled
+    if trade.get("invoice_id"):
+        await db.merchant_invoices.update_one(
+            {"id": trade["invoice_id"]},
+            {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc).isoformat()}}
+        )
     
     # System message
     system_msg = {
@@ -1735,6 +1749,13 @@ async def resolve_dispute(trade_id: str, resolution: str, user: dict = Depends(r
             "dispute_resolution": resolution
         }}
     )
+    
+    # Update invoice status to match trade status
+    if trade.get("invoice_id"):
+        await db.merchant_invoices.update_one(
+            {"id": trade["invoice_id"]},
+            {"$set": {"status": new_status, "dispute_resolved_at": datetime.now(timezone.utc).isoformat()}}
+        )
     
     # Send system message
     system_msg = {
