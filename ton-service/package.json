@@ -1,0 +1,26 @@
+{
+  "name": "ton-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": ["ton", "blockchain", "finance"],
+  "author": "Reptiloid Exchange",
+  "license": "ISC",
+  "description": "TON Blockchain microservice for Reptiloid Exchange",
+  "dependencies": {
+    "@ton/core": "^0.63.1",
+    "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^16.2.2",
+    "axios": "^1.13.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "pg": "^8.19.0",
+    "redis": "^5.11.0",
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0"
+  }
+}

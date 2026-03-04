@@ -43,6 +43,13 @@ The merchant-facing API documentation has been completely rewritten to be 100% a
 - [x] **API Documentation rewrite (March 4, 2026)**
 - [x] **Trader dashboard: base rate display (March 4, 2026)** - Shows USDT/RUB rate
 - [x] **Notification links fixed (March 4, 2026)** - All notification links now lead to specific trade pages
+- [x] **TON Finance System - Sprint 1 (March 4, 2026)**:
+  - PostgreSQL database for financial data (ACID transactions)
+  - Node.js TON microservice (port 8002) for blockchain interactions
+  - Hot wallet generated on Testnet
+  - Deposit listener (polling every 5 sec)
+  - Python API integration (/api/wallet/*)
+  - User balance and transaction tracking
 
 ## Known Technical Debt
 - **Duplicate API Endpoints**: At least 4 endpoints for resolving disputes exist and need consolidation

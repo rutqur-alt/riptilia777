@@ -1,0 +1,5 @@
+node_modules/
+.env
+*.log
+ton-service.log
+wallet-backup.json
