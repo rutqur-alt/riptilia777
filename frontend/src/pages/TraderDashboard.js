@@ -62,7 +62,7 @@ export default function TraderDashboard() {
     return {
       trading: path.startsWith("/trader/offers") || path.startsWith("/trader/sales") || path.startsWith("/trader/purchases") || path.startsWith("/trader/payment-details") || path.startsWith("/trader/history") || path.startsWith("/trader/trading"),
       market: path.startsWith("/trader/my-purchases") || path.startsWith("/trader/shop") || path.startsWith("/marketplace") || path.startsWith("/trader/shop-chats"),
-      finances: path.startsWith("/trader/transactions") || path.startsWith("/trader/transfers") || (path === "/trader"),
+      finances: path.startsWith("/trader/transactions") || (path === "/trader"),
       other: false,
       account: path.startsWith("/trader/account") || path.startsWith("/trader/settings")
     };
@@ -447,7 +447,6 @@ export default function TraderDashboard() {
           <Route path="shop" element={<TraderShop />} />
           <Route path="my-purchases" element={<MyMarketPurchases />} />
           <Route path="withdraw" element={<TraderWithdraw />} />
-          <Route path="transfers" element={<TraderTransfers />} />
           <Route path="messages" element={<MyMessagesPage />} />
           <Route path="referral" element={<TraderReferral />} />
           <Route path="settings" element={<TraderSettings />} />
@@ -2153,153 +2152,6 @@ function TraderWithdraw() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ==================== TRADER TRANSFERS ====================
-function TraderTransfers() {
-  const { token } = useAuth();
-  const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("");
-  const [balance, setBalance] = useState(0);
-  const [transfers, setTransfers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
-
-  useEffect(() => {
-    fetchBalance();
-  }, []);
-
-  const fetchBalance = async () => {
-    try {
-      const response = await axios.get(`${API}/traders/me`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setBalance(response.data.balance_usdt);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleSearch = async (query) => {
-    setRecipient(query);
-    if (query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    try {
-      const response = await axios.get(`${API}/users/search?query=${query}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setSearchResults(response.data || []);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleTransfer = async (e) => {
-    e.preventDefault();
-    if (!recipient || !amount || parseFloat(amount) <= 0) {
-      toast.error("Заполните все поля");
-      return;
-    }
-    if (parseFloat(amount) > balance) {
-      toast.error("Недостаточно средств");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await axios.post(`${API}/transfers/send`, {
-        recipient_nickname: recipient,
-        amount: parseFloat(amount)
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success(`Переведено ${amount} USDT пользователю @${recipient}`);
-      setRecipient("");
-      setAmount("");
-      fetchBalance();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || "Ошибка перевода");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white font-['Unbounded']">Переводы</h1>
-        <p className="text-[#71717A]">Перевод средств другим пользователям</p>
-      </div>
-
-      {/* Balance Info */}
-      <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
-        <div className="flex items-center justify-between">
-          <div className="text-[#71717A]">Доступно для перевода</div>
-          <div className="text-xl font-bold text-[#10B981] font-['JetBrains_Mono']">{balance.toFixed(2)} USDT</div>
-        </div>
-      </div>
-
-      {/* Transfer Form */}
-      <div className="bg-[#121212] border border-white/5 rounded-2xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">Новый перевод</h3>
-        <form onSubmit={handleTransfer} className="space-y-4">
-          <div className="relative">
-            <label className="block text-sm text-[#A1A1AA] mb-2">Получатель (никнейм)</label>
-            <Input
-              value={recipient}
-              onChange={(e) => handleSearch(e.target.value)}
-              placeholder="@username"
-              className="bg-[#0A0A0A] border-white/10 text-white h-12 rounded-xl"
-            />
-            {searchResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-[#1A1A1A] border border-white/10 rounded-xl overflow-hidden">
-                {searchResults.map((user) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    onClick={() => { setRecipient(user.nickname); setSearchResults([]); }}
-                    className="w-full px-4 py-3 text-left hover:bg-white/5 flex items-center gap-2"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-[#7C3AED]/20 flex items-center justify-center text-[#A78BFA] text-sm">
-                      {user.nickname[0].toUpperCase()}
-                    </div>
-                    <span className="text-white">@{user.nickname}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm text-[#A1A1AA] mb-2">Сумма (USDT)</label>
-            <Input
-              type="number"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="bg-[#0A0A0A] border-white/10 text-white h-12 rounded-xl font-['JetBrains_Mono']"
-            />
-          </div>
-          <Button 
-            type="submit" 
-            disabled={loading || !recipient || !amount}
-            className="w-full bg-[#7C3AED] hover:bg-[#6D28D9] h-12 rounded-xl"
-          >
-            {loading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <ArrowUpRight className="w-4 h-4 mr-2" />
-                Перевести
-              </>
-            )}
-          </Button>
-        </form>
-      </div>
     </div>
   );
 }

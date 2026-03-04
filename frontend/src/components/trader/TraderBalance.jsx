@@ -160,7 +160,7 @@ export default function TraderBalance() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <Link to="/trader/offers">
           <div className="bg-[#121212] border border-white/5 hover:border-[#7C3AED]/50 rounded-xl p-4 transition-colors h-full">
             <div className="flex items-center gap-3">
@@ -196,19 +196,6 @@ export default function TraderBalance() {
               <div>
                 <div className="text-white font-medium text-sm">Реквизиты</div>
                 <div className="text-xs text-[#71717A]">Способы оплаты</div>
-              </div>
-            </div>
-          </div>
-        </Link>
-        <Link to="/trader/transfers">
-          <div className="bg-[#121212] border border-white/5 hover:border-[#3B82F6]/50 rounded-xl p-4 transition-colors h-full">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-[#3B82F6]/10 flex items-center justify-center">
-                <ArrowUpRight className="w-4 h-4 text-[#3B82F6]" />
-              </div>
-              <div>
-                <div className="text-white font-medium text-sm">Переводы</div>
-                <div className="text-xs text-[#71717A]">Другим пользователям</div>
               </div>
             </div>
           </div>
