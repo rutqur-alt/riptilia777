@@ -366,8 +366,9 @@ export default function UserFinancePage() {
                   <SelectContent>
                     <SelectItem value="all">Все типы</SelectItem>
                     <SelectItem value="deposit">Пополнение</SelectItem>
-                    <SelectItem value="withdraw">Вывод</SelectItem>
-                    <SelectItem value="fee">Комиссия</SelectItem>
+                    <SelectItem value="withdrawal">Вывод</SelectItem>
+                    <SelectItem value="refund">Возврат</SelectItem>
+                    <SelectItem value="trade">Сделка P2P</SelectItem>
                   </SelectContent>
                 </Select>
                 
@@ -377,8 +378,9 @@ export default function UserFinancePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Все статусы</SelectItem>
-                    <SelectItem value="success">Успешно</SelectItem>
+                    <SelectItem value="completed">Выполнено</SelectItem>
                     <SelectItem value="pending">Ожидает</SelectItem>
+                    <SelectItem value="rejected">Отклонено</SelectItem>
                     <SelectItem value="failed">Ошибка</SelectItem>
                   </SelectContent>
                 </Select>

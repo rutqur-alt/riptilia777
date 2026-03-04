@@ -232,12 +232,17 @@ export default function MerchantDashboard() {
         {!isPending && (
           <div className="p-4 border-b border-white/5">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-[10px] text-[#52525B] uppercase tracking-wider">Баланс</div>
+              <div className="text-[10px] text-[#52525B] uppercase tracking-wider">Доступно</div>
               <EventNotificationDropdown token={token} role="merchant" />
             </div>
             <div className="text-xl font-bold text-white font-['JetBrains_Mono']">
-              {(user?.balance_usdt || 0).toFixed(2)} <span className="text-[#F97316]">USDT</span>
+              {((user?.balance_usdt || 0) - (user?.frozen_usdt || 0)).toFixed(2)} <span className="text-[#F97316]">USDT</span>
             </div>
+            {(user?.frozen_usdt || 0) > 0 && (
+              <div className="text-xs text-yellow-500 mt-1">
+                +{(user?.frozen_usdt || 0).toFixed(2)} заморожено
+              </div>
+            )}
           </div>
         )}
 

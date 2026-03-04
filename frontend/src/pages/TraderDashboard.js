@@ -50,6 +50,7 @@ export default function TraderDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const [balance, setBalance] = useState(null);
+  const [frozenBalance, setFrozenBalance] = useState(0);
   const [traderInfo, setTraderInfo] = useState(null);
   const [sidebarBadges, setSidebarBadges] = useState({});
   
@@ -120,7 +121,10 @@ export default function TraderDashboard() {
         const response = await axios.get(`${API}/traders/me`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        setBalance(response.data.balance_usdt);
+        const totalBalance = response.data.balance_usdt || 0;
+        const frozen = response.data.frozen_usdt || 0;
+        setBalance(totalBalance - frozen); // Available balance
+        setFrozenBalance(frozen);
         setTraderInfo(response.data);
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -314,7 +318,7 @@ export default function TraderDashboard() {
         <div className="p-4 border-b border-white/5">
           <div className="bg-gradient-to-br from-[#7C3AED]/20 to-[#A855F7]/10 border border-[#7C3AED]/30 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-[#A78BFA]">Баланс</span>
+              <span className="text-xs text-[#A78BFA]">Доступно</span>
               <EventNotificationDropdown token={token} role="trader" />
             </div>
             <div className="flex items-baseline gap-2">
@@ -323,6 +327,11 @@ export default function TraderDashboard() {
               </span>
               <span className="text-sm text-[#71717A]">USDT</span>
             </div>
+            {frozenBalance > 0 && (
+              <div className="text-xs text-yellow-500 mt-2">
+                +{frozenBalance.toFixed(2)} заморожено
+              </div>
+            )}
           </div>
         </div>
 

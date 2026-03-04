@@ -148,15 +148,25 @@ async def get_wallet_balance(user: dict = Depends(get_current_user_from_token)):
 async def get_wallet_transactions(
     limit: int = 50,
     offset: int = 0,
+    type: str = None,
+    status: str = None,
     user: dict = Depends(get_current_user_from_token)
 ):
-    """Get user's transaction history"""
+    """Get user's transaction history with optional filters"""
     try:
         result = await get_user_transactions(user['id'], limit, offset)
+        transactions = result.get('transactions', [])
+        
+        # Apply filters
+        if type and type != 'all':
+            transactions = [t for t in transactions if t.get('type') == type]
+        if status and status != 'all':
+            transactions = [t for t in transactions if t.get('status') == status]
+        
         return {
             "success": True,
-            "transactions": result.get('transactions', []),
-            "count": result.get('count', 0)
+            "transactions": transactions,
+            "count": len(transactions)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -283,7 +293,6 @@ async def withdraw_ton(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
