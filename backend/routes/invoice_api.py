@@ -477,28 +477,9 @@ async def create_invoice(
     await db.payment_links.insert_one(payment_link)
     
     # 12. Build payment URL
-    base_url = ""
-    if http_request:
-        origin = http_request.headers.get("origin", "")
-        if origin:
-            base_url = origin
-        else:
-            # Use X-Forwarded headers if behind proxy
-            forwarded_proto = http_request.headers.get("x-forwarded-proto", "https")
-            forwarded_host = http_request.headers.get("x-forwarded-host", "")
-            if forwarded_host:
-                base_url = f"{forwarded_proto}://{forwarded_host}"
-            else:
-                host = http_request.headers.get("host", "")
-                if host and "preview.emergentagent.com" in host:
-                    base_url = f"https://{host}"
-                elif host:
-                    scheme = "https" if http_request.url.scheme == "https" or "443" in host else "http"
-                    base_url = f"{scheme}://{host}"
-    
-    if not base_url:
-        import os
-        base_url = os.environ.get("SITE_URL", "https://reptiloid-preview.preview.emergentagent.com")
+    # Всегда используем правильный публичный домен для payment_url
+    import os
+    base_url = os.environ.get("SITE_URL", "https://reptiloid-preview.preview.emergentagent.com")
     
     # URL на страницу выбора оператора
     payment_url = f"{base_url}/select-operator/{invoice_id}"
