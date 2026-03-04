@@ -7,7 +7,6 @@
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
-const Redis = require('redis');
 const winston = require('winston');
 const { v4: uuidv4 } = require('uuid');
 
@@ -24,8 +23,8 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ filename: '/app/ton-service/ton-service.log' }),
-    new winston.transports.File({ filename: '/app/ton-service/ton-error.log', level: 'error' }),
+    new winston.transports.File({ filename: '/app/ton-service/ton-service.log', maxsize: 5242880, maxFiles: 3 }),
+    new winston.transports.File({ filename: '/app/ton-service/ton-error.log', level: 'error', maxsize: 5242880, maxFiles: 3 }),
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
@@ -35,22 +34,20 @@ const logger = winston.createLogger({
   ]
 });
 
-// PostgreSQL connection
-const pgPool = new Pool({
-  host: process.env.POSTGRES_HOST || 'localhost',
-  port: process.env.POSTGRES_PORT || 5432,
-  database: process.env.POSTGRES_DB || 'reptiloid_finance',
-  user: process.env.POSTGRES_USER || 'finance_admin',
-  password: process.env.POSTGRES_PASSWORD
-});
-
-// Redis client
-let redisClient;
+// PostgreSQL connection (optional - graceful handling)
+let pgPool = null;
+let pgConnected = false;
 
 // TON Client
 let tonClient;
 let hotWallet;
 let hotWalletContract;
+
+// Rate limiting tracking
+let lastApiCall = 0;
+const MIN_API_INTERVAL = 2000; // Minimum 2 seconds between API calls
+let consecutiveErrors = 0;
+const MAX_CONSECUTIVE_ERRORS = 5;
 
 // Express app
 const app = express();
@@ -67,19 +64,68 @@ const apiKeyAuth = (req, res, next) => {
 };
 
 /**
- * Initialize TON Client
+ * Rate limit helper - ensures we don't hit toncenter limits
+ */
+async function waitForRateLimit() {
+  const now = Date.now();
+  const timeSinceLastCall = now - lastApiCall;
+  
+  // Add exponential backoff if we've had errors
+  const backoffMultiplier = Math.pow(2, Math.min(consecutiveErrors, 5));
+  const requiredInterval = MIN_API_INTERVAL * backoffMultiplier;
+  
+  if (timeSinceLastCall < requiredInterval) {
+    const waitTime = requiredInterval - timeSinceLastCall;
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  lastApiCall = Date.now();
+}
+
+/**
+ * Initialize TON Client with rate limiting
  */
 async function initTonClient() {
   const endpoint = process.env.TON_NETWORK === 'mainnet' 
     ? 'https://toncenter.com/api/v2/jsonRPC'
     : 'https://testnet.toncenter.com/api/v2/jsonRPC';
   
-  tonClient = new TonClient({
-    endpoint,
-    apiKey: process.env.TON_API_KEY || undefined
-  });
+  const config = { endpoint };
   
-  logger.info(`TON Client initialized for ${process.env.TON_NETWORK}`);
+  // Add API key if available (increases rate limits significantly)
+  if (process.env.TON_API_KEY) {
+    config.apiKey = process.env.TON_API_KEY;
+  }
+  
+  tonClient = new TonClient(config);
+  
+  logger.info(`TON Client initialized for ${process.env.TON_NETWORK}${process.env.TON_API_KEY ? ' with API key' : ' without API key (limited rate)'}`);
+}
+
+/**
+ * Initialize PostgreSQL connection
+ */
+async function initPostgres() {
+  try {
+    pgPool = new Pool({
+      host: process.env.POSTGRES_HOST || 'localhost',
+      port: process.env.POSTGRES_PORT || 5432,
+      database: process.env.POSTGRES_DB || 'reptiloid_finance',
+      user: process.env.POSTGRES_USER || 'finance_admin',
+      password: process.env.POSTGRES_PASSWORD,
+      max: 5,
+      connectionTimeoutMillis: 5000
+    });
+    
+    await pgPool.query('SELECT 1');
+    pgConnected = true;
+    logger.info('PostgreSQL connected');
+    return true;
+  } catch (error) {
+    logger.warn('PostgreSQL connection failed, running in standalone mode:', error.message);
+    pgConnected = false;
+    return false;
+  }
 }
 
 /**
@@ -137,12 +183,18 @@ async function initHotWallet() {
     
     logger.info(`Hot wallet loaded: ${address}`);
     
-    // Save to database
-    await pgPool.query(`
-      INSERT INTO wallet_config (wallet_type, address, public_key, network, is_active)
-      VALUES ('hot', $1, $2, $3, true)
-      ON CONFLICT (address) DO UPDATE SET is_active = true, current_seqno = wallet_config.current_seqno
-    `, [address, keyPair.publicKey.toString('hex'), process.env.TON_NETWORK]);
+    // Save to database if connected
+    if (pgConnected && pgPool) {
+      try {
+        await pgPool.query(`
+          INSERT INTO wallet_config (wallet_type, address, public_key, network, is_active)
+          VALUES ('hot', $1, $2, $3, true)
+          ON CONFLICT (address) DO UPDATE SET is_active = true, current_seqno = wallet_config.current_seqno
+        `, [address, keyPair.publicKey.toString('hex'), process.env.TON_NETWORK]);
+      } catch (dbError) {
+        logger.warn('Failed to save wallet to DB:', dbError.message);
+      }
+    }
     
     return hotWallet;
   } catch (error) {
@@ -152,44 +204,78 @@ async function initHotWallet() {
 }
 
 /**
- * Get wallet balance
+ * Get wallet balance with rate limiting and retries
  */
-async function getWalletBalance(address) {
-  try {
-    const addr = Address.parse(address);
-    const balance = await tonClient.getBalance(addr);
-    return fromNano(balance);
-  } catch (error) {
-    logger.error(`Error getting balance for ${address}:`, error);
-    throw error;
+async function getWalletBalance(address, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      await waitForRateLimit();
+      const addr = Address.parse(address);
+      const balance = await tonClient.getBalance(addr);
+      consecutiveErrors = 0; // Reset on success
+      return fromNano(balance);
+    } catch (error) {
+      consecutiveErrors++;
+      
+      if (error.message?.includes('429') || error.response?.status === 429) {
+        logger.warn(`Rate limited (attempt ${attempt + 1}/${retries}), waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+        continue;
+      }
+      
+      if (attempt === retries - 1) {
+        logger.error(`Error getting balance for ${address}:`, error.message);
+        throw error;
+      }
+    }
   }
 }
 
 /**
- * Get recent transactions for address
+ * Get recent transactions for address with rate limiting
  */
-async function getTransactions(address, limit = 20) {
-  try {
-    const addr = Address.parse(address);
-    const transactions = await tonClient.getTransactions(addr, { limit });
-    
-    return transactions.map(tx => ({
-      hash: tx.hash().toString('hex'),
-      lt: tx.lt.toString(),
-      timestamp: tx.now,
-      inMessage: tx.inMessage ? {
-        source: tx.inMessage.info.src?.toString(),
-        value: tx.inMessage.info.type === 'internal' ? fromNano(tx.inMessage.info.value.coins) : '0',
-        comment: tx.inMessage.body?.beginParse()?.loadStringTail() || null
-      } : null,
-      outMessages: tx.outMessages.values().map(msg => ({
-        destination: msg.info.dest?.toString(),
-        value: msg.info.type === 'internal' ? fromNano(msg.info.value.coins) : '0'
-      }))
-    }));
-  } catch (error) {
-    logger.error(`Error getting transactions for ${address}:`, error);
-    throw error;
+async function getTransactions(address, limit = 20, retries = 3) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      await waitForRateLimit();
+      const addr = Address.parse(address);
+      const transactions = await tonClient.getTransactions(addr, { limit });
+      consecutiveErrors = 0;
+      
+      return transactions.map(tx => ({
+        hash: tx.hash().toString('hex'),
+        lt: tx.lt.toString(),
+        timestamp: tx.now,
+        inMessage: tx.inMessage ? {
+          source: tx.inMessage.info.src?.toString(),
+          value: tx.inMessage.info.type === 'internal' ? fromNano(tx.inMessage.info.value.coins) : '0',
+          comment: (() => {
+            try {
+              return tx.inMessage.body?.beginParse()?.loadStringTail() || null;
+            } catch {
+              return null;
+            }
+          })()
+        } : null,
+        outMessages: tx.outMessages.values().map(msg => ({
+          destination: msg.info.dest?.toString(),
+          value: msg.info.type === 'internal' ? fromNano(msg.info.value.coins) : '0'
+        }))
+      }));
+    } catch (error) {
+      consecutiveErrors++;
+      
+      if (error.message?.includes('429') || error.response?.status === 429) {
+        logger.warn(`Rate limited on transactions (attempt ${attempt + 1}/${retries}), waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+        continue;
+      }
+      
+      if (attempt === retries - 1) {
+        logger.error(`Error getting transactions for ${address}:`, error.message);
+        throw error;
+      }
+    }
   }
 }
 
@@ -201,48 +287,24 @@ async function sendTon(toAddress, amount, comment = '') {
     throw new Error('Hot wallet not initialized');
   }
   
-  try {
-    const seqno = await hotWalletContract.getSeqno();
-    
-    await hotWalletContract.sendTransfer({
-      seqno,
-      secretKey: hotWallet.keyPair.secretKey,
-      messages: [
-        internal({
-          to: toAddress,
-          value: toNano(amount.toString()),
-          body: comment,
-          bounce: false
-        })
-      ]
-    });
-    
-    // Update seqno in database
-    await pgPool.query(`
-      UPDATE wallet_config SET current_seqno = $1 WHERE address = $2
-    `, [seqno + 1, hotWallet.address]);
-    
-    logger.info(`Sent ${amount} TON to ${toAddress} (seqno: ${seqno})`);
-    
-    // Wait a bit and check for transaction
-    await new Promise(resolve => setTimeout(resolve, 10000));
-    
-    // Try to get tx hash (simplified - in production would poll until confirmed)
-    const recentTx = await getTransactions(hotWallet.address, 5);
-    const matchingTx = recentTx.find(tx => 
-      tx.outMessages.some(m => m.destination === toAddress)
-    );
-    
-    return {
-      success: true,
-      seqno,
-      txHash: matchingTx?.hash || 'pending',
-      status: matchingTx ? 'sent' : 'pending'
-    };
-  } catch (error) {
-    logger.error(`Error sending TON to ${toAddress}:`, error);
-    throw error;
-  }
+  await waitForRateLimit();
+  
+  const seqno = await hotWalletContract.getSeqno();
+  
+  await hotWalletContract.sendTransfer({
+    seqno,
+    secretKey: hotWallet.keyPair.secretKey,
+    messages: [
+      internal({
+        to: Address.parse(toAddress),
+        value: toNano(amount.toString()),
+        body: comment
+      })
+    ]
+  });
+  
+  consecutiveErrors = 0;
+  return { success: true, seqno };
 }
 
 // ==================== API ENDPOINTS ====================
@@ -254,7 +316,10 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     network: process.env.TON_NETWORK,
-    hotWallet: hotWallet ? hotWallet.address : 'not configured'
+    hotWallet: hotWallet ? hotWallet.address : 'not configured',
+    pgConnected,
+    consecutiveErrors,
+    rateLimitBackoff: Math.pow(2, Math.min(consecutiveErrors, 5))
   });
 });
 
@@ -267,7 +332,7 @@ app.post('/generate-wallet', apiKeyAuth, async (req, res) => {
     
     logger.info(`Generated new wallet: ${walletData.address}`);
     
-    // Don't return secret key in response - save to file
+    // Save to file
     const fs = require('fs');
     fs.writeFileSync('/app/ton-service/wallet-backup.json', JSON.stringify({
       address: walletData.address,
@@ -301,15 +366,12 @@ app.get('/deposit-address/:userId', apiKeyAuth, async (req, res) => {
       return res.status(503).json({ error: 'Hot wallet not configured' });
     }
     
-    // User's unique comment for deposit identification
-    const comment = userId;
-    
     res.json({
       success: true,
       address: hotWallet.address,
-      comment: comment,
+      comment: userId,
       network: process.env.TON_NETWORK,
-      message: `Send TON to this address with comment: ${comment}`
+      message: `Send TON to this address with comment: ${userId}`
     });
   } catch (error) {
     logger.error('Error getting deposit address:', error);
@@ -401,14 +463,25 @@ app.post('/send-ton', apiKeyAuth, async (req, res) => {
     
     const result = await sendTon(to, amount, comment || '');
     
+    // Log to DB if connected
+    if (pgConnected && pgPool && txId) {
+      try {
+        await pgPool.query(`
+          UPDATE transactions SET status = 'success', updated_at = CURRENT_TIMESTAMP 
+          WHERE tx_id = $1
+        `, [txId]);
+      } catch (dbError) {
+        logger.warn('Failed to update transaction in DB:', dbError.message);
+      }
+    }
+    
+    logger.info(`Withdrawal sent: ${amount} TON to ${to}`);
+    
     res.json({
       success: true,
-      txId: txId || uuidv4(),
-      txHash: result.txHash,
-      status: result.status,
-      amount,
       to,
-      fee: 0.05 // Approximate network fee
+      amount,
+      seqno: result.seqno
     });
   } catch (error) {
     logger.error('Error sending TON:', error);
@@ -417,85 +490,39 @@ app.post('/send-ton', apiKeyAuth, async (req, res) => {
 });
 
 /**
- * Get user transactions from database
- */
-app.get('/user-transactions/:userId', apiKeyAuth, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
-    
-    const result = await pgPool.query(`
-      SELECT * FROM transactions 
-      WHERE user_id = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2 OFFSET $3
-    `, [userId, limit, offset]);
-    
-    res.json({
-      success: true,
-      userId,
-      count: result.rows.length,
-      transactions: result.rows
-    });
-  } catch (error) {
-    logger.error('Error getting user transactions:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * Create user finance record (called by Python backend)
- */
-app.post('/create-user-finance', apiKeyAuth, async (req, res) => {
-  try {
-    const { userId } = req.body;
-    
-    if (!userId) {
-      return res.status(400).json({ error: 'Missing userId' });
-    }
-    
-    await pgPool.query(`
-      INSERT INTO users_finance (user_id) 
-      VALUES ($1) 
-      ON CONFLICT (user_id) DO NOTHING
-    `, [userId]);
-    
-    logger.info(`Created finance record for user: ${userId}`);
-    
-    res.json({ success: true, userId });
-  } catch (error) {
-    logger.error('Error creating user finance:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * Get user finance balance
+ * Get user balance from DB (if connected)
  */
 app.get('/user-balance/:userId', apiKeyAuth, async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const result = await pgPool.query(`
-      SELECT * FROM users_finance WHERE user_id = $1
-    `, [userId]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    if (!pgConnected || !pgPool) {
+      return res.status(503).json({ 
+        error: 'Database not connected',
+        balance_ton: 0,
+        balance_usdt: 0
+      });
     }
     
-    const user = result.rows[0];
+    const result = await pgPool.query(
+      'SELECT balance_ton, balance_usdt FROM users_finance WHERE user_id = $1',
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({
+        success: true,
+        user_id: userId,
+        balance_ton: 0,
+        balance_usdt: 0
+      });
+    }
     
     res.json({
       success: true,
-      userId,
-      balance_ton: parseFloat(user.balance_ton),
-      balance_usd: parseFloat(user.balance_usd),
-      frozen_ton: parseFloat(user.frozen_ton),
-      frozen_usd: parseFloat(user.frozen_usd),
-      available_ton: parseFloat(user.balance_ton) - parseFloat(user.frozen_ton),
-      available_usd: parseFloat(user.balance_usd) - parseFloat(user.frozen_usd)
+      user_id: userId,
+      balance_ton: parseFloat(result.rows[0].balance_ton),
+      balance_usdt: parseFloat(result.rows[0].balance_usdt)
     });
   } catch (error) {
     logger.error('Error getting user balance:', error);
@@ -507,14 +534,21 @@ app.get('/user-balance/:userId', apiKeyAuth, async (req, res) => {
 
 let lastProcessedLt = '0';
 let isListenerRunning = false;
+let depositListenerEnabled = true;
 
 async function processDeposits() {
-  if (!hotWallet || isListenerRunning) return;
+  if (!hotWallet || isListenerRunning || !depositListenerEnabled) return;
+  
+  // Skip if too many consecutive errors (backoff)
+  if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+    logger.warn(`Skipping deposit check due to ${consecutiveErrors} consecutive errors`);
+    return;
+  }
   
   isListenerRunning = true;
   
   try {
-    const transactions = await getTransactions(hotWallet.address, 50);
+    const transactions = await getTransactions(hotWallet.address, 20);
     
     for (const tx of transactions) {
       // Skip if already processed
@@ -528,68 +562,56 @@ async function processDeposits() {
         
         logger.info(`Incoming deposit: ${amount} TON from ${fromAddress}, comment: ${comment}`);
         
-        if (comment) {
-          // Try to match comment with user_id
-          const userResult = await pgPool.query(
-            'SELECT * FROM users_finance WHERE user_id = $1',
-            [comment]
-          );
-          
-          if (userResult.rows.length > 0) {
-            // Valid user deposit - credit balance
-            const txId = uuidv4();
+        if (pgConnected && pgPool && comment) {
+          try {
+            // Try to match comment with user_id
+            const userResult = await pgPool.query(
+              'SELECT * FROM users_finance WHERE user_id = $1',
+              [comment]
+            );
             
-            await pgPool.query('BEGIN');
-            
-            try {
-              // Create transaction record
-              await pgPool.query(`
-                INSERT INTO transactions (tx_id, user_id, type, amount, currency, tx_hash, from_address, to_address, comment, status)
-                VALUES ($1, $2, 'deposit', $3, 'TON', $4, $5, $6, $7, 'success')
-              `, [txId, comment, amount, tx.hash, fromAddress, hotWallet.address, comment]);
+            if (userResult.rows.length > 0) {
+              // Valid user deposit - credit balance
+              const txId = uuidv4();
               
-              // Update user balance
-              await pgPool.query(`
-                UPDATE users_finance 
-                SET balance_ton = balance_ton + $1,
-                    total_deposited_ton = total_deposited_ton + $1,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $2
-              `, [amount, comment]);
+              await pgPool.query('BEGIN');
               
-              await pgPool.query('COMMIT');
-              
-              logger.info(`Credited ${amount} TON to user ${comment}`);
-            } catch (error) {
-              await pgPool.query('ROLLBACK');
-              throw error;
+              try {
+                // Create transaction record
+                await pgPool.query(`
+                  INSERT INTO transactions (tx_id, user_id, type, amount, currency, tx_hash, from_address, to_address, comment, status)
+                  VALUES ($1, $2, 'deposit', $3, 'TON', $4, $5, $6, $7, 'success')
+                `, [txId, comment, amount, tx.hash, fromAddress, hotWallet.address, comment]);
+                
+                // Update user balance
+                await pgPool.query(`
+                  UPDATE users_finance 
+                  SET balance_ton = balance_ton + $1,
+                      total_deposited_ton = total_deposited_ton + $1,
+                      updated_at = CURRENT_TIMESTAMP
+                  WHERE user_id = $2
+                `, [amount, comment]);
+                
+                await pgPool.query('COMMIT');
+                
+                logger.info(`Credited ${amount} TON to user ${comment}`);
+              } catch (error) {
+                await pgPool.query('ROLLBACK');
+                throw error;
+              }
+            } else {
+              logger.warn(`Deposit with unknown comment: ${comment}, amount: ${amount} TON`);
             }
-          } else {
-            // Unknown comment - flag for review
-            const txId = uuidv4();
-            await pgPool.query(`
-              INSERT INTO transactions (tx_id, user_id, type, amount, currency, tx_hash, from_address, to_address, comment, status, error_message)
-              VALUES ($1, 'unknown', 'deposit', $2, 'TON', $3, $4, $5, $6, 'review', 'Unknown user_id in comment')
-            `, [txId, amount, tx.hash, fromAddress, hotWallet.address, comment]);
-            
-            logger.warn(`Deposit with unknown comment: ${comment}, amount: ${amount} TON`);
+          } catch (dbError) {
+            logger.error('Database error processing deposit:', dbError.message);
           }
-        } else {
-          // No comment - flag for review
-          const txId = uuidv4();
-          await pgPool.query(`
-            INSERT INTO transactions (tx_id, user_id, type, amount, currency, tx_hash, from_address, to_address, status, error_message)
-            VALUES ($1, 'unknown', 'deposit', $2, 'TON', $3, $4, $5, 'review', 'No comment provided')
-          `, [txId, amount, tx.hash, fromAddress, hotWallet.address]);
-          
-          logger.warn(`Deposit without comment from ${fromAddress}, amount: ${amount} TON`);
         }
       }
       
       lastProcessedLt = tx.lt;
     }
   } catch (error) {
-    logger.error('Error processing deposits:', error);
+    logger.error('Error processing deposits:', error.message);
   } finally {
     isListenerRunning = false;
   }
@@ -599,36 +621,29 @@ async function processDeposits() {
 
 async function startServer() {
   try {
-    // Test PostgreSQL connection
-    await pgPool.query('SELECT 1');
-    logger.info('PostgreSQL connected');
-    
-    // Initialize Redis
-    redisClient = Redis.createClient({
-      host: process.env.REDIS_HOST,
-      port: process.env.REDIS_PORT
-    });
-    await redisClient.connect();
-    logger.info('Redis connected');
-    
-    // Initialize TON client
+    // Initialize TON client (required)
     await initTonClient();
     
-    // Load hot wallet
+    // Load hot wallet (required)
     await initHotWallet();
     
-    // Start deposit listener
+    // Initialize PostgreSQL (optional)
+    await initPostgres();
+    
+    // Start deposit listener with longer interval to avoid rate limits
     if (hotWallet) {
-      setInterval(processDeposits, parseInt(process.env.DEPOSIT_POLL_INTERVAL) || 5000);
-      logger.info('Deposit listener started');
+      const pollInterval = parseInt(process.env.DEPOSIT_POLL_INTERVAL) || 30000; // 30 seconds default
+      setInterval(processDeposits, pollInterval);
+      logger.info(`Deposit listener started with ${pollInterval}ms interval`);
     }
     
     // Start Express server
     const PORT = process.env.PORT || 8002;
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       logger.info(`TON Service running on port ${PORT}`);
       logger.info(`Network: ${process.env.TON_NETWORK}`);
       logger.info(`Hot wallet: ${hotWallet ? hotWallet.address : 'NOT CONFIGURED'}`);
+      logger.info(`PostgreSQL: ${pgConnected ? 'connected' : 'not connected (standalone mode)'}`);
     });
     
   } catch (error) {
