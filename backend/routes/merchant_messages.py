@@ -239,21 +239,8 @@ async def get_merchant_trades(
             t["currency"] = "RUB"  # Show in RUB, not USDT
         trades.append(t)
     
-    # From crypto_orders collection (withdrawal requests)
-    crypto_query = {"merchant_id": user_id} if type == "sell" else {"buyer_id": user_id, "merchant_id": user_id}
-    crypto_orders = await db.crypto_orders.find(crypto_query, {"_id": 0}).sort("created_at", -1).to_list(100)
-    for o in crypto_orders:
-        # Find conversation
-        conv = await db.unified_conversations.find_one(
-            {"related_id": o["id"]},
-            {"_id": 0, "id": 1}
-        )
-        o["conversation_id"] = conv["id"] if conv else None
-        o["client_nickname"] = o.get("buyer_nickname")
-        o["amount"] = o.get("amount_usdt")
-        o["fiat_amount"] = o.get("amount_rub")
-        o["currency"] = "USDT"
-        trades.append(o)
+    # NOTE: crypto_orders НЕ добавляем здесь - они показываются в разделе "Заявки на выплаты"
+    # crypto_orders - это когда трейдер покупает USDT с баланса мерчанта
     
     # From merchant_invoices collection (Invoice API payments)
     # Skip invoices that already have a trade_id - they are already in trades list
