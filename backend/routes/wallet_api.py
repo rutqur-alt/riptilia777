@@ -315,15 +315,21 @@ async def get_admin_finance_analytics(user: dict = Depends(require_roles(["admin
 async def get_admin_hot_wallet_balance(user: dict = Depends(require_roles(["admin"]))):
     """Get hot wallet balance (admin only)"""
     try:
+        # Get balance and health info from TON service
         result = await get_hot_wallet_balance()
+        health = await get_ton_service_health()
+        
         balance = result.get('balance', 0)
+        network = health.get('network', 'unknown')
+        address = health.get('hotWallet', result.get('address', ''))
+        
         return {
             "success": True,
             "hot_wallet": {
-                "address": result.get('address', ''),
+                "address": address,
                 "balance_ton": balance,
                 "balance_usd": balance,
-                "network": "testnet"
+                "network": network
             }
         }
     except Exception as e:
@@ -741,14 +747,15 @@ async def generate_new_wallet(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== FULL ANALYTICS ====================
+# ==================== FULL ANALYTICS (OPTIMIZED) ====================
 
 @router.get("/admin/analytics/full")
 async def get_full_analytics(
     period: str = "7d",
     user: dict = Depends(require_roles(["admin"]))
 ):
-    """Get comprehensive financial analytics"""
+    """Get comprehensive financial analytics - OPTIMIZED with parallel queries"""
+    import asyncio
     from datetime import timedelta, timezone
     
     days = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
@@ -756,69 +763,90 @@ async def get_full_analytics(
     start_date = datetime.now(timezone.utc) - timedelta(days=period_days)
     
     try:
-        # Get balances
-        trader_pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance_usdt"}, "count": {"$sum": 1}}}]
-        trader_result = await mongodb.traders.aggregate(trader_pipeline).to_list(1)
-        traders_balance = trader_result[0]["total"] if trader_result else 0
-        traders_count = trader_result[0]["count"] if trader_result else 0
+        # Define all queries as async functions
+        async def get_traders_stats():
+            pipeline = [{"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$balance_usdt", 0]}}, "count": {"$sum": 1}}}]
+            result = await mongodb.traders.aggregate(pipeline).to_list(1)
+            return result[0] if result else {"total": 0, "count": 0}
         
-        merchant_pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance_usdt"}, "count": {"$sum": 1}}}]
-        merchant_result = await mongodb.merchants.aggregate(merchant_pipeline).to_list(1)
-        merchants_balance = merchant_result[0]["total"] if merchant_result else 0
-        merchants_count = merchant_result[0]["count"] if merchant_result else 0
+        async def get_merchants_stats():
+            pipeline = [{"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$balance_usdt", 0]}}, "count": {"$sum": 1}}}]
+            result = await mongodb.merchants.aggregate(pipeline).to_list(1)
+            return result[0] if result else {"total": 0, "count": 0}
         
-        total_user_balance = (traders_balance or 0) + (merchants_balance or 0)
+        async def get_hw_balance():
+            try:
+                hw_data = await get_hot_wallet_balance()
+                return hw_data.get('balance', 0)
+            except:
+                return 0
         
-        # Get hot wallet balance
-        hot_wallet_balance = 0
-        try:
-            hw_data = await get_hot_wallet_balance()
-            hot_wallet_balance = hw_data.get('balance', 0)
-        except:
-            pass
+        async def get_trades_stats():
+            # Use MongoDB aggregation for daily stats instead of Python filtering
+            pipeline = [
+                {"$match": {"status": "completed", "created_at": {"$gte": start_date.isoformat()}}},
+                {"$group": {
+                    "_id": {"$substr": ["$created_at", 0, 10]},
+                    "volume": {"$sum": {"$ifNull": ["$amount_usdt", 0]}},
+                    "fees_rub": {"$sum": {"$ifNull": ["$platform_fee_rub", 0]}},
+                    "count": {"$sum": 1}
+                }},
+                {"$sort": {"_id": 1}}
+            ]
+            return await mongodb.trades.aggregate(pipeline).to_list(100)
         
-        # Calculate platform profit
+        async def get_pending_stats():
+            pipeline = [
+                {"$match": {"status": "pending"}},
+                {"$group": {"_id": None, "count": {"$sum": 1}, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}}
+            ]
+            result = await mongodb.withdrawal_requests.aggregate(pipeline).to_list(1)
+            return result[0] if result else {"count": 0, "total": 0}
+        
+        async def get_rate():
+            settings = await mongodb.settings.find_one({"type": "payout_settings"}, {"_id": 0, "base_rate": 1})
+            return settings.get("base_rate", 78) if settings else 78
+        
+        # Execute ALL queries in parallel
+        traders_stats, merchants_stats, hot_wallet_balance, trades_by_day, pending_stats, base_rate = await asyncio.gather(
+            get_traders_stats(),
+            get_merchants_stats(),
+            get_hw_balance(),
+            get_trades_stats(),
+            get_pending_stats(),
+            get_rate()
+        )
+        
+        # Process results
+        traders_balance = traders_stats.get("total", 0) or 0
+        traders_count = traders_stats.get("count", 0) or 0
+        merchants_balance = merchants_stats.get("total", 0) or 0
+        merchants_count = merchants_stats.get("count", 0) or 0
+        total_user_balance = traders_balance + merchants_balance
+        
+        # Calculate platform metrics
         platform_profit = hot_wallet_balance - total_user_balance
         reserve_ratio = (hot_wallet_balance / total_user_balance * 100) if total_user_balance > 0 else 100
         
-        # Get trades for period
-        completed_trades = await mongodb.trades.find(
-            {"status": "completed", "created_at": {"$gte": start_date.isoformat()}},
-            {"_id": 0, "amount_usdt": 1, "platform_fee_rub": 1, "created_at": 1, "trader_id": 1, "merchant_id": 1}
-        ).to_list(10000)
-        
-        total_volume = sum(t.get("amount_usdt", 0) or 0 for t in completed_trades)
-        total_fees_rub = sum(t.get("platform_fee_rub", 0) or 0 for t in completed_trades)
-        
-        # Get base rate for fee conversion
-        rate_settings = await mongodb.settings.find_one({"type": "payout_settings"}, {"_id": 0})
-        base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
+        # Process trades stats
+        total_volume = sum(d.get("volume", 0) for d in trades_by_day)
+        total_fees_rub = sum(d.get("fees_rub", 0) for d in trades_by_day)
+        total_trades = sum(d.get("count", 0) for d in trades_by_day)
         total_fees_usdt = total_fees_rub / base_rate if base_rate > 0 else 0
         
-        # Pending withdrawals
-        pending_withdrawals = await mongodb.withdrawal_requests.find(
-            {"status": "pending"},
-            {"_id": 0}
-        ).to_list(100)
-        pending_amount = sum(w.get("amount", 0) for w in pending_withdrawals)
-        
-        # Daily stats for chart
+        # Build daily stats from aggregation results
+        daily_map = {d["_id"]: d for d in trades_by_day}
         daily_stats = []
         for i in range(min(period_days, 30)):
             day = datetime.now(timezone.utc) - timedelta(days=i)
-            day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-            day_end = day_start + timedelta(days=1)
-            
-            day_trades = [t for t in completed_trades 
-                         if t.get("created_at") and day_start.isoformat() <= t["created_at"] < day_end.isoformat()]
-            
+            date_key = day.strftime("%Y-%m-%d")
+            day_data = daily_map.get(date_key, {})
             daily_stats.append({
-                "date": day_start.strftime("%Y-%m-%d"),
-                "trades": len(day_trades),
-                "volume": sum(t.get("amount_usdt", 0) or 0 for t in day_trades),
-                "fees": sum(t.get("platform_fee_rub", 0) or 0 for t in day_trades) / base_rate
+                "date": date_key,
+                "trades": day_data.get("count", 0),
+                "volume": day_data.get("volume", 0),
+                "fees": day_data.get("fees_rub", 0) / base_rate if base_rate > 0 else 0
             })
-        
         daily_stats.reverse()
         
         return {
@@ -841,13 +869,13 @@ async def get_full_analytics(
                 "period_stats": {
                     "period": period,
                     "total_volume": round(total_volume, 2),
-                    "total_trades": len(completed_trades),
+                    "total_trades": total_trades,
                     "total_fees_usdt": round(total_fees_usdt, 4),
-                    "avg_trade_size": round(total_volume / len(completed_trades), 2) if completed_trades else 0
+                    "avg_trade_size": round(total_volume / total_trades, 2) if total_trades > 0 else 0
                 },
                 "pending": {
-                    "withdrawals_count": len(pending_withdrawals),
-                    "withdrawals_amount": round(pending_amount, 2)
+                    "withdrawals_count": pending_stats.get("count", 0),
+                    "withdrawals_amount": round(pending_stats.get("total", 0), 2)
                 },
                 "daily_stats": daily_stats
             }

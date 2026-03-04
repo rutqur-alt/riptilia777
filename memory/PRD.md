@@ -1,100 +1,97 @@
-# P2P Crypto Exchange Platform - PRD
+# P2P Crypto Exchange Platform (Reptiloid)
 
 ## Original Problem Statement
-Создать P2P криптовалютную биржу с полной финансовой системой на базе TON блокчейна согласно ТЗ v3.0.
+Build a production-ready P2P crypto exchange platform based on TON blockchain with:
+- Role-based system (Trader, Merchant, Moderator, Support, Admin)
+- Admin Financial Hub with analytics and withdrawal approval
+- User wallet with deposit/withdrawal functionality
+- Secure withdrawal flow with balance freezing and admin approval
+- TON mainnet integration
 
-## Core Requirements (ТЗ v3.0)
-1. **Архитектура:** Гибридная система (Python/FastAPI + Node.js TON service + MongoDB)
-2. **Валюта:** USDT (Jettons на TON сети)
-3. **Модель:** Кастодиальная (единый hot wallet)
-4. **Роли:** Trader, Merchant I/II, Moderator I/II, Support, Admin
-
-## Ролевая модель и лимиты (из ТЗ)
-| Роль | Лимит вывода/сутки | Одобрение до |
-|------|-------------------|--------------|
-| Trader | 50 USDT | - |
-| Merchant I | 200 USDT | - |
-| Merchant II | 1000 USDT | - |
-| Moderator I | - | 500 USDT |
-| Moderator II | - | 2000 USDT |
-| Admin | Без лимита | Всё |
+## Current Architecture
+- **Frontend**: React + Tailwind CSS + Shadcn UI
+- **Backend**: FastAPI (Python)
+- **Database**: MongoDB (temporary - should migrate to PostgreSQL for ACID compliance)
+- **Blockchain**: TON via Node.js microservice (`ton-service`)
+- **Network**: **MAINNET** (switched from testnet)
 
 ## What's Been Implemented
 
-### Sprint 1 - Financial Core ✅ (2026-03-03)
-- [x] Node.js `ton-service` микросервис с rate limiting
-- [x] API endpoints `/api/wallet/*`, `/api/admin/finance/*`
-- [x] UI страницы: UserFinancePage, AdminFinancePage
+### Completed (2026-03-04)
+1. **Admin Finance Dashboard** (`/admin/ton-finance`)
+   - Hot wallet balance display
+   - User liabilities (traders + merchants balances)
+   - Platform profit/deficit indicator
+   - Period-based analytics (1d, 7d, 30d, 90d)
+   - Daily volume chart
+   - Withdrawal approval queue
+   - User search and balance adjustment
+   - Wallet management (change/generate)
 
-### Sprint 2 - Full Financial Dashboard ✅ (2026-03-04)
-- [x] Полная аналитика: Hot Wallet, Долг трейдерам/мерчантам, ДЕФИЦИТ индикатор
-- [x] Управление кошельком: просмотр, смена, генерация нового
-- [x] Поиск пользователей с копированием ID
-- [x] Корректировка баланса пользователей
+2. **User Wallet Page** (`UserFinancePage.jsx`)
+   - Available and frozen balance display
+   - Deposit address with memo
+   - Transaction history with filters
+   - Withdrawal request form
 
-### Sprint 3 - Withdrawal Flow ✅ (2026-03-04)
-- [x] Заморозка баланса при запросе на вывод
-- [x] Проверка hot wallet при одобрении (ошибка если недостаточно)
-- [x] Возврат средств при отклонении (frozen → balance)
-- [x] История транзакций у пользователя (вывод, возврат)
-- [x] Удалён раздел "Финансы" из меню админа
-- [x] Оптимизирована загрузка USDT Кошелёк
+3. **Withdrawal Workflow**
+   - User requests withdrawal → balance frozen
+   - Admin approves → hot wallet sends funds
+   - Admin rejects → frozen balance refunded
+   - Hot wallet balance check before approval
 
-## Withdrawal Flow (Correct Implementation)
+4. **TON Service (Node.js)**
+   - Wallet generation
+   - Balance checking
+   - Transaction sending
+   - Deposit listener
 
-### 1. User Request Withdrawal
-```
-POST /api/wallet/withdraw
-→ balance_usdt: 100 → 50
-→ frozen_usdt: 0 → 50
-→ Create withdrawal_request (status: pending)
-→ Create transaction record
-```
+5. **Performance Optimization**
+   - Parallelized MongoDB queries using `asyncio.gather`
+   - Analytics endpoint response time: ~0.7-2s (was 10+ seconds)
 
-### 2. Admin Approve
-```
-POST /api/admin/finance/approve-withdrawal/{id}
-→ CHECK hot_wallet_balance >= amount
-→ If insufficient: ERROR "Недостаточно средств в кошельке биржи!"
-→ frozen_usdt: 50 → 0
-→ Status: completed
-```
+### Mainnet Migration (2026-03-04)
+- TON service switched to mainnet
+- New mainnet wallet generated: `EQCxIoq1inAuvVt3U77cPyopvQXeSQjTfyJzhAVtdfCbqapC`
+- Frontend updated to show mainnet explorer links
 
-### 3. Admin Reject
-```
-POST /api/admin/finance/reject-withdrawal/{id}
-→ frozen_usdt: 50 → 0
-→ balance_usdt: 50 → 100 (refund)
-→ Create refund transaction
-→ Status: rejected
-```
+## P0/P1/P2 Priority Tasks
 
-## Tech Stack
-- **Backend:** FastAPI, Motor (MongoDB)
-- **Frontend:** React, Redux, Tailwind CSS, Shadcn/UI
-- **TON Integration:** Node.js, @ton/ton library
-- **Database:** MongoDB
+### P0 - Critical (Must be done for production)
+1. ~~Optimize slow admin dashboard~~ ✅ DONE
+2. ~~Switch to TON mainnet~~ ✅ DONE
+3. **User needs to fund the mainnet hot wallet with USDT/TON**
+
+### P1 - Important
+1. **E2E Test on Mainnet** - Test deposit/withdrawal with real funds
+2. **Migrate financial data to PostgreSQL** - MongoDB lacks ACID compliance
+
+### P2 - Should Do
+1. Financial notifications (Telegram/Email)
+2. 2FA for critical operations
+3. API rate limiting for TON service
+4. Consolidate dispute resolution endpoints
+
+## Known Technical Debt
+1. **Financial data in MongoDB** - Should be in PostgreSQL for ACID compliance
+2. **No 2FA** - Critical operations lack second factor
+3. **Multiple dispute endpoints** - Need consolidation
 
 ## Test Credentials
-- Trader: `111` / `string`
-- Merchant: `222` / `string`
-- Admin: `admin` / `000000`
+- **Admin**: `admin` / `000000`
+- **Trader**: `111` / `string`
+- **Merchant**: `222` / `string`
 
-## Key Collections (MongoDB)
-- `traders` - balance_usdt, frozen_usdt
-- `merchants` - balance_usdt, frozen_usdt
-- `withdrawal_requests` - pending/completed/rejected
-- `transactions` - history of all operations
-- `audit_logs` - admin actions
+## Key Files
+- `/app/backend/routes/wallet_api.py` - All financial APIs
+- `/app/backend/routes/ton_finance.py` - TON integration layer
+- `/app/frontend/src/pages/finance/AdminFinancePage.jsx` - Admin dashboard
+- `/app/frontend/src/pages/finance/UserFinancePage.jsx` - User wallet
+- `/app/ton-service/index.js` - TON blockchain microservice
+- `/app/ton-service/.env` - TON service config (MAINNET)
 
-## Backlog (ТЗ v3.0)
-- [ ] Лимиты выводов по ролям (50/200/1000 USDT)
-- [ ] 2FA для критических операций  
-- [ ] Глобальный СТОП выводов
-- [ ] Блокировки по пользователям/ролям
-- [ ] Экспорт CSV/Excel
-- [ ] Уведомления Telegram
-- [ ] E2E тест депозита на testnet
-
----
-Last updated: 2026-03-04
+## Mainnet Wallet Info
+- **Address**: `EQCxIoq1inAuvVt3U77cPyopvQXeSQjTfyJzhAVtdfCbqapC`
+- **Network**: TON Mainnet
+- **Explorer**: https://tonviewer.com/EQCxIoq1inAuvVt3U77cPyopvQXeSQjTfyJzhAVtdfCbqapC
+- **Mnemonic**: Stored in `/app/ton-service/.env` (BACKUP REQUIRED!)

@@ -726,7 +726,7 @@ export default function AdminFinancePage() {
                               <Copy className="w-4 h-4" />
                             </button>
                             <a 
-                              href={`https://testnet.tonviewer.com/${hotWallet.address}`}
+                              href={`https://tonviewer.com/${hotWallet.address}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-zinc-500 hover:text-white"
@@ -743,7 +743,9 @@ export default function AdminFinancePage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500">Сеть:</span>
-                      <span className="text-yellow-400">{hotWallet?.network || 'testnet'}</span>
+                      <span className={hotWallet?.network === 'mainnet' ? 'text-emerald-400 font-semibold' : 'text-yellow-400'}>
+                        {hotWallet?.network === 'mainnet' ? '🟢 MAINNET' : '⚠️ testnet'}
+                      </span>
                     </div>
                   </div>
                 </div>

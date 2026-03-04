@@ -1,6 +1,6 @@
 import { Page, expect } from '@playwright/test';
 
-const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://blockchain-finance.preview.emergentagent.com';
+const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://ton-exchange-2.preview.emergentagent.com';
 
 export async function waitForAppReady(page: Page) {
   await page.waitForLoadState('domcontentloaded');
