@@ -207,10 +207,7 @@ export default function TraderDashboard() {
       icon: Wallet,
       items: [
         { path: "/trader", icon: Wallet, label: "Баланс", exact: true },
-        { path: "/trader/ton-finance", icon: Wallet, label: "TON Кошелёк" },
-        { path: "/trader/transactions", icon: History, label: "Транзакции" },
-        { path: "/trader/withdraw", icon: ArrowUpRight, label: "Вывод средств" },
-        { path: "/trader/transfers", icon: ArrowUpRight, label: "Переводы" }
+        { path: "/trader/wallet", icon: Wallet, label: "Кошелёк" }
       ]
     },
     {
@@ -438,7 +435,7 @@ export default function TraderDashboard() {
           <Route path="history/sales" element={<TraderHistorySales />} />
           <Route path="history/purchases" element={<TraderHistoryPurchases />} />
           <Route path="transactions" element={<TraderTransactions />} />
-          <Route path="ton-finance" element={<UserFinancePage />} />
+          <Route path="wallet" element={<UserFinancePage />} />
           <Route path="trading-stats" element={<TradingStats />} />
           <Route path="trading-settings" element={<TradingSettings />} />
           <Route path="shop-chats" element={<ShopChats />} />

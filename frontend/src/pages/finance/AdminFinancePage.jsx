@@ -36,9 +36,9 @@ const TX_STATUSES = {
   queued: { label: 'В очереди', color: 'text-blue-400', bg: 'bg-blue-500/10' },
 };
 
-const formatTON = (amount) => {
+const formatUSDT = (amount) => {
   const num = parseFloat(amount) || 0;
-  return `${num.toFixed(4)} TON`;
+  return `${num.toFixed(2)} USDT`;
 };
 
 const formatDate = (dateStr) => {
@@ -190,9 +190,9 @@ export default function AdminFinancePage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-blue-100 text-sm">Hot Wallet (Assets)</p>
+                  <p className="text-blue-100 text-sm">Кошелёк биржи</p>
                   <p className="text-2xl font-bold text-white font-mono mt-1">
-                    {formatTON(hotWallet.balance_ton)}
+                    {formatUSDT(hotWallet.balance_usd)}
                   </p>
                 </div>
                 <Wallet className="w-10 h-10 text-blue-300/50" />
@@ -208,7 +208,7 @@ export default function AdminFinancePage() {
               <div>
                 <p className="text-purple-100 text-sm">Балансы пользователей</p>
                 <p className="text-2xl font-bold text-white font-mono mt-1">
-                  {formatTON(analytics?.liabilities?.total_ton)}
+                  {formatUSDT(analytics?.liabilities?.total_ton)}
                 </p>
               </div>
               <Users className="w-10 h-10 text-purple-300/50" />
@@ -244,7 +244,7 @@ export default function AdminFinancePage() {
                 <p className={`text-2xl font-bold font-mono mt-1 ${
                   (analytics?.stats_24h?.net_flow || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
                 }`}>
-                  {(analytics?.stats_24h?.net_flow || 0) >= 0 ? '+' : ''}{formatTON(analytics?.stats_24h?.net_flow)}
+                  {(analytics?.stats_24h?.net_flow || 0) >= 0 ? '+' : ''}{formatUSDT(analytics?.stats_24h?.net_flow)}
                 </p>
               </div>
               <Activity className="w-10 h-10 text-zinc-600" />
@@ -264,7 +264,7 @@ export default function AdminFinancePage() {
               <div>
                 <p className="text-xs text-zinc-500">Депозиты (24ч)</p>
                 <p className="text-lg font-bold text-white">{analytics?.stats_24h?.deposit_count || 0}</p>
-                <p className="text-xs text-emerald-400">{formatTON(analytics?.stats_24h?.deposits)}</p>
+                <p className="text-xs text-emerald-400">{formatUSDT(analytics?.stats_24h?.deposits)}</p>
               </div>
             </div>
           </CardContent>
@@ -279,7 +279,7 @@ export default function AdminFinancePage() {
               <div>
                 <p className="text-xs text-zinc-500">Выводы (24ч)</p>
                 <p className="text-lg font-bold text-white">{analytics?.stats_24h?.withdrawal_count || 0}</p>
-                <p className="text-xs text-red-400">{formatTON(analytics?.stats_24h?.withdrawals)}</p>
+                <p className="text-xs text-red-400">{formatUSDT(analytics?.stats_24h?.withdrawals)}</p>
               </div>
             </div>
           </CardContent>
@@ -293,7 +293,7 @@ export default function AdminFinancePage() {
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Комиссии (24ч)</p>
-                <p className="text-lg font-bold text-orange-400">{formatTON(analytics?.stats_24h?.fees_collected)}</p>
+                <p className="text-lg font-bold text-orange-400">{formatUSDT(analytics?.stats_24h?.fees_collected)}</p>
               </div>
             </div>
           </CardContent>
@@ -354,7 +354,7 @@ export default function AdminFinancePage() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="text-lg font-bold text-red-400">
-                            -{formatTON(w.amount)}
+                            -{formatUSDT(w.amount)}
                           </span>
                           <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
                             Ожидает
@@ -363,7 +363,7 @@ export default function AdminFinancePage() {
                         <div className="text-xs text-zinc-500">
                           User: <code className="text-zinc-400">{w.user_id?.slice(0, 8)}...</code>
                           {' • '}
-                          Баланс: {formatTON(w.balance_ton)}
+                          Баланс: {formatUSDT(w.balance_usd)}
                         </div>
                         <div className="text-xs text-zinc-500">
                           Адрес: <code className="text-zinc-400">{w.to_address?.slice(0, 20)}...</code>
@@ -432,13 +432,13 @@ export default function AdminFinancePage() {
                     <div className="bg-zinc-800 rounded-lg p-4">
                       <p className="text-sm text-zinc-500">Баланс TON</p>
                       <p className="text-xl font-bold text-emerald-400 font-mono">
-                        {formatTON(userFinance.balance?.balance_ton)}
+                        {formatUSDT(userFinance.balance?.balance_usd)}
                       </p>
                     </div>
                     <div className="bg-zinc-800 rounded-lg p-4">
                       <p className="text-sm text-zinc-500">Заморожено</p>
                       <p className="text-xl font-bold text-yellow-400 font-mono">
-                        {formatTON(userFinance.balance?.frozen_ton)}
+                        {formatUSDT(userFinance.balance?.frozen_usd)}
                       </p>
                     </div>
                   </div>
@@ -462,7 +462,7 @@ export default function AdminFinancePage() {
                           <span className={`font-mono ${
                             tx.type === 'deposit' ? 'text-emerald-400' : 'text-red-400'
                           }`}>
-                            {tx.type === 'deposit' ? '+' : '-'}{formatTON(tx.amount)}
+                            {tx.type === 'deposit' ? '+' : '-'}{formatUSDT(tx.amount)}
                           </span>
                         </div>
                       ))}
@@ -541,7 +541,7 @@ export default function AdminFinancePage() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <Shield className="w-5 h-5 text-blue-400" />
-              Hot Wallet (Testnet)
+              Адрес кошелька (TON)
             </CardTitle>
           </CardHeader>
           <CardContent>

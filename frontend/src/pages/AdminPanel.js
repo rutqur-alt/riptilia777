@@ -114,7 +114,7 @@ export default function AdminPanel() {
         { path: "/admin/staff", icon: UserCog, label: "Персонал", roles: ["owner", "admin"] },
         { path: "/admin/staff/monitor", icon: Eye, label: "Мониторинг", roles: ["owner", "admin"] },
         { path: "/admin/finances", icon: DollarSign, label: "Финансы", roles: ["owner", "admin"] },
-        { path: "/admin/ton-finance", icon: Wallet, label: "TON Финансы", roles: ["owner", "admin", "mod_p2p"] },
+        { path: "/admin/wallet", icon: Wallet, label: "USDT Кошелёк", roles: ["owner", "admin", "mod_p2p"] },
       ]
     },
     {
@@ -339,6 +339,7 @@ export default function AdminPanel() {
           <Route path="staff/monitor" element={<StaffMonitoringComponent />} />
           <Route path="finances" element={<FinancesOverviewComponent />} />
           <Route path="ton-finance" element={<AdminFinancePage />} />
+          <Route path="wallet" element={<AdminFinancePage />} />
           <Route path="p2p/offers" element={<P2POffersComponent />} />
           <Route path="p2p/trades" element={<P2PTradesComponent />} />
           <Route path="p2p/disputes" element={<P2PTradesComponent initialFilter="disputed" />} />
