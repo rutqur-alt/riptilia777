@@ -754,6 +754,7 @@ async def get_payout_settings(user: dict = Depends(require_role(["admin", "mod_p
             "base_rate": 100.0,
             "sell_rate": 101.0,
             "markup_percent": 1.0,
+            "min_successful_trades": 20,
             "dispute_window_days": 5
         }
     # Ensure markup_percent is returned
@@ -761,6 +762,9 @@ async def get_payout_settings(user: dict = Depends(require_role(["admin", "mod_p
         base = settings["base_rate"]
         sell = settings.get("sell_rate", base * 1.01)
         settings["markup_percent"] = round(((sell / base) - 1) * 100, 1) if base > 0 else 1.0
+    # Ensure min_successful_trades is returned
+    if "min_successful_trades" not in settings:
+        settings["min_successful_trades"] = 20
     return settings
 
 
@@ -783,6 +787,7 @@ async def update_payout_settings(
             "base_rate": base_rate,
             "sell_rate": data.get("sell_rate", 110.0),
             "markup_percent": data.get("markup_percent", 1.0),
+            "min_successful_trades": data.get("min_successful_trades", 20),
             "dispute_window_days": data.get("dispute_window_days", 5),
             "updated_at": now,
             "updated_by": user["id"]
@@ -801,12 +806,14 @@ async def get_public_payout_settings():
         settings = {
             "rules": "Правила покупки криптовалюты будут показаны здесь.",
             "sell_rate": 110.0,
-            "base_rate": 100.0
+            "base_rate": 100.0,
+            "min_successful_trades": 20
         }
     return {
         "rules": settings.get("rules", ""),
         "sell_rate": settings.get("sell_rate", 110.0),
-        "base_rate": settings.get("base_rate", 100.0)
+        "base_rate": settings.get("base_rate", 100.0),
+        "min_successful_trades": settings.get("min_successful_trades", 20)
     }
 
 

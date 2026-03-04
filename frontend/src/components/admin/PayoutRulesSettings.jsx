@@ -11,6 +11,7 @@ export function PayoutRulesSettings() {
   const [rules, setRules] = useState("");
   const [exchangeRate, setExchangeRate] = useState(96.5);
   const [markupPercent, setMarkupPercent] = useState(1); // Наценка в процентах
+  const [minSuccessfulTrades, setMinSuccessfulTrades] = useState(20); // Минимум успешных сделок
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [liveRate, setLiveRate] = useState(null);
@@ -36,6 +37,8 @@ export function PayoutRulesSettings() {
       const savedSellRate = res.data.sell_rate || baseRate * 1.01;
       const calcMarkup = baseRate > 0 ? ((savedSellRate / baseRate) - 1) * 100 : 1;
       setMarkupPercent(Math.round(calcMarkup * 10) / 10); // Округляем до 1 знака
+      // Минимум успешных сделок
+      setMinSuccessfulTrades(res.data.min_successful_trades ?? 20);
     } catch (e) {
       console.error(e);
     } finally {
@@ -82,10 +85,10 @@ export function PayoutRulesSettings() {
     setSaving(true);
     try {
       await axios.put(`${API}/admin/payout-settings`, 
-        { rules, exchange_rate: exchangeRate, sell_rate: sellRate, markup_percent: markupPercent },
+        { rules, exchange_rate: exchangeRate, sell_rate: sellRate, markup_percent: markupPercent, min_successful_trades: minSuccessfulTrades },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast.success(`Настройки сохранены: курс продажи ${sellRate.toFixed(2)} ₽/USDT`);
+      toast.success(`Настройки сохранены: курс продажи ${sellRate.toFixed(2)} ₽/USDT, мин. сделок: ${minSuccessfulTrades}`);
     } catch (e) {
       toast.error("Ошибка сохранения");
     } finally {
@@ -223,6 +226,32 @@ export function PayoutRulesSettings() {
           <div className="text-xs text-[#71717A]">
             <span className="text-white font-medium">Итого:</span> Базовый {exchangeRate.toFixed(2)} ₽ + {markupPercent}% = <span className="text-[#10B981] font-bold">{sellRate.toFixed(2)} ₽/USDT</span> (прибыль платформы: {(sellRate - exchangeRate).toFixed(2)} ₽ за 1 USDT)
           </div>
+        </div>
+      </div>
+
+      {/* Minimum Successful Trades */}
+      <div className="bg-[#121212] border border-white/5 rounded-xl p-6">
+        <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+          <FileText className="w-5 h-5 text-[#F59E0B]" />
+          Требования к покупателям
+        </h3>
+        <div>
+          <label className="text-[#71717A] text-xs mb-1 block">Минимум успешных сделок для покупки криптовалюты</label>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              step="1"
+              min="0"
+              max="1000"
+              value={minSuccessfulTrades}
+              onChange={(e) => setMinSuccessfulTrades(parseInt(e.target.value) || 0)}
+              className="w-32 bg-[#0A0A0A] border border-white/10 rounded-lg px-3 py-2 text-white font-mono text-lg"
+            />
+            <span className="text-[#71717A]">сделок</span>
+          </div>
+          <p className="text-[#52525B] text-xs mt-2">
+            Пользователь должен совершить указанное количество успешных P2P сделок на платформе, прежде чем сможет покупать криптовалюту
+          </p>
         </div>
       </div>
 

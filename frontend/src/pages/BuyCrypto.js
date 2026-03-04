@@ -21,9 +21,8 @@ export default function BuyCrypto() {
   const [showRulesDialog, setShowRulesDialog] = useState(false);
   const [rulesText, setRulesText] = useState("");
   const [buyingOfferId, setBuyingOfferId] = useState(null);
+  const [minTradesRequired, setMinTradesRequired] = useState(20);
 
-  const MIN_TRADES_REQUIRED = 20;
-  
   // Check if user is blocked from buying (merchant or admin)
   const isBlockedFromBuying = () => {
     if (!user) return false;
@@ -56,6 +55,8 @@ export default function BuyCrypto() {
     try {
       const response = await axios.get(`${API}/payout-settings/public`);
       setRulesText(response.data.rules || "");
+      // Получаем минимум сделок из настроек
+      setMinTradesRequired(response.data.min_successful_trades ?? 20);
     } catch (error) {
       console.error("Error fetching rules:", error);
     }
@@ -77,7 +78,7 @@ export default function BuyCrypto() {
     if (isBlockedFromBuying()) return false;
     if (user?.role !== "trader") return false;
     if (!userStats) return false;
-    return (userStats.successful_trades || 0) >= MIN_TRADES_REQUIRED;
+    return (userStats.successful_trades || 0) >= minTradesRequired;
   };
 
   // Покупка в один клик - показываем правила, потом сразу создаём сделку
@@ -163,7 +164,7 @@ export default function BuyCrypto() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <Info className="w-5 h-5 text-[#7C3AED] flex-shrink-0" />
           <p className="text-sm text-[#A1A1AA]">
-            Покупка криптовалюты доступна только для пользователей с <span className="text-white font-medium">{MIN_TRADES_REQUIRED}+ успешными сделками</span>. 
+            Покупка криптовалюты доступна только для пользователей с <span className="text-white font-medium">{minTradesRequired}+ успешными сделками</span>. 
             Все заявки обрабатываются модераторами платформы.
           </p>
         </div>
@@ -288,20 +289,20 @@ export default function BuyCrypto() {
 
           <div className="space-y-4">
             <p className="text-[#A1A1AA]">
-              Для покупки криптовалюты необходимо иметь минимум <span className="text-white font-medium">{MIN_TRADES_REQUIRED} успешных сделок</span>.
+              Для покупки криптовалюты необходимо иметь минимум <span className="text-white font-medium">{minTradesRequired} успешных сделок</span>.
             </p>
 
             <div className="bg-[#0A0A0A] rounded-xl p-4">
               <div className="flex items-center justify-between">
                 <span className="text-[#71717A]">Ваши сделки</span>
                 <span className="text-white font-medium">
-                  {userStats?.successful_trades || 0} / {MIN_TRADES_REQUIRED}
+                  {userStats?.successful_trades || 0} / {minTradesRequired}
                 </span>
               </div>
               <div className="mt-2 h-2 bg-white/10 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-[#F59E0B] rounded-full transition-all"
-                  style={{ width: `${Math.min(100, ((userStats?.successful_trades || 0) / MIN_TRADES_REQUIRED) * 100)}%` }}
+                  style={{ width: `${Math.min(100, ((userStats?.successful_trades || 0) / minTradesRequired) * 100)}%` }}
                 />
               </div>
             </div>
