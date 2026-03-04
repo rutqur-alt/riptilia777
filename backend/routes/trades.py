@@ -773,9 +773,17 @@ async def mark_trade_paid(trade_id: str):
     }
     await db.trade_messages.insert_one(system_msg)
     
-    # Broadcast via WebSocket
+    # Broadcast via WebSocket to trade channel
     await _ws_broadcast(f"trade_{trade_id}", {"type": "message", **{k: v for k, v in system_msg.items() if k != "_id"}})
     await _ws_broadcast(f"trade_{trade_id}", {"type": "status_update", "status": "paid", "trade_id": trade_id})
+    
+    # Also broadcast to trader's user channel for immediate notification
+    await _ws_broadcast(f"user_{trade['trader_id']}", {
+        "type": "trade_status_update",
+        "trade_id": trade_id,
+        "status": "paid",
+        "message": f"Клиент оплатил сделку {trade_id[:12]}"
+    })
     
     # Create notification for trader about payment
     try:
