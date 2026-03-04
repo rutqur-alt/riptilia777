@@ -592,11 +592,11 @@ async def get_operators_for_invoice(
     exchange_rate = rate_data.get("rate", 95) if rate_data else 95
     amount_usdt = amount_rub / exchange_rate
     
-    # Find matching offers
+    # Find matching offers with STRICT validation
     offers = await db.offers.find({
         "type": "sell",
         "is_active": True,
-        "paused_by_trader": {"$ne": True},
+        "paused_by_trader": {"$ne": True},       # НЕ на паузе
         "available_usdt": {"$gte": amount_usdt * 0.95},
         "$or": [
             {"min_amount_rub": {"$exists": False}},
@@ -613,8 +613,34 @@ async def get_operators_for_invoice(
     
     operators = []
     for offer in offers:
+        # СТРОГАЯ ПРОВЕРКА: Пропускаем если объявление на паузе или неактивно
+        if not offer.get("is_active"):
+            continue
+        if offer.get("paused_by_trader"):
+            continue
+        
         trader = await db.traders.find_one({"id": offer["trader_id"]}, {"_id": 0})
         if not trader:
+            continue
+        
+        # СТРОГАЯ ПРОВЕРКА: Трейдер должен быть активен
+        trader_status = trader.get("status", "active")
+        if trader_status not in [None, "active"]:
+            continue
+        if trader.get("is_blocked") or trader.get("blocked"):
+            continue
+        
+        # СТРОГАЯ ПРОВЕРКА: Достаточно баланса на объявлении
+        available = offer.get("available_usdt", 0)
+        if available < amount_usdt * 0.99:
+            continue
+        
+        # СТРОГАЯ ПРОВЕРКА: Сумма в пределах лимитов
+        min_amt = offer.get("min_amount", 0)
+        max_amt = offer.get("max_amount")
+        if amount_usdt < min_amt:
+            continue
+        if max_amt and amount_usdt > max_amt and amount_usdt > available:
             continue
         
         # Calculate price with trader's rate

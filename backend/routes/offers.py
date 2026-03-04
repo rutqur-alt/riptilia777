@@ -396,10 +396,12 @@ async def get_operators_for_payment(
         filter_amount_rub = 0
         filter_amount_usdt = 0
     
-    # Базовый запрос - активные офферы с доступным балансом
+    # Базовый запрос - СТРОГАЯ проверка активных офферов
     query = {
-        "is_active": True,
-        "available_usdt": {"$gt": 0}
+        "type": "sell",                           # Только продажа
+        "is_active": True,                        # Объявление активно
+        "paused_by_trader": {"$ne": True},        # НЕ на паузе
+        "available_usdt": {"$gt": 0}              # Есть доступный баланс
     }
     
     # Фильтр по методу оплаты
@@ -435,14 +437,28 @@ async def get_operators_for_payment(
         if not trader:
             continue
         
-        # Пропускаем заблокированных трейдеров
-        if trader.get("status") not in [None, "active"]:
-            if trader.get("status") != "active":
-                continue
-        
-        # Проверяем что у оффера достаточно USDT
-        if filter_amount_usdt > 0 and offer.get("available_usdt", 0) < filter_amount_usdt:
+        # Пропускаем заблокированных/неактивных трейдеров
+        trader_status = trader.get("status", "active")
+        if trader_status not in [None, "active"]:
             continue
+        
+        # Пропускаем если трейдер заблокирован
+        if trader.get("is_blocked") or trader.get("blocked"):
+            continue
+        
+        # Проверяем что у оффера достаточно USDT для запрошенной суммы
+        available = offer.get("available_usdt", 0)
+        if filter_amount_usdt > 0 and available < filter_amount_usdt * 0.99:  # 1% погрешность
+            continue
+        
+        # Проверяем лимиты оффера
+        min_amt = offer.get("min_amount", 0)
+        max_amt = offer.get("max_amount", float('inf'))
+        if filter_amount_usdt > 0:
+            if filter_amount_usdt < min_amt:
+                continue
+            if max_amt and filter_amount_usdt > max_amt and filter_amount_usdt > available:
+                continue
         
         seen_traders.add(trader_id)
         
