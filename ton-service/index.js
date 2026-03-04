@@ -446,6 +446,105 @@ app.post('/send', apiKeyAuth, async (req, res) => {
   }
 });
 
+/**
+ * Send USDT (Jetton) to address
+ */
+app.post('/send-usdt', apiKeyAuth, async (req, res) => {
+  try {
+    const { to, amount, comment } = req.body;
+    
+    if (!to || !amount) {
+      return res.status(400).json({ error: 'Missing to or amount' });
+    }
+    
+    if (!hotWallet) {
+      return res.status(400).json({ error: 'Hot wallet not configured' });
+    }
+    
+    // USDT has 6 decimals
+    const usdtAmount = BigInt(Math.floor(amount * 1000000));
+    
+    // Get hot wallet's jetton wallet address
+    const USDT_MASTER = process.env.TON_NETWORK === 'mainnet' 
+      ? 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'
+      : 'kQBqSpvo4S87mX9tjHaG4zhYZeORhVhMapBJpnMZ64jhrP-A';
+    
+    const ownerAddress = Address.parse(hotWallet.address);
+    const jettonMaster = Address.parse(USDT_MASTER);
+    
+    // Get our jetton wallet address
+    const jettonWalletResult = await tonClient.runMethod(jettonMaster, 'get_wallet_address', [
+      { type: 'slice', cell: beginCell().storeAddress(ownerAddress).endCell() }
+    ]);
+    const jettonWalletAddress = jettonWalletResult.stack.readAddress();
+    
+    // Build jetton transfer message
+    // op code for jetton transfer = 0xf8a7ea5
+    const forwardPayload = comment 
+      ? beginCell().storeUint(0, 32).storeStringTail(comment).endCell()
+      : null;
+    
+    const jettonTransferBody = beginCell()
+      .storeUint(0xf8a7ea5, 32) // op code for jetton transfer
+      .storeUint(0, 64) // query_id
+      .storeCoins(usdtAmount) // amount of jettons
+      .storeAddress(Address.parse(to)) // destination
+      .storeAddress(ownerAddress) // response_destination
+      .storeBit(false) // no custom_payload
+      .storeCoins(toNano('0.01')) // forward_ton_amount
+      .storeMaybeRef(forwardPayload) // forward_payload
+      .endCell();
+    
+    // Send transaction
+    await waitForRateLimit();
+    const seqno = await hotWalletContract.getSeqno();
+    
+    await hotWalletContract.sendTransfer({
+      seqno,
+      secretKey: hotWallet.keyPair.secretKey,
+      messages: [
+        internal({
+          to: jettonWalletAddress,
+          value: toNano('0.05'), // Gas for jetton transfer
+          body: jettonTransferBody
+        })
+      ]
+    });
+    
+    // Wait a bit and try to get the transaction hash
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    // Get recent transactions to find our tx
+    let txHash = null;
+    try {
+      const transactions = await tonClient.getTransactions(ownerAddress, { limit: 5 });
+      for (const tx of transactions) {
+        if (tx.now > Date.now() / 1000 - 60) { // Within last minute
+          txHash = tx.hash().toString('hex');
+          break;
+        }
+      }
+    } catch (e) {
+      logger.warn('Could not get tx hash:', e.message);
+    }
+    
+    logger.info(`✅ Sent ${amount} USDT to ${to}, seqno: ${seqno}, hash: ${txHash || 'pending'}`);
+    
+    res.json({
+      success: true,
+      seqno,
+      amount,
+      to,
+      tx_hash: txHash,
+      network: process.env.TON_NETWORK
+    });
+    
+  } catch (error) {
+    logger.error('Error sending USDT:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== USDT DEPOSIT LISTENER ====================
 
 // Track processed transactions to avoid duplicates

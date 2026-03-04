@@ -53,6 +53,25 @@ async def get_ton_service_health() -> dict:
         return {"status": "error", "error": str(e)}
 
 
+async def send_usdt_withdrawal(to_address: str, amount: float, comment: str = "") -> dict:
+    """
+    Send USDT from hot wallet to user's address.
+    Returns tx_hash on success.
+    """
+    try:
+        result = await _ton_request('POST', '/send-usdt', {
+            'to': to_address,
+            'amount': amount,
+            'comment': comment
+        }, timeout=60.0)  # Longer timeout for blockchain tx
+        
+        logger.info(f"USDT withdrawal sent: {amount} USDT to {to_address}, hash: {result.get('tx_hash')}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to send USDT: {e}")
+        raise
+
+
 async def get_deposit_address(user_id: str) -> dict:
     """Get deposit address for user"""
     return await _ton_request('GET', f'/deposit-address/{user_id}')

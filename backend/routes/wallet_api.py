@@ -27,7 +27,8 @@ from routes.ton_finance import (
     request_withdrawal,
     get_finance_analytics,
     get_audit_logs,
-    create_audit_log
+    create_audit_log,
+    send_usdt_withdrawal
 )
 
 
@@ -458,10 +459,10 @@ from core.database import db as mongodb
 
 @router.get("/admin/finance/pending-withdrawals")
 async def get_pending_withdrawals(user: dict = Depends(require_roles(["admin", "mod"]))):
-    """Get list of pending withdrawals requiring approval"""
+    """Get list of pending and approved withdrawals requiring execution"""
     try:
         pending = await mongodb.withdrawal_requests.find(
-            {"status": "pending"},
+            {"status": {"$in": ["pending", "approved"]}},
             {"_id": 0}
         ).sort("created_at", 1).to_list(100)
         
@@ -527,15 +528,15 @@ async def approve_withdrawal(
     user: dict = Depends(require_roles(["admin", "mod"]))
 ):
     """
-    Approve a pending withdrawal.
+    Approve a pending/approved withdrawal and execute the transfer.
     1. Проверяет что Hot Wallet имеет достаточно средств
     2. Списывает замороженные средства
     3. Отправляет транзакцию через TON service
     """
     try:
-        # Find the withdrawal request
+        # Find the withdrawal request (can be pending or approved)
         withdrawal = await mongodb.withdrawal_requests.find_one(
-            {"id": tx_id, "status": "pending"},
+            {"id": tx_id, "status": {"$in": ["pending", "approved"]}},
             {"_id": 0}
         )
         
@@ -593,7 +594,35 @@ async def approve_withdrawal(
             "created_at": datetime.now(timezone.utc).isoformat()
         })
         
-        # Update withdrawal status
+        # SEND USDT TO USER via TON Service
+        tx_hash = None
+        send_error = None
+        try:
+            send_result = await send_usdt_withdrawal(
+                to_address=to_address,
+                amount=amount,
+                comment=f"Withdrawal {tx_id[:8]}"
+            )
+            tx_hash = send_result.get('tx_hash')
+        except Exception as e:
+            send_error = str(e)
+            # Rollback balance changes if send failed
+            if trader:
+                await mongodb.traders.update_one(
+                    {"id": target_user_id},
+                    {"$inc": {"balance_usdt": total_frozen, "frozen_usdt": total_frozen}}
+                )
+            else:
+                await mongodb.merchants.update_one(
+                    {"id": target_user_id},
+                    {"$inc": {"balance_usdt": total_frozen, "frozen_usdt": total_frozen}}
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Ошибка отправки USDT: {send_error}. Баланс восстановлен."
+            )
+        
+        # Update withdrawal status with tx_hash
         now = datetime.now(timezone.utc).isoformat()
         await mongodb.withdrawal_requests.update_one(
             {"id": tx_id},
@@ -601,16 +630,18 @@ async def approve_withdrawal(
                 "status": "completed",
                 "approved_by": user['id'],
                 "approved_at": now,
-                "completed_at": now
+                "completed_at": now,
+                "tx_hash": tx_hash
             }}
         )
         
-        # Update transaction status
+        # Update transaction status with tx_hash
         await mongodb.transactions.update_one(
             {"withdrawal_id": tx_id},
             {"$set": {
                 "status": "completed",
                 "completed_at": now,
+                "tx_hash": tx_hash,
                 "description": f"Вывод {amount} USDT выполнен (комиссия {fee} USDT)"
             }}
         )
