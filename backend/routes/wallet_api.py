@@ -188,15 +188,11 @@ async def withdraw_ton(
     import uuid
     
     try:
-        # Check for duplicate request (anti double-click)
         user_id = user['id']
         five_seconds_ago = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
         now = datetime.now(timezone.utc).isoformat()
         
-        # Try to create a lock record first (atomic operation)
-        lock_id = f"lock_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
-        
-        # Check if there's already a pending request with same amount in last 5 seconds
+        # Check for duplicate request (anti double-click)
         recent_request = await mongodb.withdrawal_requests.find_one({
             "user_id": user_id,
             "amount": data.amount,
@@ -210,35 +206,7 @@ async def withdraw_ton(
                 detail="Заявка уже создана. Подождите несколько секунд."
             )
         
-        # Create withdrawal request FIRST with unique constraint check
-        request_id = f"wd_{uuid.uuid4().hex[:12]}"
-        
-        withdrawal_doc = {
-            "id": request_id,
-            "user_id": user_id,
-            "user_login": user.get('login', ''),
-            "amount": data.amount,
-            "to_address": data.to_address,
-            "comment": data.comment or '',
-            "status": "pending",
-            "requires_approval": True,
-            "created_at": now,
-            "updated_at": now,
-            "lock_key": f"{user_id}_{data.amount}_{now[:16]}"  # Unique key per user+amount+minute
-        }
-        
-        # Try to insert - will fail if duplicate lock_key exists
-        try:
-            await mongodb.withdrawal_requests.insert_one(withdrawal_doc)
-        except Exception as insert_error:
-            if "duplicate" in str(insert_error).lower() or "E11000" in str(insert_error):
-                raise HTTPException(
-                    status_code=429, 
-                    detail="Заявка уже создана. Подождите несколько секунд."
-                )
-            raise
-        
-        # Get user's current balance from MongoDB
+        # Get user's current balance from MongoDB FIRST
         trader = await mongodb.traders.find_one({"id": user_id})
         is_trader = bool(trader)
         
@@ -254,7 +222,7 @@ async def withdraw_ton(
         
         available_balance = current_balance - frozen_balance
         
-        # Check balance
+        # Check balance BEFORE creating anything
         if data.amount > available_balance:
             raise HTTPException(
                 status_code=400, 
@@ -264,29 +232,42 @@ async def withdraw_ton(
         if data.amount <= 0:
             raise HTTPException(status_code=400, detail="Сумма должна быть положительной")
         
-        # Check daily limit based on role
-        daily_limit = 50.0  # Default for traders
-        if user.get('role') == 'merchant':
-            # Check merchant type for limit
-            if not is_trader:
-                merchant_type = merchant.get('merchant_type', 'I')
-                daily_limit = 1000.0 if merchant_type == 'II' else 200.0
+        # All checks passed - now create request ID
+        request_id = f"wd_{uuid.uuid4().hex[:12]}"
         
-        # FREEZE the balance (move from balance to frozen)
+        # FREEZE the balance FIRST (atomic operation)
         if is_trader:
-            await mongodb.traders.update_one(
-                {"id": user_id},
-                {
-                    "$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}
-                }
+            result = await mongodb.traders.update_one(
+                {"id": user_id, "balance_usdt": {"$gte": data.amount}},  # Extra check
+                {"$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}}
             )
         else:
-            await mongodb.merchants.update_one(
-                {"id": user_id},
-                {
-                    "$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}
-                }
+            result = await mongodb.merchants.update_one(
+                {"id": user_id, "balance_usdt": {"$gte": data.amount}},  # Extra check
+                {"$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}}
             )
+        
+        # Check if balance was actually frozen
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=400, 
+                detail="Не удалось заморозить средства. Проверьте баланс."
+            )
+        
+        # Balance frozen successfully - now create withdrawal request
+        withdrawal_doc = {
+            "id": request_id,
+            "user_id": user_id,
+            "user_login": user.get('login', ''),
+            "amount": data.amount,
+            "to_address": data.to_address,
+            "comment": data.comment or '',
+            "status": "pending",
+            "requires_approval": True,
+            "created_at": now,
+            "updated_at": now
+        }
+        await mongodb.withdrawal_requests.insert_one(withdrawal_doc)
         
         # Create transaction history record
         tx_doc = {
@@ -303,6 +284,15 @@ async def withdraw_ton(
         }
         await mongodb.transactions.insert_one(tx_doc)
         
+        # Get updated balances
+        if is_trader:
+            updated = await mongodb.traders.find_one({"id": user_id}, {"balance_usdt": 1, "frozen_usdt": 1})
+        else:
+            updated = await mongodb.merchants.find_one({"id": user_id}, {"balance_usdt": 1, "frozen_usdt": 1})
+        
+        new_balance_val = updated.get("balance_usdt", 0) or 0
+        new_frozen_val = updated.get("frozen_usdt", 0) or 0
+        
         return {
             "success": True,
             "withdrawal": {
@@ -315,8 +305,8 @@ async def withdraw_ton(
             },
             "message": "Заявка на вывод создана. Ожидает одобрения администратора.",
             "new_balance": {
-                "available": available_balance - data.amount,
-                "frozen": frozen_balance + data.amount
+                "available": new_balance_val - new_frozen_val,
+                "frozen": new_frozen_val
             }
         }
         
