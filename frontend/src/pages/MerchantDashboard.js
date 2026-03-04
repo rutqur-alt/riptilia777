@@ -24,6 +24,7 @@ import MerchantDisputesPage from "./MerchantDisputesPage";
 import ShopChats from "./ShopChats";
 import MarketplaceGuarantorChat from "./MarketplaceGuarantorChat";
 import EventNotificationDropdown from "@/components/EventNotificationDropdown";
+import UserFinancePage from "./finance/UserFinancePage";
 
 export default function MerchantDashboard() {
   const { user, token, logout } = useAuth();
@@ -114,6 +115,7 @@ export default function MerchantDashboard() {
       title: "Финансы",
       icon: Wallet,
       items: [
+        { path: "/merchant/ton-finance", icon: Wallet, label: "TON Кошелёк" },
         { path: "/merchant/transactions", icon: History, label: "Транзакции" },
         { path: "/merchant/withdraw", icon: ArrowUpRight, label: "Вывод средств" }
       ]
@@ -359,6 +361,7 @@ export default function MerchantDashboard() {
             <Route path="disputes" element={<MerchantDisputesPage />} />
             <Route path="api" element={<MerchantAPI />} />
             <Route path="transactions" element={<MerchantTransactions />} />
+            <Route path="ton-finance" element={<UserFinancePage />} />
             <Route path="withdraw" element={<MerchantWithdraw />} />
             <Route path="account" element={<MerchantAccount />} />
             <Route path="settings" element={<MerchantSettings />} />

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { 
   LogOut, LayoutDashboard, Users, Settings, MessageCircle,
-  DollarSign, TrendingUp, Eye,
+  DollarSign, TrendingUp, Eye, Wallet,
   Store, Package, Shield, AlertTriangle,
   ArrowDownRight, FileText, ShoppingBag,
   Activity, UserCog, History,
@@ -55,6 +55,7 @@ import PayoutRulesSettingsComponent from "@/components/admin/PayoutRulesSettings
 import CryptoPayoutsComponent from "@/components/admin/CryptoPayouts";
 import AdminMessagesToStaffComponent from "@/components/admin/AdminMessagesToStaff";
 import ReferralSettingsComponent from "@/components/admin/ReferralSettings";
+import AdminFinancePage from "./finance/AdminFinancePage";
 
 // ==================== MAIN ADMIN PANEL ====================
 export default function AdminPanel() {
@@ -113,6 +114,7 @@ export default function AdminPanel() {
         { path: "/admin/staff", icon: UserCog, label: "Персонал", roles: ["owner", "admin"] },
         { path: "/admin/staff/monitor", icon: Eye, label: "Мониторинг", roles: ["owner", "admin"] },
         { path: "/admin/finances", icon: DollarSign, label: "Финансы", roles: ["owner", "admin"] },
+        { path: "/admin/ton-finance", icon: Wallet, label: "TON Финансы", roles: ["owner", "admin", "mod_p2p"] },
       ]
     },
     {
@@ -336,6 +338,7 @@ export default function AdminPanel() {
           <Route path="staff" element={<StaffManagementComponent />} />
           <Route path="staff/monitor" element={<StaffMonitoringComponent />} />
           <Route path="finances" element={<FinancesOverviewComponent />} />
+          <Route path="ton-finance" element={<AdminFinancePage />} />
           <Route path="p2p/offers" element={<P2POffersComponent />} />
           <Route path="p2p/trades" element={<P2PTradesComponent />} />
           <Route path="p2p/disputes" element={<P2PTradesComponent initialFilter="disputed" />} />

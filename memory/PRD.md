@@ -50,6 +50,12 @@ The merchant-facing API documentation has been completely rewritten to be 100% a
   - Deposit listener (polling every 5 sec)
   - Python API integration (/api/wallet/*)
   - User balance and transaction tracking
+- [x] **TON Finance UI (March 4, 2026)**:
+  - User Finance Page for Traders/Merchants (/trader/ton-finance, /merchant/ton-finance)
+  - Admin Finance Dashboard (/admin/ton-finance)
+  - Balance cards, deposit instructions, transaction history with filters
+  - Withdrawal modal with amount/address validation
+  - Admin: analytics, pending withdrawals approval, user search, audit logs
 
 ## Known Technical Debt
 - **Duplicate API Endpoints**: At least 4 endpoints for resolving disputes exist and need consolidation
