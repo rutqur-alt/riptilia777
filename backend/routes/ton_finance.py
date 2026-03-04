@@ -251,7 +251,7 @@ async def get_user_transactions(user_id: str, limit: int = 50, offset: int = 0) 
     # Also get recent trades to show in history
     trades = await db.trades.find(
         {"$or": [{"trader_id": user_id}, {"merchant_id": user_id}]},
-        {"_id": 0, "id": 1, "type": 1, "amount_usdt": 1, "status": 1, "created_at": 1}
+        {"_id": 0, "id": 1, "type": 1, "amount_usdt": 1, "merchant_receives_usdt": 1, "merchant_id": 1, "trader_id": 1, "status": 1, "created_at": 1}
     ).sort("created_at", -1).limit(20).to_list(20)
     
     # Format trades as transactions (if not already in transactions)
@@ -259,14 +259,25 @@ async def get_user_transactions(user_id: str, limit: int = 50, offset: int = 0) 
     for trade in trades:
         trade_id = trade.get("id")
         if trade_id and trade_id not in existing_ids:
+            # For merchants, show actual received amount (minus platform fee)
+            # For traders, show full amount
+            is_merchant_trade = trade.get("merchant_id") == user_id
+            if is_merchant_trade:
+                # Merchant receives amount after commission deduction
+                amount = trade.get("merchant_receives_usdt") or trade.get("amount_usdt", 0)
+                description = f"Сделка P2P: {amount:.2f} USDT (после комиссии)"
+            else:
+                amount = trade.get("amount_usdt", 0)
+                description = f"Сделка P2P: {amount:.2f} USDT"
+            
             transactions.append({
                 "id": trade_id,
                 "type": "trade",
-                "amount": trade.get("amount_usdt", 0),
+                "amount": amount,
                 "currency": "USDT",
                 "status": trade.get("status"),
                 "created_at": trade.get("created_at"),
-                "description": f"Сделка P2P: {trade.get('amount_usdt', 0)} USDT"
+                "description": description
             })
     
     # Sort combined results by date
