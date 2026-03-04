@@ -29,6 +29,7 @@ export default function TraderBalance() {
   const [activeTrades, setActiveTrades] = useState({ sales: [], purchases: [] });
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [baseRate, setBaseRate] = useState(null);
 
   // WebSocket: listen for new trades, trade status updates, and new notifications
   const onWsMessage = useCallback((data) => {
@@ -67,12 +68,13 @@ export default function TraderBalance() {
 
   const fetchData = async () => {
     try {
-      const [traderRes, statsRes, salesRes, purchasesRes, notifsRes] = await Promise.all([
+      const [traderRes, statsRes, salesRes, purchasesRes, notifsRes, rateRes] = await Promise.all([
         axios.get(`${API}/traders/me`, { headers: { Authorization: `Bearer ${token}` } }),
         axios.get(`${API}/traders/stats`, { headers: { Authorization: `Bearer ${token}` } }),
         axios.get(`${API}/trades/sales/active`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] })),
         axios.get(`${API}/trades/purchases/active`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] })),
-        axios.get(`${API}/event-notifications?limit=5`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] }))
+        axios.get(`${API}/event-notifications?limit=5`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: [] })),
+        axios.get(`${API}/payout-settings/public`).catch(() => ({ data: { base_rate: null } }))
       ]);
       setTrader({ ...traderRes.data, ...statsRes.data });
       setActiveTrades({ 
@@ -80,6 +82,7 @@ export default function TraderBalance() {
         purchases: purchasesRes.data.filter(t => t.status === 'pending')
       });
       setNotifications(notifsRes.data || []);
+      setBaseRate(rateRes.data?.base_rate || null);
     } catch (error) {
       console.error(error);
     } finally {
@@ -127,6 +130,18 @@ export default function TraderBalance() {
           )}
         </div>
 
+        {/* Base Rate Card */}
+        <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[#71717A] text-sm">Базовый курс</span>
+            <DollarSign className="w-4 h-4 text-[#3B82F6]" />
+          </div>
+          <div className="text-xl font-bold text-[#3B82F6] font-['JetBrains_Mono']">
+            {baseRate ? `${baseRate.toFixed(2)} ₽` : "—"}
+          </div>
+          <div className="text-xs text-[#71717A]">USDT/RUB</div>
+        </div>
+
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[#71717A] text-sm">Продажи</span>
@@ -135,7 +150,10 @@ export default function TraderBalance() {
           <div className="text-xl font-bold text-white">{trader?.salesCount || 0}</div>
           <div className="text-xs text-[#10B981] font-['JetBrains_Mono']">{(trader?.salesVolume || 0).toFixed(0)} USDT</div>
         </div>
+      </div>
 
+      {/* Stats Row */}
+      <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[#71717A] text-sm">Покупки</span>
@@ -143,6 +161,15 @@ export default function TraderBalance() {
           </div>
           <div className="text-xl font-bold text-white">{trader?.purchasesCount || 0}</div>
           <div className="text-xs text-[#7C3AED] font-['JetBrains_Mono']">{(trader?.purchasesVolume || 0).toFixed(0)} USDT</div>
+        </div>
+
+        <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[#71717A] text-sm">Завершённых сделок</span>
+            <CheckCircle className="w-4 h-4 text-[#10B981]" />
+          </div>
+          <div className="text-xl font-bold text-white">{(trader?.salesCount || 0) + (trader?.purchasesCount || 0)}</div>
+          <div className="text-xs text-[#71717A]">всего</div>
         </div>
       </div>
 

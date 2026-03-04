@@ -41,6 +41,8 @@ The merchant-facing API documentation has been completely rewritten to be 100% a
 - [x] Live webhooks for demo store
 - [x] State synchronization between trades and invoices
 - [x] **API Documentation rewrite (March 4, 2026)**
+- [x] **Trader dashboard: base rate display (March 4, 2026)** - Shows USDT/RUB rate
+- [x] **Notification links fixed (March 4, 2026)** - All notification links now lead to specific trade pages
 
 ## Known Technical Debt
 - **Duplicate API Endpoints**: At least 4 endpoints for resolving disputes exist and need consolidation

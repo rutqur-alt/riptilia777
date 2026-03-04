@@ -784,7 +784,7 @@ async def mark_trade_paid(trade_id: str):
             notif_type="trade_payment",
             title="Оплата получена",
             message=f"Клиент оплатил сделку на {trade['amount_rub']:,.0f} \u20bd",
-            link=f"/trader/sales"
+            link=f"/trader/sales/{trade_id}"
         )
     except Exception:
         pass
@@ -981,7 +981,7 @@ async def send_trade_message(trade_id: str, data: MessageCreate, user: dict = De
                 notif_type="trade_message",
                 title="Сообщение в сделке",
                 message=f"Новое сообщение в сделке #{trade_id[:8]}",
-                link=f"/trader/sales"
+                link=f"/trader/sales/{trade_id}"
             )
     except Exception:
         pass
@@ -1020,7 +1020,7 @@ async def send_trade_message_public(trade_id: str, data: MessageCreate):
             notif_type="trade_message",
             title="Сообщение в сделке",
             message=f"Покупатель написал в сделке #{trade_id[:8]}",
-            link=f"/trader/sales"
+            link=f"/trader/sales/{trade_id}"
         )
     except Exception:
         pass

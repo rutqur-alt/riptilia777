@@ -885,7 +885,7 @@ async def mark_invoice_paid(
             "type": "trade_payment",
             "title": "Оплата получена",
             "message": f"Клиент оплатил сделку на {trade['amount_rub']:,.0f} ₽",
-            "link": "/trader/sales",
+            "link": f"/trader/sales/{trade_id}",
             "read": False,
             "created_at": now
         })
@@ -991,7 +991,7 @@ async def send_invoice_message(
                 "type": "trade_message",
                 "title": "Новое сообщение",
                 "message": f"Клиент: {request.text[:50]}...",
-                "link": "/trader/sales",
+                "link": f"/trader/sales/{trade_id}",
                 "read": False,
                 "created_at": now
             })
