@@ -520,6 +520,14 @@ async def resolve_trade_dispute(trade_id: str, data: dict = Body(...), user: dic
     }
     await db.trade_messages.insert_one(system_msg)
     
+    # Send webhook to merchant
+    if trade.get("invoice_id"):
+        from routes.invoice_api import send_webhook_notification
+        await send_webhook_notification(trade["invoice_id"], new_status, {
+            "dispute_resolution": decision,
+            "resolution_reason": reason
+        })
+    
     # Auto-archive the unified conversation
     await db.unified_conversations.update_one(
         {"$or": [

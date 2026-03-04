@@ -122,6 +122,17 @@ export default function DemoShop() {
       });
       const txs = res.data?.data?.transactions || [];
       setOrders(txs);
+      
+      // Загружаем историю вебхуков
+      const whRes = await axios.get(`${API}/shop/demo/webhooks/${apiKey}`);
+      const webhooks = whRes.data?.webhooks || [];
+      setWebhookLog(webhooks.map(w => ({
+        time: w.received_at ? new Date(w.received_at).toLocaleTimeString() : '-',
+        order_id: w.order_id,
+        payment_id: w.invoice_id,
+        status: w.status,
+        message: `Webhook: ${w.status}`
+      })));
     } catch (e) {
       console.error(e);
     }
@@ -145,7 +156,8 @@ export default function DemoShop() {
     setTopUpLoading(true);
     try {
       const orderId = `ORDER_${Date.now()}`;
-      const callbackUrl = window.location.origin + '/api/demo-webhook';
+      // Callback URL для получения вебхуков - наш endpoint в бэкенде
+      const callbackUrl = `${API}/shop/demo/callback`;
       
       const params = {
         merchant_id: merchantId,

@@ -344,13 +344,62 @@ class DemoCallbackData(BaseModel):
 async def demo_callback(data: DemoCallbackData):
     """
     Demo callback endpoint для тестирования webhooks.
+    Сохраняет полученные вебхуки в БД для отображения в демо-магазине.
     """
-    return {
-        "status": "ok",
-        "message": "Demo callback received",
-        "received_data": {
+    # Сохраняем вебхук в БД
+    webhook_record = {
+        "id": f"wh_{secrets.token_hex(8)}",
+        "invoice_id": data.payment_id,
+        "order_id": data.order_id,
+        "status": data.status,
+        "amount": data.amount,
+        "amount_usdt": data.amount_usdt,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "raw_data": {
             "order_id": data.order_id,
             "payment_id": data.payment_id,
-            "status": data.status
+            "status": data.status,
+            "amount": data.amount,
+            "amount_usdt": data.amount_usdt
         }
     }
+    
+    await db.demo_webhooks.insert_one(webhook_record)
+    
+    # Обновляем last_webhook_status в invoice
+    if data.payment_id:
+        await db.merchant_invoices.update_one(
+            {"id": data.payment_id},
+            {"$set": {"last_webhook_status": data.status, "webhook_sent": True}}
+        )
+    
+    return {
+        "status": "ok",
+        "message": "Webhook received and saved",
+        "webhook_id": webhook_record["id"]
+    }
+
+
+@router.get("/demo/webhooks/{api_key}")
+async def get_demo_webhooks(api_key: str, limit: int = 50):
+    """
+    Получить историю вебхуков для демо-магазина.
+    """
+    merchant = await db.merchants.find_one({"api_key": api_key}, {"_id": 0})
+    if not merchant:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
+    # Получаем все invoice_id этого мерчанта
+    invoices = await db.merchant_invoices.find(
+        {"merchant_id": merchant["id"]},
+        {"_id": 0, "id": 1}
+    ).to_list(1000)
+    invoice_ids = [inv["id"] for inv in invoices]
+    
+    # Получаем вебхуки для этих invoice
+    webhooks = await db.demo_webhooks.find(
+        {"invoice_id": {"$in": invoice_ids}},
+        {"_id": 0}
+    ).sort("received_at", -1).limit(limit).to_list(limit)
+    
+    return {"webhooks": webhooks, "total": len(webhooks)}
