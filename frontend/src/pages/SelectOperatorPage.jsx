@@ -886,19 +886,6 @@ export default function SelectOperatorPage() {
                   </div>
                 </div>
                 
-                {/* Ссылка на чат (сохраните!) */}
-                <div className="bg-[#7C3AED]/10 border border-[#7C3AED]/20 rounded-xl p-3 mb-4">
-                  <div className="text-[#A1A1AA] text-xs mb-2">Ваша ссылка на чат (сохраните!):</div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-[#0A0A0A] rounded px-2 py-1 text-[10px] text-white break-all">
-                      {buyerLink}
-                    </code>
-                    <Button size="sm" variant="ghost" onClick={() => copy(buyerLink)} className="text-[#7C3AED] p-1">
-                      <Copy className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-                
                 {/* Кнопка спора */}
                 {canDispute ? (
                   <Button onClick={openDispute} variant="outline" className="w-full border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444]/10" title="Открыть спор по сделке">
