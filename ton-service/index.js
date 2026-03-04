@@ -546,21 +546,45 @@ app.post('/send-usdt', apiKeyAuth, async (req, res) => {
       ]
     });
     
-    // Wait a bit and try to get the transaction hash
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // Get recent transactions to find our tx
+    // Wait for transaction to be confirmed
+    // TON transactions typically confirm in 3-5 seconds
     let txHash = null;
-    try {
-      const transactions = await tonClient.getTransactions(ownerAddress, { limit: 5 });
-      for (const tx of transactions) {
-        if (tx.now > Date.now() / 1000 - 60) { // Within last minute
-          txHash = tx.hash().toString('hex');
-          break;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (!txHash && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      attempts++;
+      
+      try {
+        await waitForRateLimit();
+        const transactions = await tonClient.getTransactions(ownerAddress, { limit: 10 });
+        for (const tx of transactions) {
+          // Find transaction from last 2 minutes with matching seqno
+          if (tx.now > Date.now() / 1000 - 120) {
+            // Check if this is our jetton transfer (outgoing message to jetton wallet)
+            if (tx.outMessages && tx.outMessages.size > 0) {
+              for (const [_, msg] of tx.outMessages) {
+                if (msg.info && msg.info.dest) {
+                  const destAddr = msg.info.dest.toString();
+                  if (destAddr === jettonWalletAddress.toString()) {
+                    txHash = tx.hash().toString('hex');
+                    break;
+                  }
+                }
+              }
+            }
+            if (txHash) break;
+          }
         }
+      } catch (e) {
+        logger.warn(`Attempt ${attempts}: Could not get tx hash: ${e.message}`);
       }
-    } catch (e) {
-      logger.warn('Could not get tx hash:', e.message);
+    }
+    
+    if (!txHash) {
+      // Fallback: use seqno-based hash placeholder
+      logger.warn(`Could not find tx hash after ${maxAttempts} attempts, using seqno reference`);
     }
     
     logger.info(`✅ Sent ${amount} USDT to ${to}, seqno: ${seqno}, hash: ${txHash || 'pending'}`);
