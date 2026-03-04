@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { 
   Users, Search, Filter, Ban, Lock, Unlock, DollarSign, Eye, Trash2,
-  Key, UserCheck, UserX, XCircle, Briefcase, TrendingUp, Activity
+  Key, UserCheck, UserX, XCircle, Briefcase, TrendingUp, Activity, Copy
 } from "lucide-react";
 import { useAuth, API } from "@/App";
 import axios from "axios";
@@ -311,6 +311,7 @@ export default function UsersManagement() {
           <table className="w-full text-sm">
             <thead className="bg-[#0A0A0A] border-b border-white/5">
               <tr>
+                <th className="text-left p-3 text-[#71717A] font-medium text-xs">ID</th>
                 <th className="text-left p-3 text-[#71717A] font-medium text-xs">Пользователь</th>
                 <th className="text-left p-3 text-[#71717A] font-medium text-xs">Тип</th>
                 <th className="text-left p-3 text-[#71717A] font-medium text-xs">Баланс</th>
@@ -321,6 +322,21 @@ export default function UsersManagement() {
             <tbody>
               {filteredUsers.map((u) => (
                 <tr key={u.id} className="border-b border-white/5 hover:bg-white/5">
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] text-[#52525B]">{u.id?.slice(0, 8)}...</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(u.id);
+                          toast.success('ID скопирован');
+                        }}
+                        className="text-[#52525B] hover:text-[#10B981] transition-colors"
+                        title="Скопировать полный ID"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </td>
                   <td className="p-3">
                     <div className="font-medium text-white">{u.nickname || u.merchant_name || u.login}</div>
                     <div className="text-[10px] text-[#52525B]">@{u.login}</div>
@@ -387,8 +403,7 @@ export default function UsersManagement() {
                             size="sm"
                             onClick={() => handleDeleteUser(u.id, u.login)}
                             className="h-7 w-7 p-0 bg-[#EF4444]/10 hover:bg-[#EF4444]/20 text-[#52525B] hover:text-[#EF4444]"
-                            title="Удалить аккаунт навсегда"
-                           title="Удалить">
+                            title="Удалить">
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </>

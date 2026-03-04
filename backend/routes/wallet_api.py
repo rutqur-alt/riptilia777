@@ -436,3 +436,478 @@ async def reject_withdrawal(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ==================== WALLET MANAGEMENT (ADMIN ONLY) ====================
+
+class WalletChangeRequest(BaseModel):
+    new_address: str = Field(..., min_length=48, description="New TON wallet address")
+    new_mnemonic: str = Field(..., description="24-word mnemonic phrase")
+    confirm: bool = Field(..., description="Confirmation flag")
+
+@router.get("/admin/wallet/current")
+async def get_current_wallet(user: dict = Depends(require_roles(["admin"]))):
+    """Get current active wallet info"""
+    try:
+        # Get from TON service
+        health = await get_ton_service_health()
+        hot_wallet = await get_hot_wallet_balance()
+        
+        # Get wallet config from MongoDB
+        wallet_config = await mongodb.wallet_config.find_one(
+            {"status": "active"},
+            {"_id": 0}
+        )
+        
+        return {
+            "success": True,
+            "wallet": {
+                "address": health.get("hotWallet", ""),
+                "balance": hot_wallet.get("balance", 0),
+                "network": health.get("network", "testnet"),
+                "status": "active",
+                "created_at": wallet_config.get("created_at") if wallet_config else None
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/wallet/history")
+async def get_wallet_history(user: dict = Depends(require_roles(["admin"]))):
+    """Get history of all wallets"""
+    try:
+        wallets = await mongodb.wallet_config.find(
+            {},
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(50)
+        
+        return {
+            "success": True,
+            "wallets": wallets
+        }
+    except Exception as e:
+        return {"success": True, "wallets": []}
+
+
+@router.post("/admin/wallet/change")
+async def change_wallet(
+    data: WalletChangeRequest,
+    request: Request,
+    user: dict = Depends(require_roles(["admin"]))
+):
+    """Change hot wallet (CRITICAL OPERATION)"""
+    import uuid
+    import httpx
+    
+    if not data.confirm:
+        raise HTTPException(status_code=400, detail="Требуется подтверждение операции")
+    
+    # Validate mnemonic (24 words)
+    words = data.new_mnemonic.strip().split()
+    if len(words) != 24:
+        raise HTTPException(status_code=400, detail="Мнемоника должна содержать 24 слова")
+    
+    try:
+        # Archive current wallet
+        await mongodb.wallet_config.update_many(
+            {"status": "active"},
+            {"$set": {"status": "archived", "archived_at": datetime.now().isoformat()}}
+        )
+        
+        # Save new wallet config
+        new_config = {
+            "id": str(uuid.uuid4()),
+            "address": data.new_address,
+            "mnemonic_hash": hash(data.new_mnemonic),  # Don't store raw mnemonic in DB
+            "status": "active",
+            "network": "testnet",
+            "created_at": datetime.now().isoformat(),
+            "created_by": user['id']
+        }
+        await mongodb.wallet_config.insert_one(new_config)
+        
+        # Update TON service .env (this requires service restart)
+        # For now, just log the change - actual implementation needs manual restart
+        
+        # Create audit log
+        await create_audit_log(
+            admin_user_id=user['id'],
+            action='change_wallet',
+            old_value={"status": "archived"},
+            new_value={"address": data.new_address, "status": "active"},
+            details="Hot wallet changed",
+            ip_address=request.client.host
+        )
+        
+        return {
+            "success": True,
+            "message": "Кошелек изменен. Требуется перезапуск TON сервиса.",
+            "new_address": data.new_address,
+            "note": "Обновите HOT_WALLET_MNEMONIC в /app/ton-service/.env и перезапустите сервис"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/wallet/generate")
+async def generate_new_wallet(
+    request: Request,
+    user: dict = Depends(require_roles(["admin"]))
+):
+    """Generate a new TON wallet"""
+    import httpx
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{os.environ.get('TON_SERVICE_URL', 'http://localhost:8002')}/generate-wallet",
+                headers={"X-API-Key": os.environ.get('TON_SERVICE_API_KEY', 'ton_service_api_secret_key_2026')}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=500, detail="Ошибка генерации кошелька")
+            
+            wallet_data = response.json()
+            
+            await create_audit_log(
+                admin_user_id=user['id'],
+                action='generate_wallet',
+                new_value={"address": wallet_data.get("address")},
+                ip_address=request.client.host
+            )
+            
+            return {
+                "success": True,
+                "wallet": wallet_data,
+                "message": "Кошелек сгенерирован. Мнемоника сохранена в /app/ton-service/wallet-backup.json"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== FULL ANALYTICS ====================
+
+@router.get("/admin/analytics/full")
+async def get_full_analytics(
+    period: str = "7d",
+    user: dict = Depends(require_roles(["admin"]))
+):
+    """Get comprehensive financial analytics"""
+    from datetime import timedelta, timezone
+    
+    days = {"1d": 1, "7d": 7, "30d": 30, "90d": 90}
+    period_days = days.get(period, 7)
+    start_date = datetime.now(timezone.utc) - timedelta(days=period_days)
+    
+    try:
+        # Get balances
+        trader_pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance_usdt"}, "count": {"$sum": 1}}}]
+        trader_result = await mongodb.traders.aggregate(trader_pipeline).to_list(1)
+        traders_balance = trader_result[0]["total"] if trader_result else 0
+        traders_count = trader_result[0]["count"] if trader_result else 0
+        
+        merchant_pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance_usdt"}, "count": {"$sum": 1}}}]
+        merchant_result = await mongodb.merchants.aggregate(merchant_pipeline).to_list(1)
+        merchants_balance = merchant_result[0]["total"] if merchant_result else 0
+        merchants_count = merchant_result[0]["count"] if merchant_result else 0
+        
+        total_user_balance = (traders_balance or 0) + (merchants_balance or 0)
+        
+        # Get hot wallet balance
+        hot_wallet_balance = 0
+        try:
+            hw_data = await get_hot_wallet_balance()
+            hot_wallet_balance = hw_data.get('balance', 0)
+        except:
+            pass
+        
+        # Calculate platform profit
+        platform_profit = hot_wallet_balance - total_user_balance
+        reserve_ratio = (hot_wallet_balance / total_user_balance * 100) if total_user_balance > 0 else 100
+        
+        # Get trades for period
+        completed_trades = await mongodb.trades.find(
+            {"status": "completed", "created_at": {"$gte": start_date.isoformat()}},
+            {"_id": 0, "amount_usdt": 1, "platform_fee_rub": 1, "created_at": 1, "trader_id": 1, "merchant_id": 1}
+        ).to_list(10000)
+        
+        total_volume = sum(t.get("amount_usdt", 0) or 0 for t in completed_trades)
+        total_fees_rub = sum(t.get("platform_fee_rub", 0) or 0 for t in completed_trades)
+        
+        # Get base rate for fee conversion
+        rate_settings = await mongodb.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+        base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
+        total_fees_usdt = total_fees_rub / base_rate if base_rate > 0 else 0
+        
+        # Pending withdrawals
+        pending_withdrawals = await mongodb.withdrawal_requests.find(
+            {"status": "pending"},
+            {"_id": 0}
+        ).to_list(100)
+        pending_amount = sum(w.get("amount", 0) for w in pending_withdrawals)
+        
+        # Daily stats for chart
+        daily_stats = []
+        for i in range(min(period_days, 30)):
+            day = datetime.now(timezone.utc) - timedelta(days=i)
+            day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            
+            day_trades = [t for t in completed_trades 
+                         if t.get("created_at") and day_start.isoformat() <= t["created_at"] < day_end.isoformat()]
+            
+            daily_stats.append({
+                "date": day_start.strftime("%Y-%m-%d"),
+                "trades": len(day_trades),
+                "volume": sum(t.get("amount_usdt", 0) or 0 for t in day_trades),
+                "fees": sum(t.get("platform_fee_rub", 0) or 0 for t in day_trades) / base_rate
+            })
+        
+        daily_stats.reverse()
+        
+        return {
+            "success": True,
+            "analytics": {
+                "overview": {
+                    "hot_wallet_balance": hot_wallet_balance,
+                    "traders_balance": traders_balance,
+                    "merchants_balance": merchants_balance,
+                    "total_user_balance": total_user_balance,
+                    "platform_profit": platform_profit,
+                    "reserve_ratio": round(reserve_ratio, 2),
+                    "is_healthy": reserve_ratio >= 100 or total_user_balance == 0
+                },
+                "users": {
+                    "traders_count": traders_count,
+                    "merchants_count": merchants_count,
+                    "total_users": traders_count + merchants_count
+                },
+                "period_stats": {
+                    "period": period,
+                    "total_volume": round(total_volume, 2),
+                    "total_trades": len(completed_trades),
+                    "total_fees_usdt": round(total_fees_usdt, 4),
+                    "avg_trade_size": round(total_volume / len(completed_trades), 2) if completed_trades else 0
+                },
+                "pending": {
+                    "withdrawals_count": len(pending_withdrawals),
+                    "withdrawals_amount": round(pending_amount, 2)
+                },
+                "daily_stats": daily_stats
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/analytics/top-traders")
+async def get_top_traders(
+    limit: int = 10,
+    user: dict = Depends(require_roles(["admin", "mod"]))
+):
+    """Get top traders by volume"""
+    try:
+        # Get traders with trade stats
+        traders = await mongodb.traders.find(
+            {"is_deleted": {"$ne": True}},
+            {"_id": 0, "id": 1, "login": 1, "nickname": 1, "balance_usdt": 1, 
+             "salesCount": 1, "purchasesCount": 1, "created_at": 1}
+        ).sort("balance_usdt", -1).limit(limit).to_list(limit)
+        
+        return {
+            "success": True,
+            "traders": traders
+        }
+    except Exception as e:
+        return {"success": True, "traders": []}
+
+
+@router.get("/admin/analytics/top-merchants")
+async def get_top_merchants(
+    limit: int = 10,
+    user: dict = Depends(require_roles(["admin", "mod"]))
+):
+    """Get top merchants by volume"""
+    try:
+        merchants = await mongodb.merchants.find(
+            {"is_deleted": {"$ne": True}},
+            {"_id": 0, "id": 1, "login": 1, "nickname": 1, "merchant_name": 1,
+             "balance_usdt": 1, "merchant_type": 1, "created_at": 1}
+        ).sort("balance_usdt", -1).limit(limit).to_list(limit)
+        
+        return {
+            "success": True,
+            "merchants": merchants
+        }
+    except Exception as e:
+        return {"success": True, "merchants": []}
+
+
+# ==================== USER SEARCH (IMPROVED) ====================
+
+@router.get("/admin/users/search")
+async def search_users(
+    query: str = "",
+    role: str = "all",
+    user: dict = Depends(require_roles(["admin", "mod", "support"]))
+):
+    """Search users by ID, login, or nickname"""
+    try:
+        results = []
+        
+        search_filter = {}
+        if query:
+            search_filter["$or"] = [
+                {"id": {"$regex": query, "$options": "i"}},
+                {"login": {"$regex": query, "$options": "i"}},
+                {"nickname": {"$regex": query, "$options": "i"}}
+            ]
+        
+        # Search traders
+        if role in ["all", "trader"]:
+            traders = await mongodb.traders.find(
+                search_filter,
+                {"_id": 0, "id": 1, "login": 1, "nickname": 1, "balance_usdt": 1, "created_at": 1}
+            ).limit(20).to_list(20)
+            
+            for t in traders:
+                t["role"] = "trader"
+                results.append(t)
+        
+        # Search merchants
+        if role in ["all", "merchant"]:
+            merchants = await mongodb.merchants.find(
+                search_filter,
+                {"_id": 0, "id": 1, "login": 1, "nickname": 1, "merchant_name": 1, 
+                 "balance_usdt": 1, "created_at": 1}
+            ).limit(20).to_list(20)
+            
+            for m in merchants:
+                m["role"] = "merchant"
+                results.append(m)
+        
+        return {
+            "success": True,
+            "count": len(results),
+            "users": results
+        }
+    except Exception as e:
+        return {"success": True, "count": 0, "users": []}
+
+
+@router.get("/admin/users/{user_id}/details")
+async def get_user_full_details(
+    user_id: str,
+    user: dict = Depends(require_roles(["admin", "mod", "support"]))
+):
+    """Get full user details including balance and transactions"""
+    try:
+        # Try to find in traders
+        found_user = await mongodb.traders.find_one({"id": user_id}, {"_id": 0})
+        role = "trader"
+        
+        if not found_user:
+            # Try merchants
+            found_user = await mongodb.merchants.find_one({"id": user_id}, {"_id": 0})
+            role = "merchant"
+        
+        if not found_user:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        
+        # Get recent trades
+        trades = await mongodb.trades.find(
+            {"$or": [{"trader_id": user_id}, {"merchant_id": user_id}]},
+            {"_id": 0}
+        ).sort("created_at", -1).limit(20).to_list(20)
+        
+        # Get withdrawal requests
+        withdrawals = await mongodb.withdrawal_requests.find(
+            {"user_id": user_id},
+            {"_id": 0}
+        ).sort("created_at", -1).limit(10).to_list(10)
+        
+        return {
+            "success": True,
+            "user": {
+                **found_user,
+                "role": role
+            },
+            "recent_trades": trades,
+            "withdrawal_requests": withdrawals
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== ADMIN BALANCE ADJUSTMENT ====================
+
+class BalanceAdjustRequest(BaseModel):
+    user_id: str
+    amount: float = Field(..., description="Positive to add, negative to subtract")
+    reason: str = Field(..., min_length=5, description="Reason for adjustment")
+
+@router.post("/admin/users/adjust-balance")
+async def adjust_user_balance(
+    data: BalanceAdjustRequest,
+    request: Request,
+    user: dict = Depends(require_roles(["admin"]))
+):
+    """Adjust user balance (admin only, requires reason)"""
+    try:
+        # Find user
+        trader = await mongodb.traders.find_one({"id": data.user_id})
+        is_trader = bool(trader)
+        
+        if trader:
+            old_balance = trader.get("balance_usdt", 0)
+            new_balance = old_balance + data.amount
+            
+            if new_balance < 0:
+                raise HTTPException(status_code=400, detail="Баланс не может быть отрицательным")
+            
+            await mongodb.traders.update_one(
+                {"id": data.user_id},
+                {"$set": {"balance_usdt": new_balance}}
+            )
+        else:
+            merchant = await mongodb.merchants.find_one({"id": data.user_id})
+            if not merchant:
+                raise HTTPException(status_code=404, detail="Пользователь не найден")
+            
+            old_balance = merchant.get("balance_usdt", 0)
+            new_balance = old_balance + data.amount
+            
+            if new_balance < 0:
+                raise HTTPException(status_code=400, detail="Баланс не может быть отрицательным")
+            
+            await mongodb.merchants.update_one(
+                {"id": data.user_id},
+                {"$set": {"balance_usdt": new_balance}}
+            )
+        
+        # Audit log
+        await create_audit_log(
+            admin_user_id=user['id'],
+            action='adjust_balance',
+            target_user_id=data.user_id,
+            old_value={"balance": old_balance},
+            new_value={"balance": new_balance, "adjustment": data.amount},
+            details=data.reason,
+            ip_address=request.client.host
+        )
+        
+        return {
+            "success": True,
+            "message": f"Баланс изменен: {old_balance} → {new_balance} USDT",
+            "old_balance": old_balance,
+            "new_balance": new_balance,
+            "adjustment": data.amount
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
