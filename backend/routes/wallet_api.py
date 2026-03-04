@@ -345,9 +345,88 @@ async def withdraw_ton(
         new_balance_val = updated.get("balance_usdt", 0) or 0
         new_frozen_val = updated.get("frozen_usdt", 0) or 0
         
+        # For trusted users - automatically send USDT
+        tx_hash = None
+        send_error = None
+        if is_trusted:
+            try:
+                # Check hot wallet balance first
+                hw_data = await get_hot_wallet_balance()
+                hot_wallet_balance = float(hw_data.get('usdt_balance', 0) or hw_data.get('balance', 0))
+                
+                if hot_wallet_balance >= data.amount:
+                    # Send USDT to user
+                    send_result = await send_usdt_withdrawal(
+                        to_address=data.to_address,
+                        amount=data.amount,
+                        comment=f"Withdrawal {request_id[:8]}"
+                    )
+                    tx_hash = send_result.get('tx_hash')
+                    
+                    if tx_hash:
+                        # Update withdrawal request with tx_hash and completed status
+                        await mongodb.withdrawal_requests.update_one(
+                            {"id": request_id},
+                            {"$set": {
+                                "status": "completed",
+                                "tx_hash": tx_hash,
+                                "completed_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+                        
+                        # Update transaction record
+                        await mongodb.transactions.update_one(
+                            {"withdrawal_id": request_id},
+                            {"$set": {
+                                "status": "completed",
+                                "tx_hash": tx_hash,
+                                "completed_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+                        
+                        # Deduct frozen balance (already frozen, now confirm deduction)
+                        if is_trader:
+                            await mongodb.traders.update_one(
+                                {"id": user_id},
+                                {"$inc": {"balance_usdt": -total_amount, "frozen_usdt": -total_amount}}
+                            )
+                        else:
+                            await mongodb.merchants.update_one(
+                                {"id": user_id},
+                                {"$inc": {"balance_usdt": -total_amount, "frozen_usdt": -total_amount}}
+                            )
+                        
+                        # Track platform fee
+                        await mongodb.platform_fees.insert_one({
+                            "type": "withdrawal_fee",
+                            "amount": WITHDRAWAL_FEE,
+                            "currency": "USDT",
+                            "from_user_id": user_id,
+                            "withdrawal_id": request_id,
+                            "created_at": datetime.now(timezone.utc).isoformat()
+                        })
+                        
+                        # Re-fetch updated balances
+                        if is_trader:
+                            updated = await mongodb.traders.find_one({"id": user_id}, {"balance_usdt": 1, "frozen_usdt": 1})
+                        else:
+                            updated = await mongodb.merchants.find_one({"id": user_id}, {"balance_usdt": 1, "frozen_usdt": 1})
+                        new_balance_val = updated.get("balance_usdt", 0) or 0
+                        new_frozen_val = updated.get("frozen_usdt", 0) or 0
+                else:
+                    send_error = f"Недостаточно USDT в кошельке биржи ({hot_wallet_balance:.2f})"
+            except Exception as e:
+                send_error = str(e)
+        
         # Different messages for trusted and regular users
         if is_trusted:
-            message = "Заявка на вывод автоматически одобрена. Средства будут отправлены в ближайшее время."
+            if tx_hash:
+                message = f"✅ Вывод выполнен! TX: {tx_hash[:16]}..."
+                withdrawal_status = "completed"
+            elif send_error:
+                message = f"⚠️ Заявка одобрена, но отправка не удалась: {send_error}. Администратор отправит вручную."
+            else:
+                message = "Заявка на вывод автоматически одобрена. Средства будут отправлены в ближайшее время."
         else:
             message = "Заявка на вывод создана. Ожидает одобрения администратора."
         
@@ -360,7 +439,8 @@ async def withdraw_ton(
                 "status": withdrawal_status,
                 "requires_approval": requires_approval,
                 "auto_approved": is_trusted,
-                "frozen_amount": data.amount
+                "frozen_amount": data.amount,
+                "tx_hash": tx_hash
             },
             "message": message,
             "new_balance": {

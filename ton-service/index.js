@@ -684,6 +684,13 @@ async function creditUserBalance(code, amount, txHash, fromAddress) {
   }
   
   try {
+    // Check if this tx_hash was already processed (prevent duplicates)
+    const existingTx = await db.collection('transactions').findOne({ tx_hash: txHash, type: 'deposit' });
+    if (existingTx) {
+      logger.info(`TX ${txHash.slice(0,16)}... already processed, skipping`);
+      return true; // Return true so it gets marked as processed in memory too
+    }
+    
     const userInfo = await findUserByCode(code);
     
     if (!userInfo) {
