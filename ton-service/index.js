@@ -730,7 +730,96 @@ async function creditUserBalance(code, amount, txHash, fromAddress) {
 }
 
 /**
+ * Parse jetton transfer notification from hot wallet transactions
+ * When someone sends USDT to hot wallet, the jetton wallet sends a notification
+ * to the HOT WALLET ADDRESS (not to the jetton wallet itself)
+ */
+function parseJettonNotification(tx) {
+  try {
+    if (!tx.inMessage || !tx.inMessage.body) return null;
+    
+    const slice = tx.inMessage.body.beginParse();
+    const op = slice.loadUint(32);
+    
+    // op code 0x7362d09c = jetton transfer notification (standard TEP-74)
+    // op code 0x178d4519 = jetton internal transfer
+    // Both can carry the amount and comment
+    if (op !== 0x7362d09c && op !== 0x178d4519) return null;
+    
+    const queryId = slice.loadUint(64);
+    const amount = slice.loadCoins();
+    const sender = slice.loadAddress();
+    
+    // Try to load forward payload (comment)
+    let comment = null;
+    try {
+      if (op === 0x7362d09c) {
+        // For transfer_notification: amount, sender, forward_payload
+        // forward_payload can be either inline or in a ref
+        const eitherPayload = slice.loadBit();
+        if (eitherPayload) {
+          // Forward payload is in a ref
+          const forwardPayload = slice.loadRef();
+          const payloadSlice = forwardPayload.beginParse();
+          const textOp = payloadSlice.loadUint(32);
+          if (textOp === 0) {
+            comment = payloadSlice.loadStringTail();
+          }
+        } else {
+          // Forward payload is inline - try to read as text
+          const textOp = slice.loadUint(32);
+          if (textOp === 0) {
+            comment = slice.loadStringTail();
+          }
+        }
+      } else {
+        // For internal_transfer: skip response_destination, then load forward_payload
+        slice.loadAddress();
+        const forwardPayload = slice.loadMaybeRef();
+        if (forwardPayload) {
+          const payloadSlice = forwardPayload.beginParse();
+          const textOp = payloadSlice.loadUint(32);
+          if (textOp === 0) {
+            comment = payloadSlice.loadStringTail();
+          }
+        }
+      }
+    } catch (e) {
+      // No comment or parse error - try to extract from raw body
+      try {
+        const bodyBuffer = tx.inMessage.body.toBoc().toString('hex');
+        // Look for 6-digit number in the raw data
+        const match = bodyBuffer.match(/(\d{6})/);
+        if (match) {
+          comment = match[1];
+        }
+      } catch (e2) {
+        // Also try to decode body as text
+        try {
+          const bodyStr = tx.inMessage.body.toString();
+          const match = bodyStr.match(/(\d{6})/);
+          if (match) {
+            comment = match[1];
+          }
+        } catch (e3) {}
+      }
+    }
+    
+    return {
+      amount: Number(amount) / 1000000, // USDT has 6 decimals
+      sender: sender.toString(),
+      comment
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
  * Process incoming USDT deposits
+ * IMPORTANT: We listen on the HOT WALLET address, not on the jetton wallet!
+ * When USDT is sent to hot wallet, the jetton contract sends a notification
+ * message (op 0x178d4519) to the hot wallet address.
  */
 async function processUSDTDeposits() {
   if (!hotWallet || isListenerRunning || !mongoConnected) return;
@@ -744,17 +833,11 @@ async function processUSDTDeposits() {
   isListenerRunning = true;
   
   try {
-    // Get jetton wallet address
-    const jettonWalletAddress = await getHotWalletJettonAddress();
-    if (!jettonWalletAddress) {
-      logger.warn('Could not get jetton wallet address');
-      isListenerRunning = false;
-      return;
-    }
-    
-    // Get transactions to jetton wallet
+    // Get transactions to HOT WALLET (not jetton wallet!)
+    // USDT transfer notifications arrive at the hot wallet address
     await waitForRateLimit();
-    const transactions = await tonClient.getTransactions(jettonWalletAddress, { limit: 30 });
+    const hotWalletAddress = Address.parse(hotWallet.address);
+    const transactions = await tonClient.getTransactions(hotWalletAddress, { limit: 30 });
     
     for (const tx of transactions) {
       const txHash = tx.hash().toString('hex');
@@ -762,22 +845,40 @@ async function processUSDTDeposits() {
       // Skip already processed
       if (processedTxHashes.has(txHash)) continue;
       
-      // Parse jetton transfer
-      const transfer = parseJettonTransfer(tx);
+      // Try to parse as jetton notification (USDT transfer)
+      const transfer = parseJettonNotification(tx);
       
-      if (transfer && transfer.amount > 0 && transfer.comment) {
-        logger.info(`📥 Incoming USDT: ${transfer.amount} from ${transfer.sender}, comment: "${transfer.comment}"`);
+      if (transfer && transfer.amount > 0) {
+        // Extract deposit code from comment
+        let depositCode = transfer.comment;
         
-        // Credit to user balance
-        const credited = await creditUserBalance(
-          transfer.comment, // comment = user_id
-          transfer.amount,
-          txHash,
-          transfer.sender
-        );
+        // If no direct comment, try to extract from raw message
+        if (!depositCode && tx.inMessage && tx.inMessage.body) {
+          try {
+            const bodyStr = tx.inMessage.body.toString();
+            const match = bodyStr.match(/\d{6}/);
+            if (match) {
+              depositCode = match[0];
+            }
+          } catch (e) {}
+        }
         
-        if (!credited) {
-          logger.warn(`Could not credit deposit to user: ${transfer.comment}`);
+        if (depositCode) {
+          logger.info(`📥 Incoming USDT: ${transfer.amount} USDT from ${transfer.sender}, deposit code: "${depositCode}"`);
+          
+          // Credit to user balance
+          const credited = await creditUserBalance(
+            depositCode.trim(),
+            transfer.amount,
+            txHash,
+            transfer.sender
+          );
+          
+          if (!credited) {
+            logger.warn(`Could not credit deposit to user with code: ${depositCode}`);
+          }
+        } else {
+          logger.warn(`📥 USDT deposit without valid code: ${transfer.amount} USDT from ${transfer.sender}`);
         }
       }
       
