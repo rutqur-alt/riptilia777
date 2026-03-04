@@ -1,80 +1,53 @@
-# Reptiloid P2P Exchange - Product Requirements Document
+# P2P Crypto Exchange Platform - PRD
 
 ## Original Problem Statement
-Build a P2P cryptocurrency exchange platform named "Reptiloid" with a focus on creating a robust, secure, and well-documented redirect-based Merchant API for accepting payments.
+Создать P2P криптовалютную биржу с новой финансовой системой на базе TON блокчейна.
 
-## Core Features Implemented
-- **Redirect-based Merchant API** for accepting RUB payments via P2P USDT
-- **Demo Store** that simulates real merchant integration
-- **Live Webhooks** with full E2E notification flow
-- **Admin Panel** for configuring business rules
-- **Trader Dashboard** for managing offers and trades
-- **Merchant Dashboard** for viewing transactions and API keys
+## Core Requirements
+1. **Архитектура:** Гибридная система (Python/FastAPI + Node.js TON service + PostgreSQL/MongoDB)
+2. **Валюта:** USDT (Jettons на TON сети)
+3. **Модель:** Кастодиальная (единый hot wallet)
+4. **Роли:** Trader, Merchant, Support, Moderator, Admin
 
-## Key Technical Components
-- **Frontend**: React, Redux, Axios, Tailwind CSS
-- **Backend**: FastAPI, Pydantic, Motor (async MongoDB)
-- **Database**: MongoDB
+## User Personas
+- **Трейдер (111):** Покупает/продает USDT, управляет объявлениями
+- **Мерчант (222):** Бизнес-пользователь с расширенным API
+- **Админ (admin):** Полный доступ к управлению платформой
 
-## API Documentation (Updated March 4, 2026)
-The merchant-facing API documentation has been completely rewritten to be 100% accurate and match the current working implementation.
+## What's Been Implemented
 
-### Main Endpoints:
-- `POST /api/v1/invoice/create` - Create payment (get payment_url)
-- `GET /api/v1/invoice/status` - Check payment status
-- `GET /api/v1/invoice/transactions` - Transaction list
-- `GET /api/v1/invoice/stats` - Payment statistics
+### Sprint 1 - Financial Core Scaffolding ✅
+- [x] Node.js `ton-service` микросервис для TON блокчейна
+- [x] PostgreSQL схема для финансовых данных
+- [x] Новые API endpoints `/api/wallet/*`
+- [x] UI: `TonWalletPage.jsx`, `TonFinanceAdmin.jsx`
+- [x] Интеграция в роутинг и навигацию
 
-### Webhook Statuses:
-- `pending` - Customer selected operator, waiting for payment
-- `paid` - Customer paid, waiting for operator confirmation
-- `completed` - Payment successful
-- `cancelled` - Cancelled (timeout 30 min after operator selection)
-- `expired` - Expired (customer didn't select operator within 30 min)
-- `disputed` - Dispute opened, waiting for arbitration
+### UI Cleanup ✅ (2026-03-04)
+- [x] Удалены старые пункты меню финансов
+- [x] Удален блок "Основной баланс" из TraderDashboard
+- [x] Исправлена синтаксическая ошибка в TraderBalance.jsx
 
-## Completed Work
-- [x] Correct fund distribution logic (commission based on original_amount_rub)
-- [x] Dispute resolution logic fixes across all endpoints
-- [x] Unified merchant transaction view (original_amount_rub, trd_... IDs)
-- [x] Configurable payout rules (min successful trades for traders)
-- [x] Live webhooks for demo store
-- [x] State synchronization between trades and invoices
-- [x] **API Documentation rewrite (March 4, 2026)**
-- [x] **Trader dashboard: base rate display (March 4, 2026)** - Shows USDT/RUB rate
-- [x] **Notification links fixed (March 4, 2026)** - All notification links now lead to specific trade pages
-- [x] **TON Finance System - Sprint 1 (March 4, 2026)**:
-  - PostgreSQL database for financial data (ACID transactions)
-  - Node.js TON microservice (port 8002) for blockchain interactions
-  - Hot wallet generated on Testnet
-  - Deposit listener (polling every 5 sec)
-  - Python API integration (/api/wallet/*)
-  - User balance and transaction tracking
-- [x] **TON Finance UI (March 4, 2026)**:
-  - User Finance Page for Traders/Merchants (/trader/ton-finance, /merchant/ton-finance)
-  - Admin Finance Dashboard (/admin/ton-finance)
-  - Balance cards, deposit instructions, transaction history with filters
-  - Withdrawal modal with amount/address validation
-  - Admin: analytics, pending withdrawals approval, user search, audit logs
+## Current Blockers
+- **TON Service FATAL:** Rate limiting (429) от testnet.toncenter.com
 
-## Known Technical Debt
-- **Duplicate API Endpoints**: At least 4 endpoints for resolving disputes exist and need consolidation
-- **Backend Directory Structure**: Routes scattered between /src/api and /src/routes
-
-## Future Tasks (Backlog)
-1. **(P1) Refactor Dispute Resolution**: Consolidate 4+ dispute endpoints into single authoritative endpoint
-2. **(P1) Cleanup invoice_api.py**: Remove unused white-label API endpoints
-3. **(P2) Deprecate Old Merchant API**: Remove legacy API from merchant_api.py
-4. **(P3) Standardize Backend Routes**: Consolidate all routes into /src/routes
-5. **(P3) Migrate Legacy Notifications**: Move data from notifications to event_notifications collection
+## Tech Stack
+- **Backend:** FastAPI, Motor (MongoDB), asyncpg (PostgreSQL)
+- **Frontend:** React, Redux, Tailwind CSS
+- **TON Integration:** Node.js, @ton/ton library
+- **Databases:** MongoDB (app data), PostgreSQL (finance data)
 
 ## Test Credentials
-- **Super Admin**: admin / 000000
-- **Trader "111"**: 111 / string
-- **Merchant "222"**: 222 / string (commission 10%)
+- Trader: `111` / `string`
+- Merchant: `222` / `string`
+- Admin: `admin` / `000000`
+- Database: `test_database`
 
 ## Key Files
-- `/frontend/src/pages/MerchantAPI.js` - Merchant API documentation page (UPDATED)
-- `/backend/routes/invoice_api.py` - Invoice API implementation
-- `/backend/routes/trades.py` - Core trade logic
-- `/frontend/src/pages/demo/DemoShop.jsx` - Demo store reference implementation
+- `/app/ton-service/index.js` - TON blockchain service
+- `/app/backend/src/routes/wallet_api.py` - Finance API
+- `/app/frontend/src/pages/shared/TonWalletPage.jsx` - User wallet UI
+- `/app/frontend/src/pages/Admin/TonFinanceAdmin.jsx` - Admin finance UI
+
+---
+Last updated: 2026-03-04

@@ -11,7 +11,7 @@ export default defineConfig({
     ['json', { outputFile: '/root/.emergent/automation_output/20260303_180319/results.json' }],
   ],
   use: {
-    baseURL: 'https://merchant-integration-1.preview.emergentagent.com',
+    baseURL: 'https://blockchain-finance.preview.emergentagent.com',
     screenshot: 'only-on-failure',
     trace: 'off',
     headless: true,

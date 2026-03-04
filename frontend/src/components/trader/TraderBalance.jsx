@@ -116,20 +116,8 @@ export default function TraderBalance() {
 
   return (
     <div className="space-y-6">
-      {/* Balance + Quick Stats Row */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-[#10B981] to-[#059669] rounded-2xl p-5 lg:col-span-2">
-          <div className="text-white/80 text-sm mb-1">Основной баланс</div>
-          <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
-            {trader?.balance_usdt?.toFixed(2) || 0} <span className="text-lg">USDT</span>
-          </div>
-          {trader?.shop_balance > 0 && (
-            <div className="mt-2 pt-2 border-t border-white/20">
-              <span className="text-white/70 text-sm">+ {trader?.shop_balance?.toFixed(2)} USDT (магазин)</span>
-            </div>
-          )}
-        </div>
-
+      {/* Quick Stats Row */}
+      <div className="grid sm:grid-cols-3 gap-4">
         {/* Base Rate Card */}
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-2">
@@ -150,10 +138,7 @@ export default function TraderBalance() {
           <div className="text-xl font-bold text-white">{trader?.salesCount || 0}</div>
           <div className="text-xs text-[#10B981] font-['JetBrains_Mono']">{(trader?.salesVolume || 0).toFixed(0)} USDT</div>
         </div>
-      </div>
 
-      {/* Stats Row */}
-      <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[#71717A] text-sm">Покупки</span>
@@ -162,15 +147,16 @@ export default function TraderBalance() {
           <div className="text-xl font-bold text-white">{trader?.purchasesCount || 0}</div>
           <div className="text-xs text-[#7C3AED] font-['JetBrains_Mono']">{(trader?.purchasesVolume || 0).toFixed(0)} USDT</div>
         </div>
+      </div>
 
-        <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[#71717A] text-sm">Завершённых сделок</span>
-            <CheckCircle className="w-4 h-4 text-[#10B981]" />
-          </div>
-          <div className="text-xl font-bold text-white">{(trader?.salesCount || 0) + (trader?.purchasesCount || 0)}</div>
-          <div className="text-xs text-[#71717A]">всего</div>
+      {/* Stats Row */}
+      <div className="bg-[#121212] border border-white/5 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[#71717A] text-sm">Завершённых сделок</span>
+          <CheckCircle className="w-4 h-4 text-[#10B981]" />
         </div>
+        <div className="text-xl font-bold text-white">{(trader?.salesCount || 0) + (trader?.purchasesCount || 0)}</div>
+        <div className="text-xs text-[#71717A]">всего</div>
       </div>
 
       {/* Quick Actions */}
