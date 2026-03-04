@@ -87,7 +87,14 @@ export default function DemoShop() {
         loadOrders();
       }
     } catch (e) {
-      toast.error('Ошибка подключения: ' + (e.response?.data?.detail || e.message));
+      const errData = e.response?.data;
+      let errMsg = e.message;
+      if (errData) {
+        if (typeof errData === 'string') errMsg = errData;
+        else if (typeof errData.detail === 'string') errMsg = errData.detail;
+        else if (errData.message) errMsg = errData.message;
+      }
+      toast.error('Ошибка подключения: ' + errMsg);
     }
   };
 
@@ -170,10 +177,19 @@ export default function DemoShop() {
         // Refresh orders
         setTimeout(loadOrders, 1000);
       } else {
-        toast.error(res.data.message || 'Ошибка создания платежа');
+        const msg = res.data.message || res.data.detail;
+        toast.error(typeof msg === 'string' ? msg : 'Ошибка создания платежа');
       }
     } catch (e) {
-      toast.error(e.response?.data?.detail || e.response?.data?.message || 'Ошибка');
+      const errData = e.response?.data;
+      let errMsg = 'Ошибка';
+      if (errData) {
+        if (typeof errData === 'string') errMsg = errData;
+        else if (typeof errData.detail === 'string') errMsg = errData.detail;
+        else if (typeof errData.message === 'string') errMsg = errData.message;
+        else if (errData.detail?.message) errMsg = errData.detail.message;
+      }
+      toast.error(errMsg);
     }
     setTopUpLoading(false);
     setAmount('');
