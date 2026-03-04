@@ -10,6 +10,8 @@ from datetime import datetime, timezone, timedelta
 import jwt
 import os
 
+from core.database import db
+
 router = APIRouter(tags=["TON Wallet"])
 
 # JWT config
@@ -83,21 +85,45 @@ async def wallet_health():
 async def get_user_deposit_address(user: dict = Depends(get_current_user_from_token)):
     """
     Get deposit address and memo for current user.
-    User should send TON to this address with the provided comment.
+    User should send USDT to this address with the provided comment (deposit_code).
     """
     try:
-        result = await get_deposit_address(user['id'])
+        # Get user's short deposit code from database
+        user_id = user['id']
+        role = user.get('role', 'trader')
+        
+        collection = db.traders if role == 'trader' else db.merchants
+        user_doc = await collection.find_one({"id": user_id}, {"_id": 0, "deposit_code": 1})
+        
+        deposit_code = user_doc.get('deposit_code') if user_doc else None
+        
+        # If no deposit code exists, generate one
+        if not deposit_code:
+            import random
+            for _ in range(100):
+                code = str(random.randint(100000, 999999))
+                existing = await db.traders.find_one({"deposit_code": code})
+                if not existing:
+                    existing = await db.merchants.find_one({"deposit_code": code})
+                if not existing:
+                    deposit_code = code
+                    await collection.update_one({"id": user_id}, {"$set": {"deposit_code": code}})
+                    break
+        
+        # Get hot wallet address from TON service
+        result = await get_deposit_address(user_id)
+        
         return {
             "success": True,
             "deposit_info": {
                 "address": result['address'],
-                "comment": result['comment'],
+                "comment": deposit_code,  # Use short 6-digit code
                 "network": result['network'],
                 "instructions": [
-                    f"1. Send TON to address: {result['address']}",
-                    f"2. IMPORTANT: Include this comment/memo: {result['comment']}",
-                    "3. Wait for network confirmation (usually 1-2 minutes)",
-                    "4. Your balance will be credited automatically"
+                    f"1. Отправьте USDT (сеть TON) на адрес: {result['address']}",
+                    f"2. ОБЯЗАТЕЛЬНО укажите комментарий: {deposit_code}",
+                    "3. Дождитесь подтверждения сети (1-2 минуты)",
+                    "4. Баланс зачислится автоматически"
                 ]
             }
         }
