@@ -113,8 +113,7 @@ export default function AdminPanel() {
         { path: "/admin/users", icon: Users, label: "Пользователи", roles: ["owner", "admin", "mod_p2p"] },
         { path: "/admin/staff", icon: UserCog, label: "Персонал", roles: ["owner", "admin"] },
         { path: "/admin/staff/monitor", icon: Eye, label: "Мониторинг", roles: ["owner", "admin"] },
-        { path: "/admin/finances", icon: DollarSign, label: "Финансы", roles: ["owner", "admin"] },
-        { path: "/admin/wallet", icon: Wallet, label: "USDT Кошелёк", roles: ["owner", "admin", "mod_p2p"] },
+        { path: "/admin/ton-finance", icon: Wallet, label: "USDT Кошелёк", roles: ["owner", "admin", "mod_p2p"] },
       ]
     },
     {

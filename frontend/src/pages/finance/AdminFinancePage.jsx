@@ -67,35 +67,41 @@ export default function AdminFinancePage() {
 
   const fetchData = async () => {
     setLoading(true);
+    const headers = { Authorization: `Bearer ${token}` };
+    
+    // Запускаем ВСЕ запросы параллельно для максимальной скорости
+    const requests = [
+      axios.get(`${API}/admin/finance/analytics`, { headers }).catch(() => ({ data: { analytics: null } })),
+      axios.get(`${API}/admin/finance/pending-withdrawals`, { headers }).catch(() => ({ data: { pending_withdrawals: [] } })),
+      axios.get(`${API}/admin/analytics/full?period=${period}`, { headers }).catch(() => ({ data: { analytics: null } })),
+    ];
+    
+    // Добавляем admin-only запросы
+    if (isAdmin) {
+      requests.push(
+        axios.get(`${API}/admin/finance/hot-wallet`, { headers }).catch(() => ({ data: { hot_wallet: null } })),
+        axios.get(`${API}/admin/finance/audit-logs?limit=50`, { headers }).catch(() => ({ data: { logs: [] } })),
+        axios.get(`${API}/admin/analytics/top-traders?limit=10`, { headers }).catch(() => ({ data: { traders: [] } })),
+        axios.get(`${API}/admin/analytics/top-merchants?limit=10`, { headers }).catch(() => ({ data: { merchants: [] } }))
+      );
+    }
+    
     try {
-      const headers = { Authorization: `Bearer ${token}` };
+      const results = await Promise.all(requests);
       
-      const [analyticsRes, pendingRes, fullRes] = await Promise.all([
-        axios.get(`${API}/admin/finance/analytics`, { headers }),
-        axios.get(`${API}/admin/finance/pending-withdrawals`, { headers }),
-        axios.get(`${API}/admin/analytics/full?period=${period}`, { headers })
-      ]);
+      // Устанавливаем данные по мере получения
+      setAnalytics(results[0].data.analytics);
+      setPendingWithdrawals(results[1].data.pending_withdrawals || []);
+      setFullAnalytics(results[2].data.analytics);
       
-      setAnalytics(analyticsRes.data.analytics);
-      setPendingWithdrawals(pendingRes.data.pending_withdrawals || []);
-      setFullAnalytics(fullRes.data.analytics);
-      
-      if (isAdmin) {
-        const [hotWalletRes, logsRes, tradersRes, merchantsRes] = await Promise.all([
-          axios.get(`${API}/admin/finance/hot-wallet`, { headers }),
-          axios.get(`${API}/admin/finance/audit-logs?limit=50`, { headers }),
-          axios.get(`${API}/admin/analytics/top-traders?limit=10`, { headers }),
-          axios.get(`${API}/admin/analytics/top-merchants?limit=10`, { headers })
-        ]);
-        
-        setHotWallet(hotWalletRes.data.hot_wallet);
-        setAuditLogs(logsRes.data.logs || []);
-        setTopTraders(tradersRes.data.traders || []);
-        setTopMerchants(merchantsRes.data.merchants || []);
+      if (isAdmin && results.length > 3) {
+        setHotWallet(results[3].data.hot_wallet);
+        setAuditLogs(results[4].data.logs || []);
+        setTopTraders(results[5].data.traders || []);
+        setTopMerchants(results[6].data.merchants || []);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast.error('Ошибка загрузки данных');
     } finally {
       setLoading(false);
     }

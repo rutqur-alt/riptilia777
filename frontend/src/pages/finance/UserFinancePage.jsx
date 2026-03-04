@@ -22,17 +22,21 @@ import {
 const TX_TYPES = {
   deposit: { label: 'Пополнение', icon: ArrowDownCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10', sign: '+' },
   withdraw: { label: 'Вывод', icon: ArrowUpCircle, color: 'text-red-400', bg: 'bg-red-500/10', sign: '-' },
+  withdrawal: { label: 'Вывод', icon: ArrowUpCircle, color: 'text-red-400', bg: 'bg-red-500/10', sign: '-' },
   fee: { label: 'Комиссия', icon: TrendingDown, color: 'text-orange-400', bg: 'bg-orange-500/10', sign: '-' },
   internal_transfer: { label: 'Перевод', icon: Repeat, color: 'text-blue-400', bg: 'bg-blue-500/10', sign: '↔' },
-  refund: { label: 'Возврат', icon: TrendingUp, color: 'text-purple-400', bg: 'bg-purple-500/10', sign: '+' },
+  refund: { label: 'Возврат', icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10', sign: '+' },
   trade_fee: { label: 'Торговая комиссия', icon: TrendingDown, color: 'text-orange-400', bg: 'bg-orange-500/10', sign: '-' },
+  trade: { label: 'Сделка P2P', icon: Repeat, color: 'text-blue-400', bg: 'bg-blue-500/10', sign: '' },
 };
 
 const TX_STATUSES = {
   pending: { label: 'Ожидает', icon: Clock, color: 'text-yellow-400' },
   confirming: { label: 'Подтверждается', icon: RefreshCw, color: 'text-blue-400' },
   success: { label: 'Успешно', icon: CheckCircle, color: 'text-emerald-400' },
+  completed: { label: 'Выполнено', icon: CheckCircle, color: 'text-emerald-400' },
   failed: { label: 'Ошибка', icon: XCircle, color: 'text-red-400' },
+  rejected: { label: 'Отклонено', icon: XCircle, color: 'text-red-400' },
   review: { label: 'На проверке', icon: Clock, color: 'text-orange-400' },
   cancelled: { label: 'Отменено', icon: XCircle, color: 'text-zinc-400' },
 };

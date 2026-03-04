@@ -29,63 +29,72 @@
 ### Sprint 2 - Full Financial Dashboard ✅ (2026-03-04)
 - [x] Полная аналитика: Hot Wallet, Долг трейдерам/мерчантам, ДЕФИЦИТ индикатор
 - [x] Управление кошельком: просмотр, смена, генерация нового
-- [x] Поиск пользователей: по ID/логину/никнейму с детальной информацией
-- [x] Корректировка баланса пользователей (Admin only)
-- [x] Кнопка копирования ID в списке пользователей
-- [x] Одобрение/отклонение заявок на вывод
-- [x] График объёма торгов по дням
-- [x] Топ-10 трейдеров и мерчантов
+- [x] Поиск пользователей с копированием ID
+- [x] Корректировка баланса пользователей
+
+### Sprint 3 - Withdrawal Flow ✅ (2026-03-04)
+- [x] Заморозка баланса при запросе на вывод
+- [x] Проверка hot wallet при одобрении (ошибка если недостаточно)
+- [x] Возврат средств при отклонении (frozen → balance)
+- [x] История транзакций у пользователя (вывод, возврат)
+- [x] Удалён раздел "Финансы" из меню админа
+- [x] Оптимизирована загрузка USDT Кошелёк
+
+## Withdrawal Flow (Correct Implementation)
+
+### 1. User Request Withdrawal
+```
+POST /api/wallet/withdraw
+→ balance_usdt: 100 → 50
+→ frozen_usdt: 0 → 50
+→ Create withdrawal_request (status: pending)
+→ Create transaction record
+```
+
+### 2. Admin Approve
+```
+POST /api/admin/finance/approve-withdrawal/{id}
+→ CHECK hot_wallet_balance >= amount
+→ If insufficient: ERROR "Недостаточно средств в кошельке биржи!"
+→ frozen_usdt: 50 → 0
+→ Status: completed
+```
+
+### 3. Admin Reject
+```
+POST /api/admin/finance/reject-withdrawal/{id}
+→ frozen_usdt: 50 → 0
+→ balance_usdt: 50 → 100 (refund)
+→ Create refund transaction
+→ Status: rejected
+```
 
 ## Tech Stack
 - **Backend:** FastAPI, Motor (MongoDB)
 - **Frontend:** React, Redux, Tailwind CSS, Shadcn/UI
 - **TON Integration:** Node.js, @ton/ton library
-- **Database:** MongoDB (all data)
+- **Database:** MongoDB
 
 ## Test Credentials
-- Trader: `111` / `string` (balance: 100 USDT)
-- Merchant: `222` / `string` (balance: 100-200 USDT)
-- Admin: `admin` / `000000` (role: owner)
-- Database: `test_database`
+- Trader: `111` / `string`
+- Merchant: `222` / `string`
+- Admin: `admin` / `000000`
 
-## Key API Endpoints
-### User Wallet
-- `GET /api/wallet/balance` — баланс пользователя
-- `GET /api/wallet/deposit-address` — адрес депозита + memo
-- `POST /api/wallet/withdraw` — запрос на вывод
-
-### Admin Finance
-- `GET /api/admin/analytics/full` — полная аналитика
-- `GET /api/admin/wallet/current` — текущий кошелёк
-- `POST /api/admin/wallet/change` — смена кошелька
-- `POST /api/admin/wallet/generate` — генерация нового
-- `GET /api/admin/users/search` — поиск пользователей
-- `GET /api/admin/users/{id}/details` — детали пользователя
-- `POST /api/admin/users/adjust-balance` — корректировка баланса
-- `GET /api/admin/finance/pending-withdrawals` — заявки на вывод
-- `POST /api/admin/finance/approve-withdrawal/{id}` — одобрить
-- `POST /api/admin/finance/reject-withdrawal/{id}` — отклонить
-
-## Key Files
-- `/app/ton-service/index.js` — TON blockchain service
-- `/app/backend/routes/wallet_api.py` — Finance API (расширенный)
-- `/app/backend/routes/ton_finance.py` — TON service integration
-- `/app/frontend/src/pages/finance/AdminFinancePage.jsx` — Admin dashboard (полный)
-- `/app/frontend/src/pages/finance/UserFinancePage.jsx` — User wallet
-- `/app/frontend/src/components/admin/UsersManagement.jsx` — Пользователи с копированием ID
-
-## Known Limitations
-- Hot wallet balance = 0 (testnet, needs funding)
-- E2E депозит/вывод не протестирован с реальными транзакциями
+## Key Collections (MongoDB)
+- `traders` - balance_usdt, frozen_usdt
+- `merchants` - balance_usdt, frozen_usdt
+- `withdrawal_requests` - pending/completed/rejected
+- `transactions` - history of all operations
+- `audit_logs` - admin actions
 
 ## Backlog (ТЗ v3.0)
-- [ ] Лимиты выводов по ролям
+- [ ] Лимиты выводов по ролям (50/200/1000 USDT)
 - [ ] 2FA для критических операций  
 - [ ] Глобальный СТОП выводов
 - [ ] Блокировки по пользователям/ролям
 - [ ] Экспорт CSV/Excel
-- [ ] Audit logs расширенные
 - [ ] Уведомления Telegram
+- [ ] E2E тест депозита на testnet
 
 ---
 Last updated: 2026-03-04

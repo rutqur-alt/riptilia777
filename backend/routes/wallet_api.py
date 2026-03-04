@@ -6,7 +6,7 @@ Provides user-facing API endpoints for TON deposits and withdrawals
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import jwt
 import os
 
@@ -169,55 +169,121 @@ async def withdraw_ton(
     user: dict = Depends(get_current_user_from_token)
 ):
     """
-    Request TON withdrawal.
-    - Amounts < 50 TON: Automatic processing
-    - Amounts >= 50 TON: Requires moderator/admin approval
+    Request USDT withdrawal.
+    1. Проверяет баланс
+    2. Замораживает средства (balance -> frozen)
+    3. Создает запись в withdrawal_requests со статусом pending
+    4. Создает запись в истории транзакций
     """
+    import uuid
+    
     try:
-        # Get user's current balance
-        balance = await get_user_ton_balance(user['id'])
-        available = balance['available_ton']
+        # Get user's current balance from MongoDB
+        user_id = user['id']
+        trader = await mongodb.traders.find_one({"id": user_id})
+        is_trader = bool(trader)
+        
+        if trader:
+            current_balance = trader.get("balance_usdt", 0) or 0
+            frozen_balance = trader.get("frozen_usdt", 0) or 0
+        else:
+            merchant = await mongodb.merchants.find_one({"id": user_id})
+            if not merchant:
+                raise HTTPException(status_code=404, detail="Пользователь не найден")
+            current_balance = merchant.get("balance_usdt", 0) or 0
+            frozen_balance = merchant.get("frozen_usdt", 0) or 0
+        
+        available_balance = current_balance - frozen_balance
         
         # Check balance
-        if data.amount > available:
+        if data.amount > available_balance:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Insufficient balance. Available: {available} TON"
+                detail=f"Недостаточно средств. Доступно: {available_balance:.2f} USDT"
             )
+        
+        if data.amount <= 0:
+            raise HTTPException(status_code=400, detail="Сумма должна быть положительной")
         
         # Check daily limit based on role
         daily_limit = 50.0  # Default for traders
         if user.get('role') == 'merchant':
-            daily_limit = 200.0
-        elif user.get('role') in ['admin', 'mod']:
-            daily_limit = 1000.0
+            # Check merchant type for limit
+            if not is_trader:
+                merchant_type = merchant.get('merchant_type', 'I')
+                daily_limit = 1000.0 if merchant_type == 'II' else 200.0
         
-        # Request withdrawal
-        result = await request_withdrawal(
-            user_id=user['id'],
-            amount=data.amount,
-            to_address=data.to_address,
-            comment=data.comment or ''
-        )
+        # Create withdrawal request ID
+        request_id = f"wd_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc).isoformat()
         
-        requires_approval = data.amount >= 50.0
+        # FREEZE the balance (move from balance to frozen)
+        if is_trader:
+            await mongodb.traders.update_one(
+                {"id": user_id},
+                {
+                    "$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}
+                }
+            )
+        else:
+            await mongodb.merchants.update_one(
+                {"id": user_id},
+                {
+                    "$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}
+                }
+            )
+        
+        # Create withdrawal request
+        withdrawal_doc = {
+            "id": request_id,
+            "user_id": user_id,
+            "user_login": user.get('login', ''),
+            "amount": data.amount,
+            "to_address": data.to_address,
+            "comment": data.comment or '',
+            "status": "pending",
+            "requires_approval": True,
+            "created_at": now,
+            "updated_at": now
+        }
+        await mongodb.withdrawal_requests.insert_one(withdrawal_doc)
+        
+        # Create transaction history record
+        tx_doc = {
+            "id": f"tx_{uuid.uuid4().hex[:12]}",
+            "user_id": user_id,
+            "type": "withdrawal",
+            "amount": data.amount,
+            "currency": "USDT",
+            "to_address": data.to_address,
+            "status": "pending",
+            "withdrawal_id": request_id,
+            "created_at": now,
+            "description": f"Запрос на вывод {data.amount} USDT"
+        }
+        await mongodb.transactions.insert_one(tx_doc)
         
         return {
             "success": True,
             "withdrawal": {
-                "tx_id": result.get('txId'),
+                "id": request_id,
                 "amount": data.amount,
                 "to_address": data.to_address,
-                "fee": result.get('fee', 0.05),
-                "status": "pending_approval" if requires_approval else result.get('status', 'processing'),
-                "requires_approval": requires_approval
+                "status": "pending",
+                "requires_approval": True,
+                "frozen_amount": data.amount
             },
-            "message": "Withdrawal requires moderator approval" if requires_approval else "Withdrawal processing"
+            "message": "Заявка на вывод создана. Ожидает одобрения администратора.",
+            "new_balance": {
+                "available": available_balance - data.amount,
+                "frozen": frozen_balance + data.amount
+            }
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -321,7 +387,12 @@ async def approve_withdrawal(
     request: Request,
     user: dict = Depends(require_roles(["admin", "mod"]))
 ):
-    """Approve a pending withdrawal"""
+    """
+    Approve a pending withdrawal.
+    1. Проверяет что Hot Wallet имеет достаточно средств
+    2. Списывает замороженные средства
+    3. Отправляет транзакцию через TON service
+    """
     try:
         # Find the withdrawal request
         withdrawal = await mongodb.withdrawal_requests.find_one(
@@ -330,24 +401,65 @@ async def approve_withdrawal(
         )
         
         if not withdrawal:
-            raise HTTPException(status_code=404, detail="Withdrawal not found or already processed")
+            raise HTTPException(status_code=404, detail="Заявка не найдена или уже обработана")
         
         amount = float(withdrawal.get('amount', 0))
+        target_user_id = withdrawal.get('user_id')
+        to_address = withdrawal.get('to_address')
         
         # Check moderator limits
-        if user.get('role') == 'mod' and amount > 50:
+        if user.get('admin_role') not in ['owner', 'admin'] and amount > 500:
             raise HTTPException(
                 status_code=403, 
-                detail="Moderators can only approve withdrawals up to 50 USDT"
+                detail="Модераторы могут одобрять выводы до 500 USDT"
             )
         
-        # Update status
+        # CHECK HOT WALLET BALANCE
+        hot_wallet_balance = 0
+        try:
+            hw_data = await get_hot_wallet_balance()
+            hot_wallet_balance = float(hw_data.get('balance', 0))
+        except:
+            pass
+        
+        if hot_wallet_balance < amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Недостаточно средств в кошельке биржи! Требуется: {amount} USDT, доступно: {hot_wallet_balance:.2f} USDT"
+            )
+        
+        # Find user and remove frozen balance
+        trader = await mongodb.traders.find_one({"id": target_user_id})
+        if trader:
+            await mongodb.traders.update_one(
+                {"id": target_user_id},
+                {"$inc": {"frozen_usdt": -amount}}
+            )
+        else:
+            await mongodb.merchants.update_one(
+                {"id": target_user_id},
+                {"$inc": {"frozen_usdt": -amount}}
+            )
+        
+        # Update withdrawal status
+        now = datetime.now(timezone.utc).isoformat()
         await mongodb.withdrawal_requests.update_one(
             {"id": tx_id},
             {"$set": {
-                "status": "approved",
+                "status": "completed",
                 "approved_by": user['id'],
-                "approved_at": datetime.now().isoformat()
+                "approved_at": now,
+                "completed_at": now
+            }}
+        )
+        
+        # Update transaction status
+        await mongodb.transactions.update_one(
+            {"withdrawal_id": tx_id},
+            {"$set": {
+                "status": "completed",
+                "completed_at": now,
+                "description": f"Вывод {amount} USDT выполнен"
             }}
         )
         
@@ -355,15 +467,15 @@ async def approve_withdrawal(
         await create_audit_log(
             admin_user_id=user['id'],
             action='approve_withdraw',
-            target_user_id=withdrawal.get('user_id'),
+            target_user_id=target_user_id,
             target_tx_id=tx_id,
-            new_value={'amount': amount, 'status': 'approved'},
+            new_value={'amount': amount, 'status': 'completed', 'to_address': to_address},
             ip_address=request.client.host
         )
         
         return {
             "success": True,
-            "message": f"Withdrawal {tx_id} approved",
+            "message": f"Вывод {amount} USDT одобрен и выполнен",
             "amount": amount
         }
     except HTTPException:
@@ -379,7 +491,14 @@ async def reject_withdrawal(
     reason: str = "Отклонено администратором",
     user: dict = Depends(require_roles(["admin", "mod"]))
 ):
-    """Reject a pending withdrawal and refund user"""
+    """
+    Reject a pending withdrawal and unfreeze user balance.
+    1. Возвращает замороженные средства на баланс
+    2. Обновляет статус на rejected
+    3. Создает запись в истории (возврат)
+    """
+    import uuid
+    
     try:
         # Find the withdrawal request
         withdrawal = await mongodb.withdrawal_requests.find_one(
@@ -388,10 +507,11 @@ async def reject_withdrawal(
         )
         
         if not withdrawal:
-            raise HTTPException(status_code=404, detail="Withdrawal not found")
+            raise HTTPException(status_code=404, detail="Заявка не найдена или уже обработана")
         
         amount = float(withdrawal.get('amount', 0))
         target_user_id = withdrawal.get('user_id')
+        now = datetime.now(timezone.utc).isoformat()
         
         # Update withdrawal status
         await mongodb.withdrawal_requests.update_one(
@@ -399,23 +519,47 @@ async def reject_withdrawal(
             {"$set": {
                 "status": "rejected",
                 "rejected_by": user['id'],
-                "rejected_at": datetime.now().isoformat(),
+                "rejected_at": now,
                 "rejection_reason": reason
             }}
         )
         
-        # Refund user balance (check if trader or merchant)
+        # UNFREEZE and REFUND: frozen -> balance
         trader = await mongodb.traders.find_one({"id": target_user_id})
         if trader:
             await mongodb.traders.update_one(
                 {"id": target_user_id},
-                {"$inc": {"balance_usdt": amount}}
+                {"$inc": {"frozen_usdt": -amount, "balance_usdt": amount}}
             )
         else:
             await mongodb.merchants.update_one(
                 {"id": target_user_id},
-                {"$inc": {"balance_usdt": amount}}
+                {"$inc": {"frozen_usdt": -amount, "balance_usdt": amount}}
             )
+        
+        # Update transaction status
+        await mongodb.transactions.update_one(
+            {"withdrawal_id": tx_id},
+            {"$set": {
+                "status": "rejected",
+                "rejected_at": now,
+                "description": f"Вывод отклонён: {reason}. Средства возвращены."
+            }}
+        )
+        
+        # Create refund transaction record
+        refund_tx = {
+            "id": f"tx_{uuid.uuid4().hex[:12]}",
+            "user_id": target_user_id,
+            "type": "refund",
+            "amount": amount,
+            "currency": "USDT",
+            "status": "completed",
+            "related_withdrawal_id": tx_id,
+            "created_at": now,
+            "description": f"Возврат {amount} USDT (вывод отклонён)"
+        }
+        await mongodb.transactions.insert_one(refund_tx)
         
         # Log the action
         await create_audit_log(
@@ -429,8 +573,9 @@ async def reject_withdrawal(
         
         return {
             "success": True,
-            "message": f"Withdrawal {tx_id} rejected and {amount} USDT refunded",
-            "reason": reason
+            "message": f"Вывод отклонён. {amount} USDT возвращены на баланс пользователя.",
+            "reason": reason,
+            "refunded_amount": amount
         }
     except HTTPException:
         raise

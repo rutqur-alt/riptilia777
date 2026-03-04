@@ -82,31 +82,39 @@ async def create_user_finance_record(user_id: str) -> dict:
 async def get_user_ton_balance(user_id: str) -> dict:
     """Get user's balance from MongoDB (traders/merchants collection)"""
     # Check traders first
-    trader = await db.traders.find_one({"id": user_id}, {"_id": 0, "balance_usdt": 1})
+    trader = await db.traders.find_one({"id": user_id}, {"_id": 0, "balance_usdt": 1, "frozen_usdt": 1})
     if trader:
         balance = trader.get("balance_usdt", 0) or 0
-        return {
-            "balance_ton": balance,  # In our system, we use USDT but call it balance
-            "balance_usd": balance,
-            "balance_usdt": balance,
-            "frozen_ton": 0,
-            "frozen_usd": 0,
-            "available_ton": balance,
-            "available_usd": balance
-        }
-    
-    # Check merchants
-    merchant = await db.merchants.find_one({"id": user_id}, {"_id": 0, "balance_usdt": 1})
-    if merchant:
-        balance = merchant.get("balance_usdt", 0) or 0
+        frozen = trader.get("frozen_usdt", 0) or 0
+        available = balance - frozen
         return {
             "balance_ton": balance,
             "balance_usd": balance,
             "balance_usdt": balance,
-            "frozen_ton": 0,
-            "frozen_usd": 0,
-            "available_ton": balance,
-            "available_usd": balance
+            "frozen_ton": frozen,
+            "frozen_usd": frozen,
+            "frozen_usdt": frozen,
+            "available_ton": available,
+            "available_usd": available,
+            "available_usdt": available
+        }
+    
+    # Check merchants
+    merchant = await db.merchants.find_one({"id": user_id}, {"_id": 0, "balance_usdt": 1, "frozen_usdt": 1})
+    if merchant:
+        balance = merchant.get("balance_usdt", 0) or 0
+        frozen = merchant.get("frozen_usdt", 0) or 0
+        available = balance - frozen
+        return {
+            "balance_ton": balance,
+            "balance_usd": balance,
+            "balance_usdt": balance,
+            "frozen_ton": frozen,
+            "frozen_usd": frozen,
+            "frozen_usdt": frozen,
+            "available_ton": available,
+            "available_usd": available,
+            "available_usdt": available
         }
     
     # Check admins
@@ -118,40 +126,50 @@ async def get_user_ton_balance(user_id: str) -> dict:
             "balance_usdt": 0,
             "frozen_ton": 0,
             "frozen_usd": 0,
+            "frozen_usdt": 0,
             "available_ton": 0,
-            "available_usd": 0
+            "available_usd": 0,
+            "available_usdt": 0
         }
     
     raise Exception(f"User not found: {user_id}")
 
 
 async def get_user_transactions(user_id: str, limit: int = 50, offset: int = 0) -> dict:
-    """Get user's transaction history from MongoDB"""
-    # For now, return completed trades as transactions
-    trades = await db.trades.find(
-        {"$or": [{"trader_id": user_id}, {"merchant_id": user_id}]},
+    """Get user's transaction history from MongoDB transactions collection"""
+    # Get transactions from dedicated collection
+    transactions = await db.transactions.find(
+        {"user_id": user_id},
         {"_id": 0}
     ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
     
-    # Format as transactions
-    transactions = []
+    # Also get recent trades to show in history
+    trades = await db.trades.find(
+        {"$or": [{"trader_id": user_id}, {"merchant_id": user_id}]},
+        {"_id": 0, "id": 1, "type": 1, "amount_usdt": 1, "status": 1, "created_at": 1}
+    ).sort("created_at", -1).limit(20).to_list(20)
+    
+    # Format trades as transactions (if not already in transactions)
+    existing_ids = {t.get("id") for t in transactions}
     for trade in trades:
-        tx_type = "deposit" if trade.get("type") == "buy" else "withdraw"
-        transactions.append({
-            "id": trade.get("id"),
-            "type": tx_type,
-            "amount": trade.get("amount_usdt", 0),
-            "currency": "USDT",
-            "status": trade.get("status"),
-            "created_at": trade.get("created_at"),
-            "comment": trade.get("id")
-        })
+        trade_id = trade.get("id")
+        if trade_id and trade_id not in existing_ids:
+            transactions.append({
+                "id": trade_id,
+                "type": "trade",
+                "amount": trade.get("amount_usdt", 0),
+                "currency": "USDT",
+                "status": trade.get("status"),
+                "created_at": trade.get("created_at"),
+                "description": f"Сделка P2P: {trade.get('amount_usdt', 0)} USDT"
+            })
     
-    total_count = await db.trades.count_documents(
-        {"$or": [{"trader_id": user_id}, {"merchant_id": user_id}]}
-    )
+    # Sort combined results by date
+    transactions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     
-    return {"transactions": transactions, "count": total_count}
+    total_count = await db.transactions.count_documents({"user_id": user_id})
+    
+    return {"transactions": transactions[:limit], "count": total_count}
 
 
 async def request_withdrawal(
