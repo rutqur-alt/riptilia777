@@ -43,14 +43,15 @@ async def get_merchant_info_by_api_key(api_key: str):
     # Count completed transactions
     total_txs = await db.merchant_invoices.count_documents({"merchant_id": merchant["id"], "status": "completed"})
     
-    # Sum completed amounts - ORIGINAL_AMOUNT (запрошенная сумма в рублях)
+    # Sum what merchant ACTUALLY RECEIVED (after commission deduction)
+    # Use trades collection where merchant_receives_rub is calculated
     pipeline = [
         {'$match': {'merchant_id': merchant['id'], 'status': 'completed'}},
-        {'$group': {'_id': None, 'total_rub': {'$sum': '$original_amount_rub'}}}
+        {'$group': {'_id': None, 'total_rub': {'$sum': '$merchant_receives_rub'}}}
     ]
-    agg = await db.merchant_invoices.aggregate(pipeline).to_list(1)
+    agg = await db.trades.aggregate(pipeline).to_list(1)
     
-    # Баланс в РУБЛЯХ - то что клиент запросил
+    # Баланс в РУБЛЯХ - реально полученная сумма после вычета комиссии
     balance_rub = agg[0].get('total_rub', 0) if agg else 0
     balance_rub = balance_rub or 0
     
