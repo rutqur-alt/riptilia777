@@ -140,10 +140,26 @@ export default function UserFinancePage() {
 
   // Ref to prevent double-click
   const isSubmittingRef = useRef(false);
+  const lastRequestIdRef = useRef(null);
 
   const handleWithdraw = async () => {
-    // Prevent double submission
-    if (isSubmittingRef.current || withdrawing) {
+    // Prevent double submission with multiple checks
+    if (isSubmittingRef.current) {
+      console.log('[Withdraw] Blocked: already submitting');
+      return;
+    }
+    if (withdrawing) {
+      console.log('[Withdraw] Blocked: withdrawing state is true');
+      return;
+    }
+    
+    // Generate unique request ID
+    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    
+    // Check if this exact request was just made
+    if (lastRequestIdRef.current && Date.now() - parseInt(lastRequestIdRef.current.split('_')[0]) < 5000) {
+      console.log('[Withdraw] Blocked: too soon after last request');
+      toast.error('Подождите несколько секунд перед повторным запросом');
       return;
     }
     
@@ -164,9 +180,12 @@ export default function UserFinancePage() {
       return;
     }
     
-    // Lock immediately
+    // Lock immediately with all safeguards
     isSubmittingRef.current = true;
+    lastRequestIdRef.current = requestId;
     setWithdrawing(true);
+    
+    console.log('[Withdraw] Sending request:', requestId, amount);
     
     try {
       const res = await axios.post(`${API}/wallet/withdraw`, {
@@ -545,6 +564,7 @@ export default function UserFinancePage() {
               
               <div className="flex gap-3">
                 <Button
+                  type="button"
                   variant="outline"
                   className="flex-1"
                   onClick={() => setShowWithdraw(false)}
@@ -552,9 +572,10 @@ export default function UserFinancePage() {
                   Отмена
                 </Button>
                 <Button
+                  type="button"
                   className="flex-1 bg-red-600 hover:bg-red-700"
                   onClick={handleWithdraw}
-                  disabled={withdrawing}
+                  disabled={withdrawing || isSubmittingRef.current}
                 >
                   {withdrawing ? (
                     <RefreshCw className="w-4 h-4 animate-spin" />

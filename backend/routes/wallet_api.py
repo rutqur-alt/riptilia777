@@ -190,12 +190,17 @@ async def withdraw_ton(
     try:
         # Check for duplicate request (anti double-click)
         user_id = user['id']
-        ten_seconds_ago = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
+        five_seconds_ago = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         
+        # Try to create a lock record first (atomic operation)
+        lock_id = f"lock_{user_id}_{int(datetime.now(timezone.utc).timestamp())}"
+        
+        # Check if there's already a pending request with same amount in last 5 seconds
         recent_request = await mongodb.withdrawal_requests.find_one({
             "user_id": user_id,
             "amount": data.amount,
-            "created_at": {"$gte": ten_seconds_ago},
+            "created_at": {"$gte": five_seconds_ago},
             "status": "pending"
         })
         
@@ -204,6 +209,34 @@ async def withdraw_ton(
                 status_code=429, 
                 detail="Заявка уже создана. Подождите несколько секунд."
             )
+        
+        # Create withdrawal request FIRST with unique constraint check
+        request_id = f"wd_{uuid.uuid4().hex[:12]}"
+        
+        withdrawal_doc = {
+            "id": request_id,
+            "user_id": user_id,
+            "user_login": user.get('login', ''),
+            "amount": data.amount,
+            "to_address": data.to_address,
+            "comment": data.comment or '',
+            "status": "pending",
+            "requires_approval": True,
+            "created_at": now,
+            "updated_at": now,
+            "lock_key": f"{user_id}_{data.amount}_{now[:16]}"  # Unique key per user+amount+minute
+        }
+        
+        # Try to insert - will fail if duplicate lock_key exists
+        try:
+            await mongodb.withdrawal_requests.insert_one(withdrawal_doc)
+        except Exception as insert_error:
+            if "duplicate" in str(insert_error).lower() or "E11000" in str(insert_error):
+                raise HTTPException(
+                    status_code=429, 
+                    detail="Заявка уже создана. Подождите несколько секунд."
+                )
+            raise
         
         # Get user's current balance from MongoDB
         trader = await mongodb.traders.find_one({"id": user_id})
@@ -239,10 +272,6 @@ async def withdraw_ton(
                 merchant_type = merchant.get('merchant_type', 'I')
                 daily_limit = 1000.0 if merchant_type == 'II' else 200.0
         
-        # Create withdrawal request ID
-        request_id = f"wd_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc).isoformat()
-        
         # FREEZE the balance (move from balance to frozen)
         if is_trader:
             await mongodb.traders.update_one(
@@ -258,21 +287,6 @@ async def withdraw_ton(
                     "$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}
                 }
             )
-        
-        # Create withdrawal request
-        withdrawal_doc = {
-            "id": request_id,
-            "user_id": user_id,
-            "user_login": user.get('login', ''),
-            "amount": data.amount,
-            "to_address": data.to_address,
-            "comment": data.comment or '',
-            "status": "pending",
-            "requires_approval": True,
-            "created_at": now,
-            "updated_at": now
-        }
-        await mongodb.withdrawal_requests.insert_one(withdrawal_doc)
         
         # Create transaction history record
         tx_doc = {
