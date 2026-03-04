@@ -4,6 +4,7 @@ Auth routes - registration, login, profile
 from fastapi import APIRouter, HTTPException, Depends, Request
 from datetime import datetime, timezone
 import uuid
+import random
 
 from core.database import db
 from core.auth import (
@@ -15,6 +16,19 @@ from models.schemas import (
 )
 
 router = APIRouter(tags=["auth"])
+
+
+async def generate_unique_deposit_code():
+    """Generate unique 6-digit deposit code"""
+    for _ in range(100):  # Max attempts
+        code = str(random.randint(100000, 999999))
+        # Check uniqueness
+        existing = await db.traders.find_one({"deposit_code": code})
+        if not existing:
+            existing = await db.merchants.find_one({"deposit_code": code})
+        if not existing:
+            return code
+    raise Exception("Could not generate unique deposit code")
 
 
 @router.post("/auth/trader/register", response_model=TokenResponse)
@@ -36,6 +50,7 @@ async def register_trader(data: TraderCreate):
     
     ref_code = f"T{uuid.uuid4().hex[:6].upper()}"
     recovery_key = f"RK-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:8].upper()}"
+    deposit_code = await generate_unique_deposit_code()
     
     referred_by = None
     if data.referral_code:
@@ -53,6 +68,7 @@ async def register_trader(data: TraderCreate):
         "role": "trader",
         "balance_usdt": 0.0,
         "frozen_usdt": 0.0,
+        "deposit_code": deposit_code,
         "commission_rate": settings.get("trader_commission", 1.0) if settings else 1.0,
         "accepted_merchant_types": ["casino", "shop", "stream", "other"],
         "referral_code": ref_code,
@@ -101,6 +117,7 @@ async def register_merchant(data: MerchantCreate):
     
     ref_code = f"M{uuid.uuid4().hex[:6].upper()}"
     recovery_key = f"RK-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:8].upper()}"
+    deposit_code = await generate_unique_deposit_code()
     
     referred_by = None
     if data.referral_code:
@@ -123,6 +140,7 @@ async def register_merchant(data: MerchantCreate):
         "status": "pending",
         "balance_usdt": 0.0,
         "frozen_usdt": 0.0,
+        "deposit_code": deposit_code,
         "commission_rate": commission_rate,
         "total_commission_paid": 0.0,
         "api_key": None,

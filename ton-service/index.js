@@ -518,17 +518,23 @@ function parseJettonTransfer(tx) {
 }
 
 /**
- * Find user by ID in MongoDB (traders or merchants)
+ * Find user by deposit code or ID in MongoDB (traders or merchants)
  */
-async function findUserById(userId) {
+async function findUserByCode(code) {
   if (!mongoConnected || !db) return null;
   
-  // Try traders first
-  let user = await db.collection('traders').findOne({ id: userId });
+  // Try by short deposit_code first (6 digits)
+  let user = await db.collection('traders').findOne({ deposit_code: code });
   if (user) return { user, collection: 'traders' };
   
-  // Try merchants
-  user = await db.collection('merchants').findOne({ id: userId });
+  user = await db.collection('merchants').findOne({ deposit_code: code });
+  if (user) return { user, collection: 'merchants' };
+  
+  // Fallback: try by full user ID (for backwards compatibility)
+  user = await db.collection('traders').findOne({ id: code });
+  if (user) return { user, collection: 'traders' };
+  
+  user = await db.collection('merchants').findOne({ id: code });
   if (user) return { user, collection: 'merchants' };
   
   return null;
@@ -537,37 +543,37 @@ async function findUserById(userId) {
 /**
  * Credit USDT to user balance
  */
-async function creditUserBalance(userId, amount, txHash, fromAddress) {
+async function creditUserBalance(code, amount, txHash, fromAddress) {
   if (!mongoConnected || !db) {
     logger.error('MongoDB not connected, cannot credit balance');
     return false;
   }
   
   try {
-    const userInfo = await findUserById(userId);
+    const userInfo = await findUserByCode(code);
     
     if (!userInfo) {
-      logger.warn(`User not found for deposit: ${userId}, amount: ${amount} USDT`);
+      logger.warn(`User not found for deposit code: ${code}, amount: ${amount} USDT`);
       return false;
     }
     
-    const { collection } = userInfo;
+    const { user, collection } = userInfo;
     
     // Update balance
     const result = await db.collection(collection).updateOne(
-      { id: userId },
+      { id: user.id },
       { $inc: { balance_usdt: amount } }
     );
     
     if (result.modifiedCount === 0) {
-      logger.error(`Failed to credit balance for user ${userId}`);
+      logger.error(`Failed to credit balance for user ${user.id}`);
       return false;
     }
     
     // Create transaction record
     const txRecord = {
       id: `dep_${uuidv4().replace(/-/g, '').slice(0, 12)}`,
-      user_id: userId,
+      user_id: user.id,
       type: 'deposit',
       amount: amount,
       currency: 'USDT',
@@ -581,7 +587,7 @@ async function creditUserBalance(userId, amount, txHash, fromAddress) {
     
     await db.collection('transactions').insertOne(txRecord);
     
-    logger.info(`✅ CREDITED ${amount} USDT to ${collection}/${userId} (tx: ${txHash.slice(0, 16)}...)`);
+    logger.info(`✅ CREDITED ${amount} USDT to ${collection} ${user.login || user.id} (code: ${code})`);
     return true;
   } catch (error) {
     logger.error(`Error crediting balance: ${error.message}`);
