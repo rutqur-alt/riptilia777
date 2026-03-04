@@ -1614,7 +1614,7 @@ async def resolve_dispute(trade_id: str, resolution: str, user: dict = Depends(r
     if trade["status"] not in ["disputed", "dispute"]:
         raise HTTPException(status_code=400, detail="Trade not in dispute")
     
-    if resolution == "favor_client":
+    if resolution in ["favor_client", "refund_buyer", "favor_buyer"]:
         # Complete the trade - buyer wins, trade is completed
         new_status = "completed"
         
@@ -1758,7 +1758,7 @@ async def resolve_dispute(trade_id: str, resolution: str, user: dict = Depends(r
                             {"$inc": {"referral_earnings": referral_amount, "balance_usdt": referral_amount}}
                         )
             
-    elif resolution == "favor_trader":
+    elif resolution in ["favor_trader", "refund_seller", "cancel"]:
         # Cancel the trade - seller wins, gets USDT back to offer or balance
         new_status = "cancelled"
         
@@ -1777,7 +1777,7 @@ async def resolve_dispute(trade_id: str, resolution: str, user: dict = Depends(r
         
         message = "❌ Спор разрешён в пользу продавца. Сделка отменена, USDT возвращены."
     else:
-        raise HTTPException(status_code=400, detail="Invalid resolution. Use 'favor_client' or 'favor_trader'")
+        raise HTTPException(status_code=400, detail="Invalid resolution. Use 'favor_client'/'refund_buyer' or 'favor_trader'/'refund_seller'")
     
     await db.trades.update_one(
         {"id": trade_id},
