@@ -155,8 +155,8 @@ export default function SelectOperatorPage() {
       const inv = invRes.data.order;
       setInvoice(inv);
       
-      // Сумма пополнения (фиксирована)
-      const deposit = inv.amount_rub || Math.round((inv.amount_usdt || 0) * 97);
+      // Сумма пополнения - всегда используем original_amount_rub (исходная сумма заказа)
+      const deposit = inv.original_amount_rub || inv.amount_rub || Math.round((inv.amount_usdt || 0) * 97);
       setDepositAmount(deposit);
       
       // Если уже есть trade_id - загружаем trade
@@ -182,8 +182,9 @@ export default function SelectOperatorPage() {
       
       // Загружаем операторов
       const params = new URLSearchParams();
-      // Для RUB инвойсов всегда используем amount_rub чтобы USDT пересчитывался по текущему курсу Rapira
-      if (inv.amount_rub) params.set("amount_rub", inv.amount_rub);
+      // Используем original_amount_rub (исходная сумма заказа мерчанта)
+      const requestAmount = inv.original_amount_rub || inv.amount_rub;
+      if (requestAmount) params.set("amount_rub", requestAmount);
       else if (inv.amount_usdt) params.set("amount_usdt", inv.amount_usdt);
       
       const opRes = await axios.get(`${API}/public/operators?${params}`);
