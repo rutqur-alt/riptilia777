@@ -674,10 +674,15 @@ function TraderStats() {
 
       {/* Balance Card */}
       <div className="bg-gradient-to-br from-[#7C3AED] to-[#A855F7] rounded-2xl p-6">
-        <div className="text-white/70 text-sm mb-1">Ваш баланс</div>
+        <div className="text-white/70 text-sm mb-1">Общий баланс</div>
         <div className="text-4xl font-bold text-white font-['JetBrains_Mono']" data-testid="trader-balance">
           {trader?.balance_usdt?.toFixed(2) || "0.00"} <span className="text-xl text-white/70">USDT</span>
         </div>
+        {(trader?.frozen_usdt || 0) > 0 && (
+          <div className="text-sm text-yellow-300 mt-2">
+            Заморожено: {trader?.frozen_usdt?.toFixed(2)} USDT · Доступно: {((trader?.balance_usdt || 0) - (trader?.frozen_usdt || 0)).toFixed(2)} USDT
+          </div>
+        )}
         <div className="text-sm text-white/50 mt-2">Комиссия платформы: {trader?.commission_rate || 1}%</div>
       </div>
 
@@ -2069,7 +2074,8 @@ function TraderWithdraw() {
       toast.error("Укажите корректную сумму");
       return;
     }
-    if (amt > (user?.balance_usdt || 0)) {
+    const availableBalance = (user?.balance_usdt || 0) - (user?.frozen_usdt || 0);
+    if (amt > availableBalance) {
       toast.error("Недостаточно средств");
       return;
     }
@@ -2101,8 +2107,13 @@ function TraderWithdraw() {
       <div className="bg-gradient-to-br from-[#7C3AED] to-[#6D28D9] rounded-2xl p-5">
         <div className="text-white/70 text-sm mb-1">Доступно для вывода</div>
         <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
-          {(user?.balance_usdt || 0).toFixed(2)} <span className="text-lg">USDT</span>
+          {((user?.balance_usdt || 0) - (user?.frozen_usdt || 0)).toFixed(2)} <span className="text-lg">USDT</span>
         </div>
+        {(user?.frozen_usdt || 0) > 0 && (
+          <div className="text-sm text-yellow-300 mt-1">
+            +{(user?.frozen_usdt || 0).toFixed(2)} заморожено
+          </div>
+        )}
       </div>
 
       <div className="bg-[#121212] border border-white/5 rounded-2xl p-6 space-y-4">

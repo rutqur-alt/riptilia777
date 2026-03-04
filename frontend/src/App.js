@@ -395,13 +395,18 @@ function AuthSidebar({ role }) {
         <div className="p-4 border-b border-white/5">
           <div className="bg-gradient-to-br from-[#7C3AED]/20 to-[#A855F7]/10 border border-[#7C3AED]/30 rounded-xl p-3">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-[#A78BFA]">Баланс</span>
+              <span className="text-xs text-[#A78BFA]">Доступно</span>
               <AuthNotificationDropdown badges={sidebarBadges} token={token} role={role} prefix={prefix} />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold text-white font-mono">{(user?.balance_usdt || 0).toFixed(2)}</span>
+              <span className="text-xl font-bold text-white font-mono">{((user?.balance_usdt || 0) - (user?.frozen_usdt || 0)).toFixed(2)}</span>
               <span className="text-sm text-[#71717A]">USDT</span>
             </div>
+            {(user?.frozen_usdt || 0) > 0 && (
+              <div className="text-xs text-yellow-500 mt-1">
+                +{(user?.frozen_usdt || 0).toFixed(2)} заморожено
+              </div>
+            )}
           </div>
         </div>
 

@@ -50,6 +50,13 @@ Build a production-ready P2P crypto exchange platform based on TON blockchain wi
    - Parallelized MongoDB queries using `asyncio.gather`
    - Analytics endpoint response time: ~0.7-2s (was 10+ seconds)
 
+6. **Balance Synchronization Fix (2026-03-04)**
+   - Fixed sidebar balance to show AVAILABLE balance (total - frozen), not total
+   - Added frozen balance indicator in all UI components
+   - Updated traders and merchants registration to include `frozen_usdt` field
+   - Migrated existing users to have `frozen_usdt: 0` field
+   - Fixed withdrawal validation to check available balance, not total
+
 ### Mainnet Migration (2026-03-04)
 - TON service switched to mainnet
 - New mainnet wallet generated: `EQCxIoq1inAuvVt3U77cPyopvQXeSQjTfyJzhAVtdfCbqapC`

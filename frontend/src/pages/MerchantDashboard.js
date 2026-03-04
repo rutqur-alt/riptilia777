@@ -191,7 +191,7 @@ export default function MerchantDashboard() {
         </div>
         {!isPending && (
           <div className="text-[#F97316] font-medium text-sm font-mono">
-            {(user?.balance_usdt || 0).toFixed(2)}
+            {((user?.balance_usdt || 0) - (user?.frozen_usdt || 0)).toFixed(2)}
           </div>
         )}
       </div>
@@ -747,7 +747,7 @@ function MerchantMainDashboard() {
               <Wallet className="w-4 h-4" /> Доступный баланс
             </div>
             <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
-              {(merchant.balance_usdt || 0).toFixed(2)}
+              {((merchant.balance_usdt || 0) - (merchant.frozen_usdt || 0)).toFixed(2)}
             </div>
             <div className="text-white/60 text-sm mt-1">USDT</div>
           </div>
@@ -758,7 +758,7 @@ function MerchantMainDashboard() {
             <Clock className="w-4 h-4" /> Заморожено
           </div>
           <div className="text-3xl font-bold text-[#F59E0B] font-['JetBrains_Mono']">
-            {(merchant.frozen_balance || 0).toFixed(2)}
+            {(merchant.frozen_usdt || 0).toFixed(2)}
           </div>
           <div className="text-[#52525B] text-sm mt-1">USDT</div>
         </div>
@@ -1161,7 +1161,7 @@ function MerchantAnalytics() {
             {(merchant.balance_usdt || 0).toFixed(2)} <span className="text-sm text-[#71717A]">USDT</span>
           </div>
           <div className="text-sm text-[#71717A] mt-1">
-            + {(merchant.frozen_balance || 0).toFixed(2)} заморожено
+            + {(merchant.frozen_usdt || 0).toFixed(2)} заморожено
           </div>
         </div>
       </div>
@@ -2377,7 +2377,8 @@ function MerchantWithdraw() {
       toast.error("Укажите корректную сумму");
       return;
     }
-    if (amt > (user?.balance_usdt || 0)) {
+    const availableBalance = (user?.balance_usdt || 0) - (user?.frozen_usdt || 0);
+    if (amt > availableBalance) {
       toast.error("Недостаточно средств");
       return;
     }
@@ -2409,8 +2410,13 @@ function MerchantWithdraw() {
       <div className="bg-gradient-to-br from-[#F97316] to-[#EA580C] rounded-2xl p-5">
         <div className="text-white/70 text-sm mb-1">Доступно для вывода</div>
         <div className="text-3xl font-bold text-white font-['JetBrains_Mono']">
-          {(user?.balance_usdt || 0).toFixed(2)} <span className="text-lg">USDT</span>
+          {((user?.balance_usdt || 0) - (user?.frozen_usdt || 0)).toFixed(2)} <span className="text-lg">USDT</span>
         </div>
+        {(user?.frozen_usdt || 0) > 0 && (
+          <div className="text-sm text-yellow-200 mt-1">
+            +{(user?.frozen_usdt || 0).toFixed(2)} заморожено
+          </div>
+        )}
       </div>
 
       <div className="bg-[#121212] border border-white/5 rounded-2xl p-6 space-y-4">
