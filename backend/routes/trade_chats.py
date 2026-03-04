@@ -220,8 +220,8 @@ async def resolve_trade_dispute_v2(
     decision = data.get("decision")
     reason = data.get("reason", "")
     
-    if decision not in ["refund_buyer", "cancel_dispute", "complete_trade"]:
-        raise HTTPException(status_code=400, detail="Неверное решение. Допустимо: refund_buyer, cancel_dispute")
+    if decision not in ["refund_buyer", "cancel_dispute", "complete_trade", "favor_buyer"]:
+        raise HTTPException(status_code=400, detail="Неверное решение. Допустимо: refund_buyer, cancel_dispute, complete_trade")
     
     trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
     if not trade:
@@ -235,8 +235,10 @@ async def resolve_trade_dispute_v2(
     
     decision_text = {
         "refund_buyer": "В пользу покупателя",
+        "favor_buyer": "В пользу покупателя",
+        "complete_trade": "В пользу покупателя",
         "cancel_dispute": "Спор отменён"
-    }[decision]
+    }.get(decision, "Решено")
     
     await db.unified_conversations.update_one(
         {"id": conv["id"]},
@@ -249,10 +251,64 @@ async def resolve_trade_dispute_v2(
         }}
     )
     
-    new_status = "cancelled"  # Both refund_buyer and cancel_dispute result in cancelled trade
+    # refund_buyer/complete_trade/favor_buyer = buyer wins = completed
+    # cancel_dispute = cancelled
+    buyer_wins = decision in ["refund_buyer", "complete_trade", "favor_buyer"]
+    new_status = "completed" if buyer_wins else "cancelled"
     
-    # Return USDT to seller's offer if refunding buyer (trade is cancelled)
-    if decision == "refund_buyer":
+    trade_amount = trade.get("amount_usdt") or trade.get("amount", 0)
+    
+    if buyer_wins and trade.get("merchant_id"):
+        # Get merchant's commission rate
+        merchant = await db.merchants.find_one({"id": trade["merchant_id"]}, {"_id": 0})
+        commission_rate = merchant.get("commission_rate", 10.0) if merchant else 10.0
+        
+        # Get original amount from invoice
+        original_amount_rub = None
+        if trade.get("invoice_id"):
+            invoice = await db.merchant_invoices.find_one({"id": trade["invoice_id"]}, {"_id": 0})
+            if invoice:
+                original_amount_rub = invoice.get("original_amount_rub")
+        
+        if not original_amount_rub:
+            original_amount_rub = trade.get("client_amount_rub") or trade.get("amount_rub", 0)
+        
+        # Get base rate
+        payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+        base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
+        
+        # Calculate
+        merchant_receives_rub = original_amount_rub * (100 - commission_rate) / 100
+        platform_fee_rub = original_amount_rub * commission_rate / 100
+        merchant_receives_usdt = merchant_receives_rub / base_rate
+        commission_usdt = platform_fee_rub / base_rate
+        
+        # Update trade
+        await db.trades.update_one(
+            {"id": trade_id},
+            {"$set": {
+                "original_amount_rub": original_amount_rub,
+                "merchant_commission_percent": commission_rate,
+                "platform_fee_rub": platform_fee_rub,
+                "merchant_receives_rub": merchant_receives_rub,
+                "merchant_receives_usdt": merchant_receives_usdt,
+                "merchant_commission": commission_usdt
+            }}
+        )
+        
+        # Credit merchant
+        await db.merchants.update_one(
+            {"id": trade["merchant_id"]},
+            {"$inc": {"balance_usdt": merchant_receives_usdt, "total_commission_paid": commission_usdt}}
+        )
+        
+        # Update invoice
+        if trade.get("invoice_id"):
+            await db.merchant_invoices.update_one(
+                {"id": trade["invoice_id"]},
+                {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()}}
+            )
+    elif not buyer_wins:
         trade_amount = trade.get("amount_usdt") or trade.get("amount", 0)
         if trade.get("offer_id") and trade_amount:
             await db.offers.update_one(
