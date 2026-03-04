@@ -159,7 +159,8 @@ async function loadWallet(mnemonic) {
   return {
     wallet,
     keyPair,
-    address: wallet.address.toString({ testOnly: process.env.TON_NETWORK === 'testnet' })
+    // Use non-bounceable (UQ) format for deposits - prevents bounce on inactive wallets
+    address: wallet.address.toString({ bounceable: false, testOnly: process.env.TON_NETWORK === 'testnet' })
   };
 }
 
