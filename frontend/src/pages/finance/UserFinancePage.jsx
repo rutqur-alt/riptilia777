@@ -32,6 +32,8 @@ const TX_TYPES = {
 
 const TX_STATUSES = {
   pending: { label: 'Ожидает', icon: Clock, color: 'text-yellow-400' },
+  approved: { label: 'Одобрен', icon: CheckCircle, color: 'text-blue-400' },
+  processing: { label: 'Обработка', icon: RefreshCw, color: 'text-blue-400' },
   confirming: { label: 'Подтверждается', icon: RefreshCw, color: 'text-blue-400' },
   success: { label: 'Успешно', icon: CheckCircle, color: 'text-emerald-400' },
   completed: { label: 'Выполнено', icon: CheckCircle, color: 'text-emerald-400' },

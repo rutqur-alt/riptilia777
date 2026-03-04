@@ -476,6 +476,50 @@ async def get_pending_withdrawals(user: dict = Depends(require_roles(["admin", "
         }
 
 
+@router.get("/admin/finance/withdrawal-history")
+async def get_withdrawal_history(
+    limit: int = 100,
+    status: str = None,
+    user: dict = Depends(require_roles(["admin", "mod"]))
+):
+    """Get full withdrawal history for admin"""
+    try:
+        query = {}
+        if status and status != "all":
+            query["status"] = status
+        
+        withdrawals = await mongodb.withdrawal_requests.find(
+            query,
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(limit)
+        
+        # Enhance with user info
+        for w in withdrawals:
+            user_id = w.get('user_id')
+            if user_id:
+                trader = await mongodb.traders.find_one({"id": user_id}, {"_id": 0, "login": 1, "nickname": 1})
+                if trader:
+                    w['user_login'] = trader.get('login') or trader.get('nickname')
+                    w['user_type'] = 'trader'
+                else:
+                    merchant = await mongodb.merchants.find_one({"id": user_id}, {"_id": 0, "login": 1, "merchant_name": 1})
+                    if merchant:
+                        w['user_login'] = merchant.get('login') or merchant.get('merchant_name')
+                        w['user_type'] = 'merchant'
+        
+        return {
+            "success": True,
+            "withdrawals": withdrawals,
+            "total": len(withdrawals)
+        }
+    except Exception as e:
+        return {
+            "success": True,
+            "withdrawals": [],
+            "total": 0
+        }
+
+
 @router.post("/admin/finance/approve-withdrawal/{tx_id}")
 async def approve_withdrawal(
     tx_id: str,

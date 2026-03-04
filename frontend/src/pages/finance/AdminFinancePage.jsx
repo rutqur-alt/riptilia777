@@ -36,11 +36,13 @@ export default function AdminFinancePage() {
   const [fullAnalytics, setFullAnalytics] = useState(null);
   const [hotWallet, setHotWallet] = useState(null);
   const [pendingWithdrawals, setPendingWithdrawals] = useState([]);
+  const [withdrawalHistory, setWithdrawalHistory] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
   const [topMerchants, setTopMerchants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('7d');
+  const [historyFilter, setHistoryFilter] = useState('all');
   
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,6 +76,7 @@ export default function AdminFinancePage() {
       axios.get(`${API}/admin/finance/analytics`, { headers }).catch(() => ({ data: { analytics: null } })),
       axios.get(`${API}/admin/finance/pending-withdrawals`, { headers }).catch(() => ({ data: { pending_withdrawals: [] } })),
       axios.get(`${API}/admin/analytics/full?period=${period}`, { headers }).catch(() => ({ data: { analytics: null } })),
+      axios.get(`${API}/admin/finance/withdrawal-history?limit=100`, { headers }).catch(() => ({ data: { withdrawals: [] } })),
     ];
     
     // Добавляем admin-only запросы
@@ -93,12 +96,13 @@ export default function AdminFinancePage() {
       setAnalytics(results[0].data.analytics);
       setPendingWithdrawals(results[1].data.pending_withdrawals || []);
       setFullAnalytics(results[2].data.analytics);
+      setWithdrawalHistory(results[3].data.withdrawals || []);
       
-      if (isAdmin && results.length > 3) {
-        setHotWallet(results[3].data.hot_wallet);
-        setAuditLogs(results[4].data.logs || []);
-        setTopTraders(results[5].data.traders || []);
-        setTopMerchants(results[6].data.merchants || []);
+      if (isAdmin && results.length > 4) {
+        setHotWallet(results[4].data.hot_wallet);
+        setAuditLogs(results[5].data.logs || []);
+        setTopTraders(results[6].data.traders || []);
+        setTopMerchants(results[7].data.merchants || []);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -439,6 +443,7 @@ export default function AdminFinancePage() {
       <Tabs defaultValue="withdrawals" className="space-y-4">
         <TabsList className="bg-zinc-900">
           <TabsTrigger value="withdrawals">Заявки на вывод</TabsTrigger>
+          <TabsTrigger value="history">История выводов</TabsTrigger>
           <TabsTrigger value="search">Поиск пользователя</TabsTrigger>
           <TabsTrigger value="top">Топ пользователей</TabsTrigger>
           {isAdmin && <TabsTrigger value="wallet">Управление кошельком</TabsTrigger>}
@@ -480,6 +485,113 @@ export default function AdminFinancePage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Withdrawal History Tab */}
+        <TabsContent value="history">
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-400" />
+                  История всех выводов
+                </div>
+                <div className="flex gap-2">
+                  {['all', 'pending', 'approved', 'completed', 'rejected'].map(status => (
+                    <Button
+                      key={status}
+                      size="sm"
+                      variant={historyFilter === status ? 'default' : 'outline'}
+                      className={historyFilter === status ? 'bg-blue-600' : ''}
+                      onClick={() => setHistoryFilter(status)}
+                    >
+                      {status === 'all' ? 'Все' : 
+                       status === 'pending' ? 'Ожидают' :
+                       status === 'approved' ? 'Одобрены' :
+                       status === 'completed' ? 'Выполнены' : 'Отклонены'}
+                    </Button>
+                  ))}
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {withdrawalHistory.length === 0 ? (
+                <p className="text-zinc-500 text-center py-8">История выводов пуста</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-zinc-700">
+                      <tr>
+                        <th className="text-left p-3 text-zinc-400">Дата</th>
+                        <th className="text-left p-3 text-zinc-400">Пользователь</th>
+                        <th className="text-left p-3 text-zinc-400">Сумма</th>
+                        <th className="text-left p-3 text-zinc-400">Комиссия</th>
+                        <th className="text-left p-3 text-zinc-400">Адрес</th>
+                        <th className="text-left p-3 text-zinc-400">Статус</th>
+                        <th className="text-left p-3 text-zinc-400">TX Hash</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {withdrawalHistory
+                        .filter(w => historyFilter === 'all' || w.status === historyFilter)
+                        .map((w) => (
+                        <tr key={w.id} className="border-b border-zinc-800 hover:bg-zinc-800/50">
+                          <td className="p-3 text-zinc-300">{formatDate(w.created_at)}</td>
+                          <td className="p-3">
+                            <div className="text-white">{w.user_login || w.user_id?.slice(0, 8) + '...'}</div>
+                            <div className="text-xs text-zinc-500">{w.user_type || 'user'}</div>
+                          </td>
+                          <td className="p-3 text-emerald-400 font-mono">{formatUSDT(w.amount)}</td>
+                          <td className="p-3 text-orange-400 font-mono">{formatUSDT(w.fee || 1)}</td>
+                          <td className="p-3">
+                            <span className="font-mono text-xs text-zinc-400">
+                              {w.to_address?.slice(0, 12)}...
+                            </span>
+                            <button 
+                              onClick={() => {navigator.clipboard.writeText(w.to_address); toast.success('Адрес скопирован');}}
+                              className="ml-2 text-zinc-500 hover:text-white"
+                            >
+                              <Copy className="w-3 h-3 inline" />
+                            </button>
+                          </td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              w.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                              w.status === 'approved' ? 'bg-blue-500/20 text-blue-400' :
+                              w.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                              w.status === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                              'bg-zinc-500/20 text-zinc-400'
+                            }`}>
+                              {w.status === 'completed' ? 'Выполнен' :
+                               w.status === 'approved' ? 'Одобрен' :
+                               w.status === 'pending' ? 'Ожидает' :
+                               w.status === 'rejected' ? 'Отклонён' : w.status}
+                            </span>
+                            {w.auto_approved && <span className="ml-2 text-xs text-blue-400">(авто)</span>}
+                          </td>
+                          <td className="p-3">
+                            {w.tx_hash ? (
+                              <a 
+                                href={`https://tonviewer.com/transaction/${w.tx_hash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-xs text-blue-400 hover:underline flex items-center gap-1"
+                              >
+                                {w.tx_hash.slice(0, 12)}...
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span className="text-zinc-600">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>
