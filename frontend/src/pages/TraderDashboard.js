@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Routes, Route, Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useAuth, API } from "@/App";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import axios from "axios";
 import { 
   Wallet, LogOut, LayoutDashboard, ListOrdered, History, Settings, Plus, 
@@ -46,7 +47,7 @@ const merchantTypeLabels = {
 };
 
 export default function TraderDashboard() {
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, refreshUserBalance } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [traderInfo, setTraderInfo] = useState(null);
@@ -55,6 +56,20 @@ export default function TraderDashboard() {
   // Calculate balance from user context (single source of truth)
   const balance = user ? (user.balance_usdt || 0) - (user.frozen_usdt || 0) : null;
   const frozenBalance = user?.frozen_usdt || 0;
+  
+  // WebSocket for real-time balance updates
+  const handleWsMessage = useCallback((data) => {
+    if (data.type === "balance_update" || data.type === "trade_completed" || data.type === "deposit_credited") {
+      // Refresh user balance from server
+      refreshUserBalance();
+    }
+  }, [refreshUserBalance]);
+  
+  useWebSocket(
+    user?.id ? `/ws/user/${user.id}` : null,
+    handleWsMessage,
+    { enabled: !!user?.id }
+  );
   
   // Collapsible sections state - auto-expand active sections
   const [expandedSections, setExpandedSections] = useState(() => {

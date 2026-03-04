@@ -1590,3 +1590,33 @@ async def adjust_user_balance(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# Internal endpoint for ton-service to notify about balance updates
+class BalanceNotification(BaseModel):
+    user_id: str
+    amount: float
+    reason: str
+
+@router.post("/internal/notify-balance-update")
+async def notify_balance_update(
+    data: BalanceNotification,
+    x_internal_key: Optional[str] = Header(None)
+):
+    """Internal endpoint called by ton-service when balance changes"""
+    # Verify internal key
+    expected_key = os.environ.get('TON_SERVICE_API_KEY', 'ton-service-secret-key')
+    if x_internal_key != expected_key:
+        raise HTTPException(status_code=403, detail="Invalid internal key")
+    
+    try:
+        from routes.ws_routes import ws_manager
+        await ws_manager.broadcast(f"user_{data.user_id}", {
+            "type": "balance_update",
+            "amount": data.amount,
+            "reason": data.reason
+        })
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

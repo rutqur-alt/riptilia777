@@ -270,6 +270,12 @@ async def create_trade(data: TradeCreate):
             {"id": data.trader_id},
             {"$inc": {"balance_usdt": -data.amount_usdt}}
         )
+        # Notify seller about balance change
+        await _ws_broadcast(f"user_{data.trader_id}", {
+            "type": "balance_update",
+            "amount": -data.amount_usdt,
+            "reason": "trade_created"
+        })
     
     # Build auto-message
     offer_conditions = ""
@@ -481,6 +487,12 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
             {"id": trade["buyer_id"]},
             {"$inc": {"balance_usdt": buyer_receives}}
         )
+        # Notify buyer about balance update
+        await _ws_broadcast(f"user_{trade['buyer_id']}", {
+            "type": "balance_update",
+            "amount": buyer_receives,
+            "reason": "trade_completed"
+        })
     # If merchant trade, transfer to merchant
     elif trade.get("merchant_id"):
         # Get merchant's commission rate (set by admin on approval)
@@ -838,6 +850,12 @@ async def cancel_trade(trade_id: str, user: dict = Depends(require_role(["trader
             {"id": trade["trader_id"]},
             {"$inc": {"balance_usdt": trade["amount_usdt"]}}
         )
+        # Notify seller about refund
+        await _ws_broadcast(f"user_{trade['trader_id']}", {
+            "type": "balance_update",
+            "amount": trade["amount_usdt"],
+            "reason": "trade_cancelled"
+        })
     
     await db.trades.update_one(
         {"id": trade_id},

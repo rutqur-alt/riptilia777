@@ -752,6 +752,21 @@ async function creditUserBalance(code, amount, txHash, fromAddress) {
     
     await db.collection('transactions').insertOne(txRecord);
     
+    // Notify user about balance update via backend API
+    try {
+      const axios = require('axios');
+      await axios.post('http://localhost:8001/api/internal/notify-balance-update', {
+        user_id: user.id,
+        amount: amount,
+        reason: 'deposit_credited'
+      }, {
+        headers: { 'X-Internal-Key': process.env.TON_SERVICE_API_KEY },
+        timeout: 5000
+      });
+    } catch (e) {
+      logger.warn(`Could not send balance notification: ${e.message}`);
+    }
+    
     logger.info(`✅ CREDITED ${amount} USDT to ${collection} ${user.login || user.id} (code: ${code})`);
     return true;
   } catch (error) {
