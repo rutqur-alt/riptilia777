@@ -6,7 +6,7 @@ Provides user-facing API endpoints for TON deposits and withdrawals
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import jwt
 import os
 
@@ -188,8 +188,24 @@ async def withdraw_ton(
     import uuid
     
     try:
-        # Get user's current balance from MongoDB
+        # Check for duplicate request (anti double-click)
         user_id = user['id']
+        ten_seconds_ago = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
+        
+        recent_request = await mongodb.withdrawal_requests.find_one({
+            "user_id": user_id,
+            "amount": data.amount,
+            "created_at": {"$gte": ten_seconds_ago},
+            "status": "pending"
+        })
+        
+        if recent_request:
+            raise HTTPException(
+                status_code=429, 
+                detail="Заявка уже создана. Подождите несколько секунд."
+            )
+        
+        # Get user's current balance from MongoDB
         trader = await mongodb.traders.find_one({"id": user_id})
         is_trader = bool(trader)
         

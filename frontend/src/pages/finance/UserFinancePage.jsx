@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -138,7 +138,15 @@ export default function UserFinancePage() {
     }
   };
 
+  // Ref to prevent double-click
+  const isSubmittingRef = useRef(false);
+
   const handleWithdraw = async () => {
+    // Prevent double submission
+    if (isSubmittingRef.current || withdrawing) {
+      return;
+    }
+    
     if (!withdrawData.amount || !withdrawData.to_address) {
       toast.error('Заполните все поля');
       return;
@@ -156,7 +164,10 @@ export default function UserFinancePage() {
       return;
     }
     
+    // Lock immediately
+    isSubmittingRef.current = true;
     setWithdrawing(true);
+    
     try {
       const res = await axios.post(`${API}/wallet/withdraw`, {
         amount: amount,
@@ -179,6 +190,7 @@ export default function UserFinancePage() {
       toast.error(error.response?.data?.detail || 'Ошибка при создании заявки');
     } finally {
       setWithdrawing(false);
+      isSubmittingRef.current = false;
     }
   };
 
