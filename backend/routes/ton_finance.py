@@ -59,11 +59,65 @@ async def get_deposit_address(user_id: str) -> dict:
 
 
 async def get_hot_wallet_balance() -> dict:
-    """Get hot wallet balance from TON service"""
+    """Get hot wallet balance from TON service or fallback to tonapi.io"""
+    import httpx
+    
+    # Try TON service first (with short timeout)
     try:
-        return await _ton_request('GET', '/hot-wallet/balance')
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{TON_SERVICE_URL}/hot-wallet/balance",
+                headers={"X-API-Key": TON_SERVICE_API_KEY}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success') and (data.get('ton_balance', 0) > 0 or data.get('usdt_balance', 0) > 0):
+                    return data
     except:
-        return {"balance": 0, "currency": "TON"}
+        pass
+    
+    # Fallback: get balance directly from tonapi.io
+    try:
+        # Get hot wallet address from health endpoint
+        health = await get_ton_service_health()
+        address = health.get('hotWallet', '')
+        
+        if not address:
+            return {"balance": 0, "ton_balance": 0, "usdt_balance": 0, "currency": "USDT"}
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Get TON balance
+            acc_response = await client.get(f"https://tonapi.io/v2/accounts/{address}")
+            ton_balance = 0
+            if acc_response.status_code == 200:
+                acc_data = acc_response.json()
+                ton_balance = int(acc_data.get('balance', 0)) / 1e9
+            
+            # Get USDT balance (jettons)
+            usdt_balance = 0
+            jettons_response = await client.get(f"https://tonapi.io/v2/accounts/{address}/jettons")
+            if jettons_response.status_code == 200:
+                jettons_data = jettons_response.json()
+                for jetton in jettons_data.get('balances', []):
+                    # Check if it's USDT
+                    jetton_info = jetton.get('jetton', {})
+                    symbol = jetton_info.get('symbol', '')
+                    if symbol.upper() in ['USDT', 'USD₮']:
+                        balance_str = jetton.get('balance', '0')
+                        decimals = jetton_info.get('decimals', 6)
+                        usdt_balance = int(balance_str) / (10 ** decimals)
+                        break
+            
+            return {
+                "success": True,
+                "address": address,
+                "balance": usdt_balance,
+                "ton_balance": ton_balance,
+                "usdt_balance": usdt_balance,
+                "currency": "USDT"
+            }
+    except Exception as e:
+        return {"balance": 0, "ton_balance": 0, "usdt_balance": 0, "currency": "USDT", "error": str(e)}
 
 
 async def create_user_finance_record(user_id: str) -> dict:
