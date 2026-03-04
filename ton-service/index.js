@@ -46,7 +46,7 @@ let hotWalletContract;
 
 // Rate limiting tracking
 let lastApiCall = 0;
-const MIN_API_INTERVAL = 2000;
+const MIN_API_INTERVAL = 3000; // Increased to 3 seconds without API key
 let consecutiveErrors = 0;
 const MAX_CONSECUTIVE_ERRORS = 5;
 
@@ -308,35 +308,69 @@ async function getTransactions(address, limit = 20, retries = 3) {
 }
 
 /**
- * Send TON
+ * Send TON with retry logic
  */
-async function sendTon(toAddress, amount, comment = '') {
+async function sendTon(toAddress, amount, comment = '', retries = 3) {
   if (!hotWallet) {
     throw new Error('Hot wallet not initialized');
   }
   
-  await waitForRateLimit();
-  
-  const seqno = await hotWalletContract.getSeqno();
-  
-  await hotWalletContract.sendTransfer({
-    seqno,
-    secretKey: hotWallet.keyPair.secretKey,
-    messages: [
-      internal({
-        to: Address.parse(toAddress),
-        value: toNano(amount.toString()),
-        body: comment
-      })
-    ]
-  });
-  
-  return {
-    success: true,
-    seqno,
-    amount,
-    to: toAddress
-  };
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      await waitForRateLimit();
+      
+      const seqno = await hotWalletContract.getSeqno();
+      
+      await hotWalletContract.sendTransfer({
+        seqno,
+        secretKey: hotWallet.keyPair.secretKey,
+        messages: [
+          internal({
+            to: Address.parse(toAddress),
+            value: toNano(amount.toString()),
+            body: comment
+          })
+        ]
+      });
+      
+      consecutiveErrors = 0;
+      
+      // Wait and try to get tx hash
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      let txHash = null;
+      try {
+        const transactions = await tonClient.getTransactions(Address.parse(hotWallet.address), { limit: 3 });
+        for (const tx of transactions) {
+          if (tx.now > Date.now() / 1000 - 60) {
+            txHash = tx.hash().toString('hex');
+            break;
+          }
+        }
+      } catch (e) {
+        // Ignore tx hash fetch errors
+      }
+      
+      return {
+        success: true,
+        seqno,
+        amount,
+        to: toAddress,
+        tx_hash: txHash
+      };
+    } catch (error) {
+      consecutiveErrors++;
+      
+      if (error.message?.includes('429') || error.response?.status === 429) {
+        logger.warn(`Rate limited on sendTon (attempt ${attempt + 1}/${retries}), waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+        continue;
+      }
+      
+      if (attempt === retries - 1) {
+        throw error;
+      }
+    }
+  }
 }
 
 // ==================== API ENDPOINTS ====================
