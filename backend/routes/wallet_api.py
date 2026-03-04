@@ -235,16 +235,19 @@ async def withdraw_ton(
         # All checks passed - now create request ID
         request_id = f"wd_{uuid.uuid4().hex[:12]}"
         
-        # FREEZE the balance FIRST (atomic operation)
+        # FREEZE the balance (only increase frozen, DON'T decrease total balance)
+        # balance_usdt = total balance (includes frozen)
+        # frozen_usdt = frozen amount (subset of total)
+        # available = balance_usdt - frozen_usdt
         if is_trader:
             result = await mongodb.traders.update_one(
-                {"id": user_id, "balance_usdt": {"$gte": data.amount}},  # Extra check
-                {"$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}}
+                {"id": user_id, "balance_usdt": {"$gte": frozen_balance + data.amount}},  # Check total >= frozen + new amount
+                {"$inc": {"frozen_usdt": data.amount}}  # Only increase frozen
             )
         else:
             result = await mongodb.merchants.update_one(
-                {"id": user_id, "balance_usdt": {"$gte": data.amount}},  # Extra check
-                {"$inc": {"balance_usdt": -data.amount, "frozen_usdt": data.amount}}
+                {"id": user_id, "balance_usdt": {"$gte": frozen_balance + data.amount}},
+                {"$inc": {"frozen_usdt": data.amount}}  # Only increase frozen
             )
         
         # Check if balance was actually frozen
@@ -463,17 +466,17 @@ async def approve_withdrawal(
                 detail=f"Недостаточно средств в кошельке биржи! Требуется: {amount} USDT, доступно: {hot_wallet_balance:.2f} USDT"
             )
         
-        # Find user and remove frozen balance
+        # Find user and deduct from both balance and frozen
         trader = await mongodb.traders.find_one({"id": target_user_id})
         if trader:
             await mongodb.traders.update_one(
                 {"id": target_user_id},
-                {"$inc": {"frozen_usdt": -amount}}
+                {"$inc": {"balance_usdt": -amount, "frozen_usdt": -amount}}  # Remove from both
             )
         else:
             await mongodb.merchants.update_one(
                 {"id": target_user_id},
-                {"$inc": {"frozen_usdt": -amount}}
+                {"$inc": {"balance_usdt": -amount, "frozen_usdt": -amount}}  # Remove from both
             )
         
         # Update withdrawal status
@@ -559,17 +562,18 @@ async def reject_withdrawal(
             }}
         )
         
-        # UNFREEZE and REFUND: frozen -> balance
+        # UNFREEZE: only remove from frozen (balance stays the same)
+        # Because when we froze, we only increased frozen_usdt, not decreased balance_usdt
         trader = await mongodb.traders.find_one({"id": target_user_id})
         if trader:
             await mongodb.traders.update_one(
                 {"id": target_user_id},
-                {"$inc": {"frozen_usdt": -amount, "balance_usdt": amount}}
+                {"$inc": {"frozen_usdt": -amount}}  # Only unfreeze
             )
         else:
             await mongodb.merchants.update_one(
                 {"id": target_user_id},
-                {"$inc": {"frozen_usdt": -amount, "balance_usdt": amount}}
+                {"$inc": {"frozen_usdt": -amount}}  # Only unfreeze
             )
         
         # Update transaction status
