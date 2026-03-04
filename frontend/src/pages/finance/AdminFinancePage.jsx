@@ -37,6 +37,7 @@ export default function AdminFinancePage() {
   const [hotWallet, setHotWallet] = useState(null);
   const [pendingWithdrawals, setPendingWithdrawals] = useState([]);
   const [withdrawalHistory, setWithdrawalHistory] = useState([]);
+  const [depositHistory, setDepositHistory] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [topTraders, setTopTraders] = useState([]);
   const [topMerchants, setTopMerchants] = useState([]);
@@ -90,6 +91,7 @@ export default function AdminFinancePage() {
       axios.get(`${API}/admin/finance/pending-withdrawals`, { headers }).catch(() => ({ data: { pending_withdrawals: [] } })),
       axios.get(`${API}/admin/analytics/full?period=${period}`, { headers }).catch(() => ({ data: { analytics: null } })),
       axios.get(`${API}/admin/finance/withdrawal-history?limit=100`, { headers }).catch(() => ({ data: { withdrawals: [] } })),
+      axios.get(`${API}/admin/finance/deposit-history?limit=100`, { headers }).catch(() => ({ data: { deposits: [] } })),
     ];
     
     // Добавляем admin-only запросы
@@ -110,12 +112,13 @@ export default function AdminFinancePage() {
       setPendingWithdrawals(results[1].data.pending_withdrawals || []);
       setFullAnalytics(results[2].data.analytics);
       setWithdrawalHistory(results[3].data.withdrawals || []);
+      setDepositHistory(results[4].data.deposits || []);
       
-      if (isAdmin && results.length > 4) {
-        setHotWallet(results[4].data.hot_wallet);
-        setAuditLogs(results[5].data.logs || []);
-        setTopTraders(results[6].data.traders || []);
-        setTopMerchants(results[7].data.merchants || []);
+      if (isAdmin && results.length > 5) {
+        setHotWallet(results[5].data.hot_wallet);
+        setAuditLogs(results[6].data.logs || []);
+        setTopTraders(results[7].data.traders || []);
+        setTopMerchants(results[8].data.merchants || []);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -545,6 +548,7 @@ export default function AdminFinancePage() {
         <TabsList className="bg-zinc-900">
           <TabsTrigger value="withdrawals">Заявки на вывод</TabsTrigger>
           <TabsTrigger value="history">История выводов</TabsTrigger>
+          <TabsTrigger value="deposits">История пополнений</TabsTrigger>
           <TabsTrigger value="search">Поиск пользователя</TabsTrigger>
           <TabsTrigger value="top">Топ пользователей</TabsTrigger>
           {isAdmin && <TabsTrigger value="wallet">Управление кошельком</TabsTrigger>}
@@ -683,6 +687,75 @@ export default function AdminFinancePage() {
                                 className="font-mono text-xs text-blue-400 hover:underline flex items-center gap-1"
                               >
                                 {w.tx_hash.slice(0, 12)}...
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span className="text-zinc-600">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Deposit History Tab */}
+        <TabsContent value="deposits">
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ArrowDownCircle className="w-5 h-5 text-emerald-400" />
+                История всех пополнений
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {depositHistory.length === 0 ? (
+                <p className="text-zinc-500 text-center py-8">История пополнений пуста</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-zinc-700">
+                      <tr>
+                        <th className="text-left p-3 text-zinc-400">Дата</th>
+                        <th className="text-left p-3 text-zinc-400">Пользователь</th>
+                        <th className="text-left p-3 text-zinc-400">Сумма</th>
+                        <th className="text-left p-3 text-zinc-400">Валюта</th>
+                        <th className="text-left p-3 text-zinc-400">От адреса</th>
+                        <th className="text-left p-3 text-zinc-400">TX Hash</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {depositHistory.map((d) => (
+                        <tr key={d.id} className="border-b border-zinc-800 hover:bg-zinc-800/50">
+                          <td className="p-3 text-zinc-300">{formatDate(d.created_at)}</td>
+                          <td className="p-3">
+                            <div className="text-white">{d.user_login || d.user_id?.slice(0, 8) + '...'}</div>
+                            <div className="text-xs text-zinc-500">{d.user_type || 'user'}</div>
+                          </td>
+                          <td className="p-3 text-emerald-400 font-mono">+{d.amount}</td>
+                          <td className="p-3 text-zinc-300">{d.currency || 'USDT'}</td>
+                          <td className="p-3">
+                            {d.from_address ? (
+                              <span className="font-mono text-xs text-zinc-400">
+                                {d.from_address.slice(0, 12)}...
+                              </span>
+                            ) : (
+                              <span className="text-zinc-600">-</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            {d.tx_hash ? (
+                              <a 
+                                href={`https://tonviewer.com/transaction/${d.tx_hash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-mono text-xs text-blue-400 hover:underline flex items-center gap-1"
+                              >
+                                {d.tx_hash.slice(0, 12)}...
                                 <ExternalLink className="w-3 h-3" />
                               </a>
                             ) : (

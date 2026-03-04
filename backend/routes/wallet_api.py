@@ -521,6 +521,45 @@ async def get_withdrawal_history(
         }
 
 
+@router.get("/admin/finance/deposit-history")
+async def get_deposit_history(
+    limit: int = 100,
+    user: dict = Depends(require_roles(["admin", "mod"]))
+):
+    """Get full deposit history for admin"""
+    try:
+        deposits = await mongodb.transactions.find(
+            {"type": "deposit"},
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(limit)
+        
+        # Enhance with user info
+        for d in deposits:
+            user_id = d.get('user_id')
+            if user_id:
+                trader = await mongodb.traders.find_one({"id": user_id}, {"_id": 0, "login": 1, "nickname": 1})
+                if trader:
+                    d['user_login'] = trader.get('login') or trader.get('nickname')
+                    d['user_type'] = 'trader'
+                else:
+                    merchant = await mongodb.merchants.find_one({"id": user_id}, {"_id": 0, "login": 1, "merchant_name": 1})
+                    if merchant:
+                        d['user_login'] = merchant.get('login') or merchant.get('merchant_name')
+                        d['user_type'] = 'merchant'
+        
+        return {
+            "success": True,
+            "deposits": deposits,
+            "total": len(deposits)
+        }
+    except Exception as e:
+        return {
+            "success": True,
+            "deposits": [],
+            "total": 0
+        }
+
+
 @router.post("/admin/finance/approve-withdrawal/{tx_id}")
 async def approve_withdrawal(
     tx_id: str,
