@@ -40,15 +40,15 @@ export default function DemoShop() {
   // === Webhook Log (для демонстрации) ===
   const [webhookLog, setWebhookLog] = useState([]);
 
-  // Load saved keys
-  useEffect(() => {
-    const savedKey = localStorage.getItem('demo_api_key');
-    const savedSecret = localStorage.getItem('demo_secret_key');
-    if (savedKey && savedSecret) {
-      setApiKey(savedKey);
-      setSecretKey(savedSecret);
-    }
-  }, []);
+  // НЕ загружаем старые ключи - пусть вводит актуальные
+  // useEffect(() => {
+  //   const savedKey = localStorage.getItem('demo_api_key');
+  //   const savedSecret = localStorage.getItem('demo_secret_key');
+  //   if (savedKey && savedSecret) {
+  //     setApiKey(savedKey);
+  //     setSecretKey(savedSecret);
+  //   }
+  // }, []);
 
   // Generate HMAC-SHA256 signature
   const generateSignature = useCallback((params, secret) => {
@@ -136,10 +136,16 @@ export default function DemoShop() {
       return;
     }
     
+    // Проверка что все данные есть
+    if (!merchantId || !apiKey || !secretKey) {
+      toast.error('Ошибка: нет данных для подключения. Переподключитесь.');
+      return;
+    }
+    
     setTopUpLoading(true);
     try {
       const orderId = `ORDER_${Date.now()}`;
-      const callbackUrl = window.location.origin + '/api/demo-webhook'; // Демо webhook
+      const callbackUrl = window.location.origin + '/api/demo-webhook';
       
       const params = {
         merchant_id: merchantId,
@@ -150,9 +156,11 @@ export default function DemoShop() {
         user_id: null
       };
       
-      // Generate signature
+      // Generate signature using current secretKey
       params.sign = generateSignature(params, secretKey);
       params.description = `Пополнение на ${amountNum} ₽`;
+      
+      console.log('Creating payment with:', { apiKey, merchantId, orderId, amount: amountNum });
       
       // Call Invoice API
       const res = await axios.post(`${API}/v1/invoice/create`, params, {
