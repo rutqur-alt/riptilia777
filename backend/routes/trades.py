@@ -538,6 +538,13 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
                 {"id": trade["payment_link_id"]},
                 {"$set": {"status": "completed"}}
             )
+        
+        # Update invoice status to completed
+        if trade.get("invoice_id"):
+            await db.merchant_invoices.update_one(
+                {"id": trade["invoice_id"]},
+                {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()}}
+            )
     
     # Update offer's sold_usdt and actual_commission
     # Commission is already reserved in offer, no need to deduct from trader balance
