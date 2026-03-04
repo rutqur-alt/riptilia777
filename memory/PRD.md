@@ -71,10 +71,11 @@ Build a production-ready P2P crypto exchange platform based on TON blockchain wi
 ### P0 - Critical (Must be done for production)
 1. ~~Optimize slow admin dashboard~~ ✅ DONE
 2. ~~Switch to TON mainnet~~ ✅ DONE
-3. **User needs to fund the mainnet hot wallet with USDT/TON**
+3. ~~Verify withdrawal commission logic~~ ✅ DONE (2026-03-04) - Tested: 5 USDT withdrawal + 1 USDT fee correctly freezes 6 USDT
+4. **User needs to fund the mainnet hot wallet with USDT/TON**
 
 ### P1 - Important
-1. **E2E Test on Mainnet** - Test deposit/withdrawal with real funds
+1. **E2E Test on Mainnet** - Test deposit/withdrawal with real funds (user sends to hot wallet, admin approves, user receives)
 2. **Migrate financial data to PostgreSQL** - MongoDB lacks ACID compliance
 
 ### P2 - Should Do
