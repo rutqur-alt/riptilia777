@@ -66,11 +66,11 @@ export default function TraderTradePage() {
   useEffect(() => {
     fetchTrade();
     fetchMessages();
-    // Polling as fallback (5s for faster updates if WS fails)
+    // Polling as fallback (3s for faster updates if WS fails)
     const interval = setInterval(() => {
       fetchTrade();
       if (tradeId) fetchMessages();
-    }, 5000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [tradeId]);
 

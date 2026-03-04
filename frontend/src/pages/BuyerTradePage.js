@@ -54,6 +54,7 @@ export default function BuyerTradePage() {
 
   // WebSocket for real-time trade messages
   const handleWsMessage = useCallback((data) => {
+    console.log('[WS] Received:', data);
     if (data.type === "message") {
       setMessages(prev => {
         const exists = prev.some(m => m.id === data.id);
@@ -61,13 +62,17 @@ export default function BuyerTradePage() {
         return [...prev, data];
       });
     } else if (data.type === "status_update" && data.status) {
+      console.log('[WS] Status update:', data.status);
       // Update trade state directly for instant UI update
-      setTrade(prev => prev ? { ...prev, status: data.status } : prev);
-      // Also fetch full trade data for other fields
-      fetchTrade();
+      setTrade(prev => {
+        if (!prev) return prev;
+        console.log('[WS] Updating trade status from', prev.status, 'to', data.status);
+        return { ...prev, status: data.status };
+      });
       
       // Auto-redirect when trade is completed
       if (data.status === "completed") {
+        console.log('[WS] Trade completed, redirecting in 2s...');
         setTimeout(() => {
           navigate('/trader/purchases', { replace: true });
         }, 2000);
@@ -80,16 +85,34 @@ export default function BuyerTradePage() {
     handleWsMessage,
     { enabled: !!tradeId }
   );
+  
+  // Also listen to user channel for trade_completed event (backup)
+  const handleUserWsMessage = useCallback((data) => {
+    console.log('[WS User] Received:', data);
+    if (data.type === "trade_completed" && data.trade_id === tradeId) {
+      console.log('[WS User] Trade completed event received, updating status');
+      setTrade(prev => prev ? { ...prev, status: "completed" } : prev);
+      setTimeout(() => {
+        navigate('/trader/purchases', { replace: true });
+      }, 2000);
+    }
+  }, [tradeId, navigate]);
+  
+  useWebSocket(
+    user?.id ? `/ws/user/${user.id}` : null,
+    handleUserWsMessage,
+    { enabled: !!user?.id }
+  );
 
   // Initialize and fetch data
   useEffect(() => {
     fetchTrade();
     fetchMessages();
-    // Polling as fallback (5s for faster updates)
+    // Polling as fallback (3s for fast updates when WS fails)
     const interval = setInterval(() => {
       fetchTrade();
       fetchMessages();
-    }, 5000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [tradeId]);
 
@@ -126,13 +149,14 @@ export default function BuyerTradePage() {
   // Auto-redirect when trade is completed (polling fallback)
   useEffect(() => {
     if (trade && trade.status === "completed") {
+      console.log('[Effect] Trade completed, redirecting...');
       // Short delay to show completion message
       const timer = setTimeout(() => {
         navigate('/trader/purchases', { replace: true });
-      }, 2500);
+      }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [trade, navigate]);
+  }, [trade?.status, navigate]);
 
   // Auto-scroll only on new messages (not on refetch)
   useEffect(() => {

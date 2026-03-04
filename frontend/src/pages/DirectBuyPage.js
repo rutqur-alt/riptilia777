@@ -35,6 +35,7 @@ export default function DirectBuyPage() {
   };
 
   const onWsMessage = useCallback((data) => {
+    console.log('[WS DirectBuy] Received:', data);
     if (data.type === "message") {
       setMessages(prev => {
         const exists = prev.some(m => m.id === data.id);
@@ -42,15 +43,18 @@ export default function DirectBuyPage() {
         return [...prev, data];
       });
     } else if (data.type === "status_update" && data.status) {
+      console.log('[WS DirectBuy] Status update:', data.status);
       setTrade(prev => prev ? { ...prev, status: data.status } : prev);
-      // Fetch full trade data for complete update
-      if (trade?.id) {
-        axios.get(`${API}/trades/${trade.id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(res => setTrade(res.data)).catch(() => {});
+      
+      // Auto-redirect when trade is completed
+      if (data.status === "completed") {
+        console.log('[WS DirectBuy] Trade completed, redirecting in 2s...');
+        setTimeout(() => {
+          navigate('/trader/purchases', { replace: true });
+        }, 2000);
       }
     }
-  }, [trade?.id, token]);
+  }, [navigate]);
 
   useWebSocket(
     trade ? `/ws/trade/${trade.id}` : null,
@@ -61,12 +65,13 @@ export default function DirectBuyPage() {
   // Auto-redirect when trade is completed
   useEffect(() => {
     if (trade && trade.status === "completed") {
+      console.log('[Effect DirectBuy] Trade completed, redirecting...');
       const timer = setTimeout(() => {
         navigate('/trader/purchases', { replace: true });
-      }, 2500);
+      }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [trade, navigate]);
+  }, [trade?.status, navigate]);
 
   useEffect(() => {
     if (!isAuthenticated) {
