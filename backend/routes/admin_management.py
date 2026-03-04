@@ -404,15 +404,69 @@ async def resolve_trade_dispute(trade_id: str, data: dict = Body(...), user: dic
                 {"id": trade["buyer_id"]},
                 {"$inc": {"balance_usdt": trade_amount}}
             )
+            message = f"✅ Спор решён в пользу покупателя. Сделка завершена, {trade_amount} USDT зачислены покупателю."
         elif trade.get("merchant_id"):
-            merchant_receives = trade_amount - trade.get("merchant_commission", 0)
+            # Get merchant's commission rate (set by admin on approval)
+            merchant = await db.merchants.find_one({"id": trade["merchant_id"]}, {"_id": 0})
+            commission_rate = merchant.get("commission_rate", 10.0) if merchant else 10.0
+            
+            # Get original amount from invoice (what merchant requested, NOT what client paid)
+            original_amount_rub = None
+            if trade.get("invoice_id"):
+                invoice = await db.merchant_invoices.find_one({"id": trade["invoice_id"]}, {"_id": 0})
+                if invoice:
+                    original_amount_rub = invoice.get("original_amount_rub")
+            
+            # Fallback to trade amounts if no invoice found
+            if not original_amount_rub:
+                original_amount_rub = trade.get("client_amount_rub") or trade.get("amount_rub", 0)
+            
+            # Get base exchange rate
+            payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+            base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
+            
+            # Merchant receives: original_amount - commission%
+            # Commission is calculated from ORIGINAL order amount, not what client paid
+            merchant_receives_rub = original_amount_rub * (100 - commission_rate) / 100
+            platform_fee_rub = original_amount_rub * commission_rate / 100
+            merchant_receives_usdt = merchant_receives_rub / base_rate
+            commission_usdt = platform_fee_rub / base_rate
+            
+            # Update trade with calculated amounts
+            await db.trades.update_one(
+                {"id": trade_id},
+                {"$set": {
+                    "original_amount_rub": original_amount_rub,
+                    "merchant_commission_percent": commission_rate,
+                    "platform_fee_rub": platform_fee_rub,
+                    "merchant_receives_rub": merchant_receives_rub,
+                    "merchant_receives_usdt": merchant_receives_usdt,
+                    "merchant_commission": commission_usdt
+                }}
+            )
+            
+            # Credit merchant balance
             await db.merchants.update_one(
                 {"id": trade["merchant_id"]},
                 {"$inc": {
-                    "balance_usdt": merchant_receives,
-                    "total_commission_paid": trade.get("merchant_commission", 0)
+                    "balance_usdt": merchant_receives_usdt,
+                    "total_commission_paid": commission_usdt
                 }}
             )
+            
+            # Update invoice status to completed
+            if trade.get("invoice_id"):
+                await db.merchant_invoices.update_one(
+                    {"id": trade["invoice_id"]},
+                    {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()}}
+                )
+            
+            message = f"✅ Спор решён в пользу клиента. Мерчант получил {merchant_receives_rub:.0f} RUB ({merchant_receives_usdt:.2f} USDT)."
+        else:
+            message = f"✅ Спор решён в пользу покупателя. Сделка завершена."
+        
+        if reason:
+            message += f"\nПричина: {reason}"
         
         # Update offer sold_usdt
         if trade.get("offer_id"):
@@ -423,10 +477,6 @@ async def resolve_trade_dispute(trade_id: str, data: dict = Body(...), user: dic
                     "actual_commission": trade.get("trader_commission", 0)
                 }}
             )
-        
-        message = f"✅ Спор решён в пользу покупателя. Сделка завершена, {trade_amount} USDT зачислены покупателю."
-        if reason:
-            message += f"\nПричина: {reason}"
     
     else:
         # SELLER WINS: Cancel the trade, return USDT to seller's offer or balance
