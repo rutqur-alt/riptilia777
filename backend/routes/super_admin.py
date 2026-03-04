@@ -551,7 +551,7 @@ async def delete_staff_member(staff_id: str, user: dict = Depends(require_admin_
 
 @router.get("/finances")
 async def get_finances_overview(period: str = "7d", user: dict = Depends(require_admin_level(80))):
-    """Get financial overview"""
+    """Get financial overview - returns data for admin dashboard"""
     days = {"1d": 1, "7d": 7, "30d": 30, "90d": 90, "all": 3650}
     period_days = days.get(period, 7)
     start_date = datetime.now(timezone.utc) - timedelta(days=period_days)
@@ -559,7 +559,7 @@ async def get_finances_overview(period: str = "7d", user: dict = Depends(require
     # Get completed trades for the period
     completed_trades = await db.trades.find(
         {"status": "completed", "created_at": {"$gte": start_date.isoformat()}},
-        {"_id": 0, "amount_usdt": 1, "client_amount_rub": 1, "amount_rub": 1, "platform_fee_rub": 1}
+        {"_id": 0, "amount_usdt": 1, "client_amount_rub": 1, "amount_rub": 1, "platform_fee_rub": 1, "created_at": 1}
     ).to_list(10000)
     
     total_volume_usdt = sum(t.get("amount_usdt", 0) or 0 for t in completed_trades)
@@ -569,30 +569,74 @@ async def get_finances_overview(period: str = "7d", user: dict = Depends(require
     rate_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
     base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
     
-    # Commission in USDT = platform_fee_rub / base_rate (Rapira exchange rate)
+    # Commission in USDT = platform_fee_rub / base_rate
     total_platform_fee_rub = sum(t.get("platform_fee_rub", 0) or 0 for t in completed_trades)
     total_commission_usdt = total_platform_fee_rub / base_rate if base_rate > 0 else 0
     
     trade_count = len(completed_trades)
     
+    # Traders and merchants balances
     traders_balance = 0
     merchants_balance = 0
     
     pipeline = [{"$group": {"_id": None, "total": {"$sum": "$balance_usdt"}}}]
     t_result = await db.traders.aggregate(pipeline).to_list(1)
     if t_result:
-        traders_balance = t_result[0].get("total", 0)
+        traders_balance = t_result[0].get("total", 0) or 0
     
     m_result = await db.merchants.aggregate(pipeline).to_list(1)
     if m_result:
-        merchants_balance = m_result[0].get("total", 0)
+        merchants_balance = m_result[0].get("total", 0) or 0
+    
+    # Marketplace stats (orders)
+    marketplace_orders = await db.orders.find(
+        {"status": "completed", "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0, "total_price": 1}
+    ).to_list(10000)
+    marketplace_volume = sum(o.get("total_price", 0) or 0 for o in marketplace_orders)
+    marketplace_commission = marketplace_volume * 0.05  # 5% commission
+    
+    # Pending withdrawals
+    pending_withdrawals = await db.withdrawal_requests.find(
+        {"status": "pending"},
+        {"_id": 0, "amount": 1}
+    ).to_list(1000)
+    pending_amount = sum(w.get("amount", 0) or 0 for w in pending_withdrawals)
+    
+    # Daily trades for chart
+    daily_trades = []
+    for i in range(min(period_days, 14)):
+        day_start = (datetime.now(timezone.utc) - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        
+        day_count = len([t for t in completed_trades 
+                        if t.get("created_at") and day_start.isoformat() <= t["created_at"] < day_end.isoformat()])
+        
+        daily_trades.append({
+            "date": day_start.strftime("%Y-%m-%d"),
+            "trades": day_count
+        })
+    
+    daily_trades.reverse()
     
     return {
         "period": period,
-        "commission_earned": round(total_commission_usdt, 4),
-        "volume_usdt": round(total_volume_usdt, 2),
-        "volume_rub": round(total_volume_rub, 2),
-        "trade_count": trade_count,
+        "p2p": {
+            "total_volume_usdt": round(total_volume_usdt, 2),
+            "total_volume_rub": round(total_volume_rub, 0),
+            "total_commission": round(total_commission_usdt, 4),
+            "trade_count": trade_count
+        },
+        "marketplace": {
+            "total_volume": round(marketplace_volume, 2),
+            "total_commission": round(marketplace_commission, 4),
+            "order_count": len(marketplace_orders)
+        },
+        "pending_withdrawals": {
+            "total_amount": round(pending_amount, 2),
+            "count": len(pending_withdrawals)
+        },
+        "daily_trades": daily_trades,
         "traders_total_balance": round(traders_balance, 2),
         "merchants_total_balance": round(merchants_balance, 2),
         "platform_total_funds": round(traders_balance + merchants_balance, 2)

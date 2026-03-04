@@ -107,27 +107,32 @@ async def get_user_deposit_address(user: dict = Depends(get_current_user_from_to
 
 @router.get("/wallet/balance")
 async def get_wallet_balance(user: dict = Depends(get_current_user_from_token)):
-    """Get current user's TON balance"""
+    """Get current user's USDT balance"""
     try:
         result = await get_user_ton_balance(user['id'])
         return {
             "success": True,
             "balance": {
-                "ton": result['balance_ton'],
-                "usd": result['balance_usd'],
-                "frozen_ton": result['frozen_ton'],
-                "frozen_usd": result['frozen_usd'],
-                "available_ton": result['available_ton'],
-                "available_usd": result['available_usd']
+                "usdt": result.get('balance_usdt', 0),
+                "frozen_usdt": result.get('frozen_usd', 0),
+                "available_usdt": result.get('available_usd', 0),
+                # Legacy fields for compatibility
+                "ton": result.get('balance_usdt', 0),
+                "usd": result.get('balance_usdt', 0),
+                "frozen_ton": result.get('frozen_usd', 0),
+                "frozen_usd": result.get('frozen_usd', 0),
+                "available_ton": result.get('available_usd', 0),
+                "available_usd": result.get('available_usd', 0)
             }
         }
     except Exception as e:
-        if "User not found" in str(e) or "404" in str(e):
-            # Create finance record for user
-            await create_user_finance_record(user['id'])
+        if "User not found" in str(e) or "not found" in str(e).lower():
             return {
                 "success": True,
                 "balance": {
+                    "usdt": 0.0,
+                    "frozen_usdt": 0.0,
+                    "available_usdt": 0.0,
                     "ton": 0.0,
                     "usd": 0.0,
                     "frozen_ton": 0.0,
@@ -136,7 +141,7 @@ async def get_wallet_balance(user: dict = Depends(get_current_user_from_token)):
                     "available_usd": 0.0
                 }
             }
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"TON service error: {str(e)}")
 
 
 @router.get("/wallet/transactions")
@@ -236,11 +241,13 @@ async def get_admin_hot_wallet_balance(user: dict = Depends(require_roles(["admi
     """Get hot wallet balance (admin only)"""
     try:
         result = await get_hot_wallet_balance()
+        balance = result.get('balance', 0)
         return {
             "success": True,
             "hot_wallet": {
-                "address": result['address'],
-                "balance_ton": result['balance'],
+                "address": result.get('address', ''),
+                "balance_ton": balance,
+                "balance_usd": balance,
                 "network": "testnet"
             }
         }
@@ -286,25 +293,25 @@ async def get_admin_user_finance(
 
 # ==================== WITHDRAWAL APPROVAL ENDPOINTS ====================
 
+from core.database import db as mongodb
+
 @router.get("/admin/finance/pending-withdrawals")
 async def get_pending_withdrawals(user: dict = Depends(require_roles(["admin", "mod"]))):
     """Get list of pending withdrawals requiring approval"""
-    from routes.ton_finance import get_pg_pool
-    pool = await get_pg_pool()
-    
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wq.*, t.amount, t.to_address, t.created_at, uf.balance_ton
-            FROM withdrawal_queue wq
-            JOIN transactions t ON wq.tx_id = t.tx_id
-            JOIN users_finance uf ON wq.user_id = uf.user_id
-            WHERE wq.status = 'queued' AND wq.requires_approval = true
-            ORDER BY wq.created_at ASC
-        """)
+    try:
+        pending = await mongodb.withdrawal_requests.find(
+            {"status": "pending"},
+            {"_id": 0}
+        ).sort("created_at", 1).to_list(100)
         
         return {
             "success": True,
-            "pending_withdrawals": [dict(row) for row in rows]
+            "pending_withdrawals": pending
+        }
+    except Exception as e:
+        return {
+            "success": True,
+            "pending_withdrawals": []
         }
 
 
@@ -315,37 +322,40 @@ async def approve_withdrawal(
     user: dict = Depends(require_roles(["admin", "mod"]))
 ):
     """Approve a pending withdrawal"""
-    from routes.ton_finance import get_pg_pool
-    pool = await get_pg_pool()
-    
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT wq.*, t.amount FROM withdrawal_queue wq
-            JOIN transactions t ON wq.tx_id = t.tx_id
-            WHERE wq.tx_id = $1 AND wq.status = 'queued'
-        """, tx_id)
+    try:
+        # Find the withdrawal request
+        withdrawal = await mongodb.withdrawal_requests.find_one(
+            {"id": tx_id, "status": "pending"},
+            {"_id": 0}
+        )
         
-        if not row:
+        if not withdrawal:
             raise HTTPException(status_code=404, detail="Withdrawal not found or already processed")
         
-        amount = float(row['amount'])
+        amount = float(withdrawal.get('amount', 0))
         
+        # Check moderator limits
         if user.get('role') == 'mod' and amount > 50:
             raise HTTPException(
                 status_code=403, 
-                detail="Moderators can only approve withdrawals up to 50 TON"
+                detail="Moderators can only approve withdrawals up to 50 USDT"
             )
         
-        await conn.execute("""
-            UPDATE withdrawal_queue 
-            SET status = 'processing', approved_by = $1, approved_at = NOW()
-            WHERE tx_id = $2
-        """, user['id'], tx_id)
+        # Update status
+        await mongodb.withdrawal_requests.update_one(
+            {"id": tx_id},
+            {"$set": {
+                "status": "approved",
+                "approved_by": user['id'],
+                "approved_at": datetime.now().isoformat()
+            }}
+        )
         
+        # Log the action
         await create_audit_log(
             admin_user_id=user['id'],
             action='approve_withdraw',
-            target_user_id=row['user_id'],
+            target_user_id=withdrawal.get('user_id'),
             target_tx_id=tx_id,
             new_value={'amount': amount, 'status': 'approved'},
             ip_address=request.client.host
@@ -356,56 +366,73 @@ async def approve_withdrawal(
             "message": f"Withdrawal {tx_id} approved",
             "amount": amount
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/admin/finance/reject-withdrawal/{tx_id}")
 async def reject_withdrawal(
     tx_id: str,
-    reason: str,
     request: Request,
+    reason: str = "Отклонено администратором",
     user: dict = Depends(require_roles(["admin", "mod"]))
 ):
     """Reject a pending withdrawal and refund user"""
-    from routes.ton_finance import get_pg_pool
-    pool = await get_pg_pool()
-    
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow("""
-                SELECT wq.*, t.amount, t.user_id FROM withdrawal_queue wq
-                JOIN transactions t ON wq.tx_id = t.tx_id
-                WHERE wq.tx_id = $1 AND wq.status = 'queued'
-            """, tx_id)
-            
-            if not row:
-                raise HTTPException(status_code=404, detail="Withdrawal not found")
-            
-            amount = float(row['amount'])
-            target_user_id = row['user_id']
-            
-            await conn.execute("""
-                UPDATE withdrawal_queue SET status = 'failed', last_error = $1 WHERE tx_id = $2
-            """, reason, tx_id)
-            
-            await conn.execute("""
-                UPDATE transactions SET status = 'cancelled', error_message = $1 WHERE tx_id = $2
-            """, reason, tx_id)
-            
-            await conn.execute("""
-                UPDATE users_finance SET balance_ton = balance_ton + $1 WHERE user_id = $2
-            """, amount, target_user_id)
-            
-            await create_audit_log(
-                admin_user_id=user['id'],
-                action='reject_withdraw',
-                target_user_id=target_user_id,
-                target_tx_id=tx_id,
-                new_value={'amount': amount, 'status': 'rejected', 'reason': reason},
-                ip_address=request.client.host
+    try:
+        # Find the withdrawal request
+        withdrawal = await mongodb.withdrawal_requests.find_one(
+            {"id": tx_id, "status": "pending"},
+            {"_id": 0}
+        )
+        
+        if not withdrawal:
+            raise HTTPException(status_code=404, detail="Withdrawal not found")
+        
+        amount = float(withdrawal.get('amount', 0))
+        target_user_id = withdrawal.get('user_id')
+        
+        # Update withdrawal status
+        await mongodb.withdrawal_requests.update_one(
+            {"id": tx_id},
+            {"$set": {
+                "status": "rejected",
+                "rejected_by": user['id'],
+                "rejected_at": datetime.now().isoformat(),
+                "rejection_reason": reason
+            }}
+        )
+        
+        # Refund user balance (check if trader or merchant)
+        trader = await mongodb.traders.find_one({"id": target_user_id})
+        if trader:
+            await mongodb.traders.update_one(
+                {"id": target_user_id},
+                {"$inc": {"balance_usdt": amount}}
             )
-            
-            return {
-                "success": True,
-                "message": f"Withdrawal {tx_id} rejected and {amount} TON refunded",
-                "reason": reason
-            }
+        else:
+            await mongodb.merchants.update_one(
+                {"id": target_user_id},
+                {"$inc": {"balance_usdt": amount}}
+            )
+        
+        # Log the action
+        await create_audit_log(
+            admin_user_id=user['id'],
+            action='reject_withdraw',
+            target_user_id=target_user_id,
+            target_tx_id=tx_id,
+            new_value={'amount': amount, 'status': 'rejected', 'reason': reason},
+            ip_address=request.client.host
+        )
+        
+        return {
+            "success": True,
+            "message": f"Withdrawal {tx_id} rejected and {amount} USDT refunded",
+            "reason": reason
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
