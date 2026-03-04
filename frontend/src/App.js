@@ -70,6 +70,28 @@ const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
+  // Function to refresh user balance from server
+  const refreshUserBalance = async () => {
+    if (!token) return;
+    try {
+      const response = await axios.get(`${API}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setUser(response.data.user);
+    } catch (error) {
+      console.error("Failed to refresh balance:", error);
+    }
+  };
+
+  // Function to update balance locally (for immediate UI update)
+  const updateUserBalance = (newBalance, newFrozen) => {
+    setUser(prev => ({
+      ...prev,
+      balance_usdt: newBalance,
+      frozen_usdt: newFrozen
+    }));
+  };
+
   const login = async (credentials) => {
     const response = await axios.post(`${API}/auth/login`, credentials);
     const { token: newToken, user: userData } = response.data;
@@ -111,6 +133,8 @@ const AuthProvider = ({ children }) => {
     registerTrader,
     registerMerchant,
     logout,
+    refreshUserBalance,
+    updateUserBalance,
     isAuthenticated: !!token
   };
 

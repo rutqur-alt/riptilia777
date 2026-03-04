@@ -2348,7 +2348,7 @@ function MerchantTransactions() {
 
 // ==================== WITHDRAW ====================
 function MerchantWithdraw() {
-  const { token, user } = useAuth();
+  const { token, user, refreshUserBalance } = useAuth();
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("");
@@ -2390,6 +2390,8 @@ function MerchantWithdraw() {
       toast.success(`${amt} USDT переведено на баланс аккаунта`);
       setAmount("");
       fetchWithdrawals();
+      // Refresh user balance in context immediately
+      await refreshUserBalance();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Ошибка вывода");
     } finally {

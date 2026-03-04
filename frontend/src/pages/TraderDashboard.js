@@ -49,10 +49,12 @@ export default function TraderDashboard() {
   const { user, token, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [balance, setBalance] = useState(null);
-  const [frozenBalance, setFrozenBalance] = useState(0);
   const [traderInfo, setTraderInfo] = useState(null);
   const [sidebarBadges, setSidebarBadges] = useState({});
+  
+  // Calculate balance from user context (single source of truth)
+  const balance = user ? (user.balance_usdt || 0) - (user.frozen_usdt || 0) : null;
+  const frozenBalance = user?.frozen_usdt || 0;
   
   // Collapsible sections state - auto-expand active sections
   const [expandedSections, setExpandedSections] = useState(() => {
@@ -114,17 +116,13 @@ export default function TraderDashboard() {
     }
   }, [token]);
 
-  // Fetch balance, trader info and urgent trades on mount
+  // Fetch trader info and urgent trades on mount
   useEffect(() => {
     const fetchData = async () => {
       try {
         const response = await axios.get(`${API}/traders/me`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        const totalBalance = response.data.balance_usdt || 0;
-        const frozen = response.data.frozen_usdt || 0;
-        setBalance(totalBalance - frozen); // Available balance
-        setFrozenBalance(frozen);
         setTraderInfo(response.data);
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -2045,7 +2043,7 @@ function TraderTransactions() {
 
 // ==================== TRADER WITHDRAW ====================
 function TraderWithdraw() {
-  const { token, user } = useAuth();
+  const { token, user, refreshUserBalance } = useAuth();
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [withdrawals, setWithdrawals] = useState([]);
@@ -2087,6 +2085,8 @@ function TraderWithdraw() {
       toast.success(`${amt} USDT переведено на баланс аккаунта`);
       setAmount("");
       fetchWithdrawals();
+      // Refresh user balance in context immediately
+      await refreshUserBalance();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Ошибка вывода");
     } finally {

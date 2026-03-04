@@ -71,7 +71,7 @@ const shortenHash = (hash) => {
  * USDT in TON network
  */
 export default function UserFinancePage() {
-  const { token, user } = useAuth();
+  const { token, user, refreshUserBalance } = useAuth();
   const [balance, setBalance] = useState(null);
   const [depositInfo, setDepositInfo] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -172,6 +172,8 @@ export default function UserFinancePage() {
         setWithdrawData({ amount: '', to_address: '' });
         fetchData();
         fetchTransactions();
+        // Refresh user balance in context immediately
+        await refreshUserBalance();
       }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Ошибка при создании заявки');
