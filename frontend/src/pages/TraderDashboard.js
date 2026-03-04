@@ -167,6 +167,14 @@ export default function TraderDashboard() {
   // Navigation sections with collapsible items
   const sections = [
     {
+      key: "dashboard",
+      title: "Дашборд",
+      icon: LayoutDashboard,
+      single: true,
+      path: "/trader",
+      exact: true
+    },
+    {
       key: "trading",
       title: "Торговля",
       icon: TrendingUp,
@@ -205,10 +213,8 @@ export default function TraderDashboard() {
       key: "finances",
       title: "Финансы",
       icon: Wallet,
-      items: [
-        { path: "/trader", icon: Wallet, label: "Баланс", exact: true },
-        { path: "/trader/wallet", icon: Wallet, label: "Кошелёк" }
-      ]
+      single: true,
+      path: "/trader/wallet"
     },
     {
       key: "messages",
@@ -322,15 +328,6 @@ export default function TraderDashboard() {
 
         {/* Navigation */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {/* Home Link */}
-          <Link
-            to="/"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[#A1A1AA] hover:bg-white/5 hover:text-white transition-colors"
-          >
-            <Home className="w-4 h-4" />
-            <span className="text-sm font-medium">Главная</span>
-          </Link>
-
           {/* Collapsible Sections */}
           {sections.map((section) => (
             <div key={section.key}>
@@ -339,9 +336,9 @@ export default function TraderDashboard() {
                 <Link
                   to={section.path}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                    location.pathname.startsWith(section.path)
-                      ? "bg-[#7C3AED]/10 text-[#A78BFA]" 
-                      : "text-[#A1A1AA] hover:bg-white/5 hover:text-white"
+                    section.exact 
+                      ? (location.pathname === section.path ? "bg-[#7C3AED]/10 text-[#A78BFA]" : "text-[#A1A1AA] hover:bg-white/5 hover:text-white")
+                      : (location.pathname.startsWith(section.path) ? "bg-[#7C3AED]/10 text-[#A78BFA]" : "text-[#A1A1AA] hover:bg-white/5 hover:text-white")
                   }`}
                 >
                   <section.icon className="w-4 h-4" />
