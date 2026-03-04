@@ -738,8 +738,12 @@ export default function AdminFinancePage() {
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-500">Баланс:</span>
-                      <span className="font-mono text-white">{formatUSDT(hotWallet?.balance_usd || hotWallet?.balance_ton)}</span>
+                      <span className="text-zinc-500">Баланс USDT:</span>
+                      <span className="font-mono text-emerald-400">{formatUSDT(hotWallet?.balance_usdt || hotWallet?.balance_usd || 0)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500">Баланс TON (газ):</span>
+                      <span className="font-mono text-blue-400">{(hotWallet?.balance_ton || 0).toFixed(4)} TON</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-zinc-500">Сеть:</span>

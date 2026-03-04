@@ -232,22 +232,33 @@ async def withdraw_ton(
         if data.amount <= 0:
             raise HTTPException(status_code=400, detail="Сумма должна быть положительной")
         
+        # Withdrawal fee (goes to platform)
+        WITHDRAWAL_FEE = 1.0  # 1 USDT
+        total_amount = data.amount + WITHDRAWAL_FEE  # Amount + fee
+        
+        # Check if user has enough for amount + fee
+        if total_amount > available_balance:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Недостаточно средств. Нужно: {total_amount:.2f} USDT (включая комиссию {WITHDRAWAL_FEE} USDT). Доступно: {available_balance:.2f} USDT"
+            )
+        
         # All checks passed - now create request ID
         request_id = f"wd_{uuid.uuid4().hex[:12]}"
         
-        # FREEZE the balance (only increase frozen, DON'T decrease total balance)
+        # FREEZE the total amount (amount + fee)
         # balance_usdt = total balance (includes frozen)
         # frozen_usdt = frozen amount (subset of total)
         # available = balance_usdt - frozen_usdt
         if is_trader:
             result = await mongodb.traders.update_one(
-                {"id": user_id, "balance_usdt": {"$gte": frozen_balance + data.amount}},  # Check total >= frozen + new amount
-                {"$inc": {"frozen_usdt": data.amount}}  # Only increase frozen
+                {"id": user_id, "balance_usdt": {"$gte": frozen_balance + total_amount}},  # Check total >= frozen + amount + fee
+                {"$inc": {"frozen_usdt": total_amount}}  # Freeze amount + fee
             )
         else:
             result = await mongodb.merchants.update_one(
-                {"id": user_id, "balance_usdt": {"$gte": frozen_balance + data.amount}},
-                {"$inc": {"frozen_usdt": data.amount}}  # Only increase frozen
+                {"id": user_id, "balance_usdt": {"$gte": frozen_balance + total_amount}},
+                {"$inc": {"frozen_usdt": total_amount}}  # Freeze amount + fee
             )
         
         # Check if balance was actually frozen
@@ -263,6 +274,8 @@ async def withdraw_ton(
             "user_id": user_id,
             "user_login": user.get('login', ''),
             "amount": data.amount,
+            "fee": WITHDRAWAL_FEE,
+            "total_frozen": total_amount,
             "to_address": data.to_address,
             "comment": data.comment or '',
             "status": "pending",
@@ -278,12 +291,13 @@ async def withdraw_ton(
             "user_id": user_id,
             "type": "withdrawal",
             "amount": data.amount,
+            "fee": WITHDRAWAL_FEE,
             "currency": "USDT",
             "to_address": data.to_address,
             "status": "pending",
             "withdrawal_id": request_id,
             "created_at": now,
-            "description": f"Запрос на вывод {data.amount} USDT"
+            "description": f"Запрос на вывод {data.amount} USDT (комиссия {WITHDRAWAL_FEE} USDT)"
         }
         await mongodb.transactions.insert_one(tx_doc)
         
@@ -342,7 +356,8 @@ async def get_admin_hot_wallet_balance(user: dict = Depends(require_roles(["admi
         result = await get_hot_wallet_balance()
         health = await get_ton_service_health()
         
-        balance = result.get('balance', 0)
+        ton_balance = result.get('ton_balance', 0) or 0
+        usdt_balance = result.get('usdt_balance', 0) or result.get('balance', 0) or 0
         network = health.get('network', 'unknown')
         address = health.get('hotWallet', result.get('address', ''))
         
@@ -350,8 +365,9 @@ async def get_admin_hot_wallet_balance(user: dict = Depends(require_roles(["admi
             "success": True,
             "hot_wallet": {
                 "address": address,
-                "balance_ton": balance,
-                "balance_usd": balance,
+                "balance_ton": ton_balance,
+                "balance_usdt": usdt_balance,
+                "balance_usd": usdt_balance,  # backward compatibility
                 "network": network
             }
         }
@@ -442,6 +458,8 @@ async def approve_withdrawal(
             raise HTTPException(status_code=404, detail="Заявка не найдена или уже обработана")
         
         amount = float(withdrawal.get('amount', 0))
+        fee = float(withdrawal.get('fee', 1.0))  # Default fee 1 USDT
+        total_frozen = float(withdrawal.get('total_frozen', amount + fee))
         target_user_id = withdrawal.get('user_id')
         to_address = withdrawal.get('to_address')
         
@@ -452,11 +470,11 @@ async def approve_withdrawal(
                 detail="Модераторы могут одобрять выводы до 500 USDT"
             )
         
-        # CHECK HOT WALLET BALANCE
+        # CHECK HOT WALLET BALANCE (only need to send the amount, fee stays on platform)
         hot_wallet_balance = 0
         try:
             hw_data = await get_hot_wallet_balance()
-            hot_wallet_balance = float(hw_data.get('balance', 0))
+            hot_wallet_balance = float(hw_data.get('usdt_balance', 0) or hw_data.get('balance', 0))
         except:
             pass
         
@@ -466,18 +484,29 @@ async def approve_withdrawal(
                 detail=f"Недостаточно средств в кошельке биржи! Требуется: {amount} USDT, доступно: {hot_wallet_balance:.2f} USDT"
             )
         
-        # Find user and deduct from both balance and frozen
+        # Find user and deduct total_frozen from both balance and frozen
+        # Fee goes to platform (stays in hot wallet or tracked separately)
         trader = await mongodb.traders.find_one({"id": target_user_id})
         if trader:
             await mongodb.traders.update_one(
                 {"id": target_user_id},
-                {"$inc": {"balance_usdt": -amount, "frozen_usdt": -amount}}  # Remove from both
+                {"$inc": {"balance_usdt": -total_frozen, "frozen_usdt": -total_frozen}}  # Remove amount + fee
             )
         else:
             await mongodb.merchants.update_one(
                 {"id": target_user_id},
-                {"$inc": {"balance_usdt": -amount, "frozen_usdt": -amount}}  # Remove from both
+                {"$inc": {"balance_usdt": -total_frozen, "frozen_usdt": -total_frozen}}  # Remove amount + fee
             )
+        
+        # Track platform fee earnings
+        await mongodb.platform_fees.insert_one({
+            "type": "withdrawal_fee",
+            "amount": fee,
+            "currency": "USDT",
+            "from_user_id": target_user_id,
+            "withdrawal_id": tx_id,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
         
         # Update withdrawal status
         now = datetime.now(timezone.utc).isoformat()
@@ -497,7 +526,7 @@ async def approve_withdrawal(
             {"$set": {
                 "status": "completed",
                 "completed_at": now,
-                "description": f"Вывод {amount} USDT выполнен"
+                "description": f"Вывод {amount} USDT выполнен (комиссия {fee} USDT)"
             }}
         )
         
@@ -548,6 +577,8 @@ async def reject_withdrawal(
             raise HTTPException(status_code=404, detail="Заявка не найдена или уже обработана")
         
         amount = float(withdrawal.get('amount', 0))
+        fee = float(withdrawal.get('fee', 1.0))
+        total_frozen = float(withdrawal.get('total_frozen', amount + fee))
         target_user_id = withdrawal.get('user_id')
         now = datetime.now(timezone.utc).isoformat()
         
@@ -562,18 +593,18 @@ async def reject_withdrawal(
             }}
         )
         
-        # UNFREEZE: only remove from frozen (balance stays the same)
-        # Because when we froze, we only increased frozen_usdt, not decreased balance_usdt
+        # UNFREEZE total amount (amount + fee)
+        # Return everything to user since withdrawal was rejected
         trader = await mongodb.traders.find_one({"id": target_user_id})
         if trader:
             await mongodb.traders.update_one(
                 {"id": target_user_id},
-                {"$inc": {"frozen_usdt": -amount}}  # Only unfreeze
+                {"$inc": {"frozen_usdt": -total_frozen}}  # Unfreeze amount + fee
             )
         else:
             await mongodb.merchants.update_one(
                 {"id": target_user_id},
-                {"$inc": {"frozen_usdt": -amount}}  # Only unfreeze
+                {"$inc": {"frozen_usdt": -total_frozen}}  # Unfreeze amount + fee
             )
         
         # Update transaction status
@@ -591,12 +622,12 @@ async def reject_withdrawal(
             "id": f"tx_{uuid.uuid4().hex[:12]}",
             "user_id": target_user_id,
             "type": "refund",
-            "amount": amount,
+            "amount": total_frozen,
             "currency": "USDT",
             "status": "completed",
             "related_withdrawal_id": tx_id,
             "created_at": now,
-            "description": f"Возврат {amount} USDT (вывод отклонён)"
+            "description": f"Возврат {total_frozen} USDT (вывод отклонён)"
         }
         await mongodb.transactions.insert_one(refund_tx)
         
@@ -606,15 +637,15 @@ async def reject_withdrawal(
             action='reject_withdraw',
             target_user_id=target_user_id,
             target_tx_id=tx_id,
-            new_value={'amount': amount, 'status': 'rejected', 'reason': reason},
+            new_value={'amount': amount, 'fee': fee, 'total_refunded': total_frozen, 'status': 'rejected', 'reason': reason},
             ip_address=request.client.host
         )
         
         return {
             "success": True,
-            "message": f"Вывод отклонён. {amount} USDT возвращены на баланс пользователя.",
+            "message": f"Вывод отклонён. {total_frozen} USDT возвращены на баланс пользователя.",
             "reason": reason,
-            "refunded_amount": amount
+            "refunded_amount": total_frozen
         }
     except HTTPException:
         raise

@@ -13,7 +13,7 @@ const { v4: uuidv4 } = require('uuid');
 // TON imports
 const { TonClient, WalletContractV4, internal } = require('@ton/ton');
 const { mnemonicNew, mnemonicToPrivateKey } = require('@ton/crypto');
-const { Address, toNano, fromNano } = require('@ton/core');
+const { Address, toNano, fromNano, beginCell } = require('@ton/core');
 
 // Logger setup
 const logger = winston.createLogger({
@@ -232,6 +232,58 @@ async function getWalletBalance(address, retries = 3) {
 }
 
 /**
+ * Get USDT Jetton balance for wallet
+ * USDT on TON mainnet: EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs
+ */
+async function getUSDTBalance(walletAddress, retries = 3) {
+  // USDT Jetton Master address on mainnet
+  const USDT_MASTER = process.env.TON_NETWORK === 'mainnet' 
+    ? 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'
+    : 'kQBqSpvo4S87mX9tjHaG4zhYZeORhVhMapBJpnMZ64jhrP-A'; // testnet USDT
+  
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      await waitForRateLimit();
+      
+      const ownerAddress = Address.parse(walletAddress);
+      const jettonMaster = Address.parse(USDT_MASTER);
+      
+      // Get jetton wallet address for this owner
+      const result = await tonClient.runMethod(jettonMaster, 'get_wallet_address', [
+        { type: 'slice', cell: beginCell().storeAddress(ownerAddress).endCell() }
+      ]);
+      
+      const jettonWalletAddress = result.stack.readAddress();
+      
+      // Get balance from jetton wallet
+      try {
+        const balanceResult = await tonClient.runMethod(jettonWalletAddress, 'get_wallet_data', []);
+        const balance = balanceResult.stack.readBigNumber();
+        // USDT has 6 decimals
+        return Number(balance) / 1000000;
+      } catch (e) {
+        // Wallet doesn't exist yet = 0 balance
+        return 0;
+      }
+    } catch (error) {
+      consecutiveErrors++;
+      
+      if (error.message?.includes('429') || error.response?.status === 429) {
+        logger.warn(`Rate limited on USDT balance (attempt ${attempt + 1}/${retries}), waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 5000 * (attempt + 1)));
+        continue;
+      }
+      
+      if (attempt === retries - 1) {
+        logger.error(`Error getting USDT balance for ${walletAddress}:`, error.message);
+        return 0; // Return 0 on error instead of throwing
+      }
+    }
+  }
+  return 0;
+}
+
+/**
  * Get recent transactions for address with rate limiting
  */
 async function getTransactions(address, limit = 20, retries = 3) {
@@ -408,13 +460,19 @@ app.get('/hot-wallet/balance', apiKeyAuth, async (req, res) => {
       return res.status(503).json({ error: 'Hot wallet not configured' });
     }
     
-    const balance = await getWalletBalance(hotWallet.address);
+    // Get both TON and USDT balances
+    const [tonBalance, usdtBalance] = await Promise.all([
+      getWalletBalance(hotWallet.address),
+      getUSDTBalance(hotWallet.address)
+    ]);
     
     res.json({
       success: true,
       address: hotWallet.address,
-      balance: parseFloat(balance),
-      currency: 'TON'
+      ton_balance: parseFloat(tonBalance),
+      usdt_balance: usdtBalance,
+      balance: usdtBalance, // backward compatibility
+      currency: 'USDT'
     });
   } catch (error) {
     logger.error('Error getting hot wallet balance:', error);
