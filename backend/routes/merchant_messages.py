@@ -218,12 +218,23 @@ async def get_merchant_trades(
         )
         t["conversation_id"] = conv["id"] if conv else None
         t["client_nickname"] = t.get("buyer_nickname") if type == "sell" else t.get("seller_nickname")
-        # Map amount fields for frontend compatibility
-        # Use client_amount_rub (requested amount) instead of amount_rub (paid amount)
+        
+        # Get original_amount_rub from linked invoice (merchant's requested amount)
+        # This is what we show to the merchant - NOT what client paid with trader markup
+        original_rub = t.get("original_amount_rub")
+        if not original_rub and t.get("invoice_id"):
+            invoice = await db.merchant_invoices.find_one({"id": t["invoice_id"]}, {"_id": 0, "original_amount_rub": 1})
+            if invoice:
+                original_rub = invoice.get("original_amount_rub")
+        
+        # Map amount fields - use original_amount_rub (merchant's price)
+        display_amount = original_rub or t.get("client_amount_rub") or t.get("amount_rub", 0)
         if not t.get("amount"):
-            t["amount"] = t.get("client_amount_rub") or t.get("amount_rub", 0)
+            t["amount"] = display_amount
         if not t.get("fiat_amount"):
-            t["fiat_amount"] = t.get("client_amount_rub") or t.get("amount_rub") or t.get("total_rub", 0)
+            t["fiat_amount"] = display_amount
+        t["original_amount_rub"] = original_rub
+        t["client_pays_rub"] = t.get("client_pays_rub") or t.get("amount_rub")  # What client actually paid
         if not t.get("currency"):
             t["currency"] = "RUB"  # Show in RUB, not USDT
         trades.append(t)
@@ -245,6 +256,7 @@ async def get_merchant_trades(
         trades.append(o)
     
     # From merchant_invoices collection (Invoice API payments)
+    # Skip invoices that already have a trade_id - they are already in trades list
     if type == "sell":
         inv_query = {"merchant_id": user_id}
         if status == "active":
@@ -257,7 +269,19 @@ async def get_merchant_trades(
             inv_query["status"] = {"$in": ["cancelled", "expired"]}
         
         invoices = await db.merchant_invoices.find(inv_query, {"_id": 0}).sort("created_at", -1).to_list(100)
+        
+        # Get list of trade IDs already in result to avoid duplicates
+        existing_trade_ids = {t.get("id") for t in trades}
+        existing_invoice_ids = {t.get("invoice_id") for t in trades if t.get("invoice_id")}
+        
         for inv in invoices:
+            # Skip if we already have this invoice's trade in the list
+            if inv.get("trade_id") and inv["trade_id"] in existing_trade_ids:
+                continue
+            # Skip if we already added this invoice
+            if inv["id"] in existing_invoice_ids:
+                continue
+            
             # Find related trade if exists
             related_trade = None
             if inv.get("trade_id"):
@@ -269,13 +293,18 @@ async def get_merchant_trades(
                 {"_id": 0, "id": 1}
             )
             
+            # Use trade_id as primary ID if it exists, otherwise use invoice_id
+            # This ensures ALL roles see the SAME ID for the same deal
+            primary_id = inv.get("trade_id") or inv["id"]
+            
             payment = {
-                "id": inv["id"],
+                "id": primary_id,  # Unified ID - same for merchant, trader, admin
                 "trade_id": inv.get("trade_id"),
                 "invoice_id": inv["id"],
                 "status": inv["status"],
                 "original_amount_rub": inv.get("original_amount_rub"),
-                "amount_rub": inv.get("amount_rub") or inv.get("original_amount_rub"),
+                "client_pays_rub": related_trade.get("client_pays_rub") if related_trade else None,
+                "amount_rub": inv.get("original_amount_rub"),  # Show merchant's price, not trader markup
                 "amount_usdt": inv.get("amount_usdt"),
                 "amount": inv.get("original_amount_rub") or inv.get("amount_rub", 0),
                 "fiat_amount": inv.get("original_amount_rub") or inv.get("amount_rub", 0),

@@ -1863,7 +1863,7 @@ function MerchantPayments() {
                       {payment.client_nickname || "Клиент"}
                     </div>
                     <div className="text-sm text-[#71717A]">
-                      {(payment.client_amount_rub || payment.amount_rub || 0).toLocaleString("ru-RU", {maximumFractionDigits: 0})} ₽
+                      {(payment.original_amount_rub || payment.fiat_amount || payment.amount_rub || 0).toLocaleString("ru-RU", {maximumFractionDigits: 0})} ₽
                     </div>
                     <div className="text-xs text-[#52525B]">
                       {new Date(payment.created_at).toLocaleString("ru-RU")}
