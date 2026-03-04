@@ -65,8 +65,15 @@ export default function BuyerTradePage() {
       setTrade(prev => prev ? { ...prev, status: data.status } : prev);
       // Also fetch full trade data for other fields
       fetchTrade();
+      
+      // Auto-redirect when trade is completed
+      if (data.status === "completed") {
+        setTimeout(() => {
+          navigate('/trader/purchases', { replace: true });
+        }, 2000);
+      }
     }
-  }, []);
+  }, [navigate]);
 
   useWebSocket(
     tradeId ? `/ws/trade/${tradeId}` : null,
@@ -78,11 +85,11 @@ export default function BuyerTradePage() {
   useEffect(() => {
     fetchTrade();
     fetchMessages();
-    // Polling as fallback only (30s instead of 5s since WS handles real-time)
+    // Polling as fallback (5s for faster updates)
     const interval = setInterval(() => {
       fetchTrade();
       fetchMessages();
-    }, 10000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [tradeId]);
 
@@ -115,6 +122,17 @@ export default function BuyerTradePage() {
       return () => clearInterval(interval);
     }
   }, [trade]);
+
+  // Auto-redirect when trade is completed (polling fallback)
+  useEffect(() => {
+    if (trade && trade.status === "completed") {
+      // Short delay to show completion message
+      const timer = setTimeout(() => {
+        navigate('/trader/purchases', { replace: true });
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [trade, navigate]);
 
   // Auto-scroll only on new messages (not on refetch)
   useEffect(() => {
@@ -558,20 +576,7 @@ export default function BuyerTradePage() {
               <CheckCircle className="w-12 h-12 text-[#10B981] mx-auto mb-3" />
               <h3 className="text-[#10B981] font-semibold text-lg">Сделка завершена!</h3>
               <p className="text-[#71717A] mt-2">{trade.amount_usdt} USDT зачислены на ваш баланс.</p>
-              {!leftChat && tradeId && (
-                <Button 
-                  onClick={handleLeaveChat}
-                  variant="outline"
-                  className="mt-4 border-white/20 text-white hover:bg-white/5"
-                  data-testid="leave-chat-btn"
-                title="Покинуть чат сделки"
-                >
-                  Покинуть чат
-                </Button>
-              )}
-              {leftChat && (
-                <p className="text-[#71717A] text-sm mt-4">Вы покинули чат</p>
-              )}
+              <p className="text-[#52525B] text-sm mt-3 animate-pulse">Переход в личный кабинет...</p>
             </div>
           )}
 

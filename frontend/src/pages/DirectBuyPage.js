@@ -43,14 +43,30 @@ export default function DirectBuyPage() {
       });
     } else if (data.type === "status_update" && data.status) {
       setTrade(prev => prev ? { ...prev, status: data.status } : prev);
+      // Fetch full trade data for complete update
+      if (trade?.id) {
+        axios.get(`${API}/trades/${trade.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).then(res => setTrade(res.data)).catch(() => {});
+      }
     }
-  }, []);
+  }, [trade?.id, token]);
 
   useWebSocket(
     trade ? `/ws/trade/${trade.id}` : null,
     onWsMessage,
     { enabled: !!trade && trade.status !== "completed" && trade.status !== "cancelled" }
   );
+
+  // Auto-redirect when trade is completed
+  useEffect(() => {
+    if (trade && trade.status === "completed") {
+      const timer = setTimeout(() => {
+        navigate('/trader/purchases', { replace: true });
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [trade, navigate]);
 
   useEffect(() => {
     if (!isAuthenticated) {
