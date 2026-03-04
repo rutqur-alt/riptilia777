@@ -1,71 +1,69 @@
 <analysis>**original_problem_statement:**
-The initial request was to build a P2P cryptocurrency exchange platform named Reptiloid. The core focus of recent development has been to create a robust, secure, and well-documented redirect-based Merchant API for accepting payments. The user has requested the removal of a previous test shop and the creation of a new, fully-functional demo store that accurately reflects the API's capabilities, including correct balance calculations, transaction history with webhook statuses, and a display of active payments. The user is highly detail-oriented and requires all features to be production-ready, secure, and logically sound, with a strong emphasis on correct ad filtering (e.g., hiding paused or inactive ads) and accurate fund distribution calculations.
+The initial request was to build a P2P cryptocurrency exchange platform named Reptiloid. The core focus of recent development has been to create a robust, secure, and well-documented redirect-based Merchant API for accepting payments.
+
+The user has provided a series of bug reports and feature requests aimed at making the platform's financial logic production-ready. Key requirements include:
+1.  **Correct Fund Distribution:** The commission for the platform must be calculated based on the merchant's original order amount (), not the final amount the customer pays to the trader (which includes the trader's markup). This logic must apply universally, especially after an admin resolves a dispute in the buyer's favor.
+2.  **UI/UX Clarity:** The merchant's transaction history should display the original order amount, not the inflated amount paid by the end-user. Transaction IDs must be consistent and unified across the system.
+3.  **Configurability:** The admin should be able to configure business rules, such as the minimum number of successful trades a trader needs before being eligible for payouts.
+4.  **Live Webhooks:** The demo store must use a fully live webhook integration, just as a real merchant would, to verify the end-to-end notification flow.
+5.  **Accurate Documentation:** The merchant-facing API documentation must be rewritten to be 100% accurate and reflect the current, working implementation.
 
 **User's preferred language**: Russian
 
 **what currently exists?**
-A full-stack P2P crypto exchange with a functional redirect-based merchant API. The previous  test store has been deleted and replaced with a new  page that serves as a client for the merchant API. This demo store now correctly displays a merchant's balance in RUB, shows a history of orders with their corresponding webhook statuses, and lists active payments.
+The platform is a full-stack P2P crypto exchange with a functional redirect-based merchant API and a  store that acts as a client.
 
-The backend has been significantly improved:
-- The main merchant dashboard now correctly aggregates and displays invoices created via the new API.
-- A critical bug was fixed where the payment URL was generated with an incorrect internal domain, causing 403 errors. The backend now hardcodes the correct public domain.
-- Strict filtering has been implemented to ensure that only active, available, and un-paused trader ads are shown to customers during the payment process.
-- The API documentation has been updated to include the  webhook status, making it more comprehensive.
+Throughout this session, the agent has performed numerous critical bug fixes and enhancements:
+-   The core fund distribution logic was corrected across multiple, conflicting API endpoints. The system now correctly calculates the merchant's earnings and platform commission based on the original order amount, even when a transaction is finalized via an admin-resolved dispute.
+-   The merchant dashboard UI has been updated to show the correct, original order amounts and unified  transaction IDs, eliminating a major source of confusion.
+-   A new feature was added to the admin panel allowing an administrator to configure the minimum successful trades required for traders to appear in the payment widget.
+-   A live webhook system was implemented for the demo store. This includes a backend endpoint to receive and log webhooks and frontend logic to display the history of received webhooks, simulating a real-world integration.
+-   Multiple bugs related to incorrect state management were fixed (e.g., completed trades appearing in Active, cancelled trades in Disputes).
 
 **Last working item**:
-- **Last item agent was working:** The agent was analyzing the fund distribution for a specific completed trade () at the user's request. The user was confused about the commission structure and wanted a clear breakdown of how much money (in RUB) the merchant ultimately receives after the trader and platform take their cuts. The agent provided a preliminary analysis, but the user requested a more precise and understandable explanation.
-- **Status:** IN PROGRESS
-- **Agent Testing Done:** N
-- **Which testing method agent to use?** The agent should use  shell or  to query the , ,  and any ledger-related collections to trace the exact flow of funds (USDT and RUB) for trade .
-- **User Testing Done:** N
+- **Last item agent was working:** The user requested a complete rewrite of the merchant-facing API documentation to ensure it is 100% accurate and reflects the current, stable state of the integration. The user provided a detailed template for the new documentation.
+- **Status:** NOT STARTED
+- **Agent Testing Done:** N/A
+- **Which testing method agent to use?** This is a documentation task. No automated testing is needed. The agent should read the relevant backend and frontend code to ensure accuracy and then ask the user for review.
+- **User Testing Done:** N/A
 
 **All Pending/In progress Issue list**:
-- **Issue 1: Clarify Fund Distribution for Trade  (P0)**
-    - **Description:** The user does not understand the breakdown of commissions and final amounts credited to the merchant for a given transaction. They need a clear, step-by-step explanation for trade , showing how an initial 10,000 RUB request results in the final credited amount after all commissions are applied.
-    - **Attempted fixes:** The agent provided an initial summary, but it was not clear enough for the user.
-    - **Next debug checklist:**
-        1.  Query the database for the trade with .
-        2.  Identify the associated  and note the  (expected to be 10,000).
-        3.  Find the merchant's  from the  collection.
-        4.  Find the platform's commission from the trade details.
-        5.  Trace the  from the trade.
-        6.  Calculate the exact USDT amount deducted for the merchant's commission.
-        7.  Calculate the final USDT amount that should be credited to the merchant's balance.
-        8.  Explain the flow in simple terms and Russian: Client requested 10,000 RUB. This converted to X USDT. Your commission is 10%, which is Y USDT. The final credited amount to your balance is Z USDT, which is equivalent to 9,000 RUB.
-    - **Why fix this issue and what will be achieved with the fix?** Resolving this will provide clarity on the platform's core business logic, build user trust, and confirm the commission system works as intended.
-    - **Status:** IN PROGRESS
-    - **Is recurring issue?** N
-    - **Should Test frontend/backend/both after fix?** Backend (DB analysis).
-    - **Blocked on other issue:** None. This is the highest priority.
+There are no pending bugs. The focus has shifted to documentation and future tasks.
 
 **In progress Task List**:
-The  issue is the only in-progress task.
+- **Task 1: Rewrite Merchant API Documentation (P0)**
+    - **Where to resume:** Read the user-provided documentation template from message . Analyze the code in , , , and  to gather all correct details (endpoints, request/response formats, signature logic, webhook payloads). Update the content of .
+    - **What will be achieved with this?** A clear, accurate, and trustworthy guide for merchants, which is critical for adoption and reduces support requests.
+    - **Status:** NOT STARTED
+    - **Should Test frontend/backend/both after fix?** N/A
+    - **Blocked on something:** Nothing.
 
 **Upcoming and Future Tasks**
 - **Upcoming Tasks:**
-    - **(P1) Cleanup :** Remove the now-unused endpoints related to the rejected white-label API flow (, , etc.) to reduce code clutter and prevent future confusion.
+    - **(P1) Refactor Dispute Resolution Endpoints:** There are at least four separate, conflicting API endpoints for resolving disputes (, , , ). This is a major architectural flaw and a source of recurring bugs. They must be consolidated into a single, authoritative endpoint.
+    - **(P1) Cleanup :** Remove the now-unused endpoints related to the rejected white-label API flow to reduce code clutter.
 - **Future Tasks:**
     - **(P2) Deprecate Old Merchant API:** Investigate the legacy API in  and plan for its deprecation and removal.
-    - **(P3) Standardize Backend Route Directories:** Consolidate all route files from  and  into a single, unified  directory for better organization.
-    - **(P3) Migrate Legacy Notifications:** Plan and execute a migration script to move data from the old  collection to the new  collection, refactoring the backend to use only the new system.
+    - **(P3) Standardize Backend Route Directories:** Consolidate all route files from  and  into a single, unified  directory.
+    - **(P3) Migrate Legacy Notifications:** Plan and execute a migration script to move data from the old  collection to the new  collection.
 
 **Completed work in this session**
-- **Deleted  Test Store**: Completely removed the old  directory and its associated routes as requested by the user.
-- **Created  Merchant Store**: Implemented a new, superior demo store at  that fully integrates with the redirect-based merchant API.
-- **Fixed Merchant Balance Calculation**: Corrected the logic to ensure the demo store's balance reflects the sum of  from completed invoices, displayed in RUB.
-- **Fixed Transaction History**: Resolved a Javascript error () on the history tab in the demo store.
-- **Added Active Payments to Demo Store**: The demo store now fetches and displays a list of the merchant's active/pending payments.
-- **Unified Merchant Dashboard View**: Updated the primary merchant dashboard ( API) to include invoices created via the , ensuring a single source of truth for merchants.
-- **Fixed 403 Error on Payment Redirect**: Diagnosed and fixed a critical bug where the backend generated a  with an incorrect internal domain. The correct public domain is now hardcoded.
-- **Implemented Strict Ad Filtering**: Enhanced the API that provides trader ads () to rigorously filter out any ads that are paused, inactive, or have insufficient balance, preventing them from being shown to customers.
-- **Resolved API Key & Signature Mismatches**: Systematically debugged multiple payment creation failures reported by the user, tracing them to browser caching of old keys and mismatches. Cleared  usage in the demo shop to ensure fresh keys are always used.
-- **Updated API Documentation**: Added the  webhook status and its description to the  page.
+- **Fixed Fund Distribution:** Corrected commission calculation to be based on , resolving the primary and most persistent issue.
+- **Fixed Dispute Resolution Logic:** Ensured that resolving a dispute in favor of the buyer correctly triggers the same fund distribution and status updates as a normally completed trade. This fix was applied across multiple conflicting endpoints.
+- **Unified Merchant Transaction View:** Modified the merchant dashboard to consistently show  and a single  ID for all transactions, improving clarity.
+- **Added Configurable Payout Rules:** Implemented a new UI and API for admins to set the minimum successful trades required for traders.
+- **Implemented Live Webhooks:** Created a complete, live webhook system for the demo store, including a receiving endpoint and history display. Ensured webhooks are correctly sent on all status changes, including dispute resolutions.
+- **Fixed State Mismatches:** Resolved multiple bugs where trades and their corresponding invoices had out-of-sync statuses, causing them to appear in incorrect UI lists.
+- **Corrected Transaction Categorization:** Fixed a bug where internal  were wrongly displayed in the merchant's Payments history.
+- **Database Cleanup:** Performed several full database wipes (sparing users) as requested by the user for clean testing cycles.
+- **Fixed Ad Creation/Visibility:** Ensured new ads are created with  so they are correctly filtered and displayed to merchant customers.
+- **UI Cleanups:** Removed several unnecessary links and corrected displayed amounts on the payment pages.
 
 **Earlier issues found/mentioned but not fixed**
-- None.
+- The architectural issue of having multiple, conflicting API endpoints for the same function (e.g., resolving a dispute) was discovered and patched in all known locations, but the root cause (code duplication) has not been refactored. This remains a significant technical debt.
 
 **Known issue recurrence from previous fork**
-- None.
+- The core issue of incorrect fund distribution after a dispute was a recurring theme. The agent addressed it by finding and patching several duplicate, conflicting API endpoints that contained the faulty logic. The problem should now be resolved, but the underlying code duplication is a risk.
 
 **Code Architecture**
 
@@ -74,75 +72,77 @@ The  issue is the only in-progress task.
 - **Frontend:** React, Redux, Axios, Tailwind CSS
 - **Backend:** FastAPI, Pydantic, Motor (async MongoDB)
 - **Database:** MongoDB
-- **Key Concepts:** Redirect-based API, HMAC Signatures, Webhooks, Background Tasks, Commission Logic.
+- **Key Concepts:** Dispute Resolution Logic, State Synchronization (between  and ), Webhook Architecture, Commission Calculation.
 
 **key DB schema**
-- **merchant_invoices:** Stores all payment requests created via the API. Fields include , , , , .
-- **trades:** Represents a deal between a customer and a trader. The  field links a trade back to a .
-- **offers:** Trader advertisements. Critical fields for filtering are , , , , .
-- **merchants:** Stores merchant data, including , , and .
+- **merchants:**  is used for all calculations.  was populated for the demo.
+- **trades:**  and  now store the correct, calculated values.
+- **merchant_invoices:** Contains . Its  is now correctly synchronized with the  status (, ).
+- **payout_rules:** New/updated collection to store .
+- **demo_webhooks:** New collection created to log received webhooks for the demo store, proving the E2E flow.
 
 **changes in tech stack**
 - None.
 
 **All files of reference**
-- : The new demo store that acts as the primary testbed for the merchant integration.
-- : The core backend logic for the merchant API. Contains the fix for  generation.
-- : Contains the  endpoint with the new strict filtering logic.
-- : The API for the main merchant dashboard, which now aggregates data from .
-- : The merchant-facing API documentation.
+- : The most critical file for business logic.
+- , , : The locations of the conflicting dispute resolution logic that were patched.
+- : API for the merchant dashboard.
+- : API for the demo store, including the new webhook receiver.
+- : API for admin settings, including the new payout rules.
+- : The target file for the next task.
+- : Reference implementation for the merchant API integration.
 
 **Areas that need refactoring**:
-- ****: Still contains unused endpoints from the rejected white-label API. These should be removed to clean up the code.
-- **Legacy Merchant API ():** This file likely contains an old, insecure version of the merchant API and should be audited for deprecation.
-- **Backend Directory Structure:** The routes are split between  and . They should be consolidated into a single  directory.
+- **Dispute Resolution Endpoints:** The presence of at least four endpoints for the same action is a critical flaw that needs to be addressed. A single, authoritative endpoint should be created, and all others removed. This is the highest priority for refactoring.
+- **Backend Directory Structure:** Routes are scattered. They should be consolidated into a single  directory for consistency.
 
 **key api endpoints**
-- : Creates a merchant invoice and returns a .
-- : Fetches a merchant's payment history and active invoices. Used by the demo store.
-- : Fetches a merchant's balance. Used by the demo store.
-- : Provides the filtered list of available traders for a given payment request.
-- : The main endpoint for the merchant's dashboard, showing all their transactions.
+- : Creates a merchant invoice.
+- , : The various (now patched) endpoints for resolving disputes.
+- : Serves data for the primary merchant dashboard.
+- : The new webhook receiver endpoint for the demo store.
+- , : APIs for the new configurable payout setting.
 
 **Critical Info for New Agent**
-- **Your immediate priority is to answer the user's question about fund distribution for trade .** You must perform a detailed database analysis and provide a simple, clear, step-by-step breakdown in Russian.
-- The user is extremely frustrated by things not working correctly. Acknowledge this, do not argue, and focus directly on fixing the issue. All communication must be in Russian.
-- The  page is the new, user-approved test environment for the merchant API. The old  is gone. Do not refer to it.
-- The redirect-based API flow is the *only* correct implementation. Do not attempt to implement or suggest any white-label or embedded solutions.
-- When the user reports an issue with the demo store (e.g., payment creation fails), be aware that it could be due to them regenerating API keys on their end. The first step is often to verify the keys in the database match what they are using.
+- **Your immediate priority is to rewrite the merchant API documentation.** The user has provided a detailed template and expects it to be 100% accurate. The file to edit is .
+- **The fund distribution logic is extremely sensitive.** The correct formula is: commission is a percentage of the . This logic was repeatedly broken because of code duplication across multiple API endpoints. While all known duplicates have been patched, be vigilant for this pattern if similar bugs arise.
+- **Communicate exclusively in Russian.** Acknowledge any user frustration directly and pivot immediately to solving the problem. Do not be defensive.
+- The user frequently requests database wipes to test flows from a clean state. Do not rely on data persisting across user testing sessions.
 
 **documents and test reports created in this job**
-- 
+- A new collection  was implicitly created to store webhook history for the demo store.
 
 **Last 10 User Messages and any pending HUMAN messages**
-10.  User: I've noticed that paused ads are still showing up for merchant customers. There needs to be a strict check to ensure ads are active, not paused, have enough balance, and are within limits before being shown. Explain what you understood.
-9.  Agent: Acknowledged the need for strict filtering (, , balance, limits) on the API endpoint that serves operators to the payment page. Asked for confirmation.
-8.  User:  (yes).
-7.  User: (After agent implemented the fix) Okay, now I'm interested in this specific trade. Explain to me who got what from this deal.
-6.  User: For trade , explain how much was credited to whom.
-5.  Agent: Provided an initial breakdown of the fund distribution for the trade.
-4.  User: I don't understand how much the merchant received. For a 10,000 RUB request and a 10% commission, they should get 9,000 RUB. Look again and explain it properly without changing anything.
-3.  Agent: Understood, re-investigating for a clearer explanation.
-2.  Agent: Started analyzing the database for the trade.
-1.  Agent: Located the trade and invoice details in the database.
+10. User confirms that a  was in the wrong merchant dashboard section and asks if the fix is permanent.
+9. Agent confirms the fix is permanent by explaining the code change.
+8. User reports another incorrect fund distribution after a dispute for .
+7. Agent analyzes the transaction and asserts it was calculated correctly, asking for clarification.
+6. User points out that the balance change on their screen doesn't match the expected amount.
+5. Agent re-investigates and finds a discrepancy in the total merchant balance, suggesting some older transactions were not credited. Agent corrects the balance manually.
+4. User asks for confirmation that future dispute resolutions will now calculate correctly.
+3. Agent confirms all 4 known dispute resolution endpoints have been fixed and explains the logic.
+2. User requests a verification of all webhook statuses, suspecting they are not being sent correctly.
+1. User requests a complete rewrite of the API documentation to match the current, working integration and provides a detailed template.
 
 **Project Health Check:**
-- **Broken:** None. The application is currently in a stable and consistent state.
-- **Mocked:** The  page serves as a mock frontend for a merchant's website, but it uses the live, production-ready merchant API.
+- **Broken:** The core business logic is now stable, but the underlying architecture is brittle. The existence of multiple, conflicting API endpoints for the same action (e.g., ) is a major risk for future bugs.
+- **Mocked:** The  page serves as a mock frontend, but it uses the live, production-ready merchant API and now has a live webhook receiver.
 
 **3rd Party Integrations**
 - None.
 
 **Testing status**
-- **Testing agent used after significant changes:** NO. Agent performed extensive manual testing via  and  tools throughout the session.
+- **Testing agent used after significant changes:** NO. The agent relied on extensive manual testing via , database inspection, and direct feedback from the user who performed E2E tests.
 - **Troubleshoot agent used after agent stuck in loop:** NO.
 - **Test files created:** None.
-- **Known regressions:** None.
+- **Known regressions:** None in this session.
 
 **Credentials to test flow:**
 - **Super Admin:**  / 
 - **Trader 111:**  / 
-- **Merchant 222:**  /  (Note: User frequently regenerates API keys for this merchant, so they may need to be checked in the DB if authentication fails).
+- **Merchant 222:**  /  (Email is . Commission is 10%. API keys may have been regenerated by the user).
 
 **What agent forgot to execute**
-- After the user confirmed the redirect-only approach, the agent did not remove the now-obsolete white-label API endpoints from . This is a pending cleanup task.</analysis>
+- The main pending task is the user's latest request: rewriting the API documentation.
+- The technical debt of refactoring the duplicate API endpoints has been identified but not addressed.</analysis>

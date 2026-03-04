@@ -126,9 +126,9 @@ import hmac
 import hashlib
 
 # === ВАШИ КЛЮЧИ ===
-API_KEY = "${merchant?.api_key || 'YOUR_API_KEY'}"
-SECRET_KEY = "${merchant?.api_secret || 'YOUR_SECRET_KEY'}"
-MERCHANT_ID = "${merchant?.id || 'YOUR_MERCHANT_ID'}"
+API_KEY = "${merchant?.api_key || 'pk_live_ваш_ключ'}"
+SECRET_KEY = "${merchant?.api_secret || 'sk_live_ваш_секрет'}"
+MERCHANT_ID = "${merchant?.id || 'ваш_merchant_id'}"
 BASE_URL = "${BASE_URL}/api/v1/invoice"
 
 def generate_signature(params: dict, secret_key: str) -> str:
@@ -228,9 +228,9 @@ status = check_payment_status(order_id="ORDER_123456")
 print(f"Статус: {status['data']['status']}")`;
 
   const jsExample = `// === ВАШИ КЛЮЧИ ===
-const API_KEY = '${merchant?.api_key || 'YOUR_API_KEY'}';
-const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
-const MERCHANT_ID = '${merchant?.id || 'YOUR_MERCHANT_ID'}';
+const API_KEY = '${merchant?.api_key || 'pk_live_ваш_ключ'}';
+const SECRET_KEY = '${merchant?.api_secret || 'sk_live_ваш_секрет'}';
+const MERCHANT_ID = '${merchant?.id || 'ваш_merchant_id'}';
 const API_BASE = '${BASE_URL}/api/v1/invoice';
 
 // Подключите crypto-js: npm install crypto-js
@@ -307,7 +307,7 @@ async function handlePayment() {
   const webhookExample = `// Node.js / Express - обработка вебхуков
 const crypto = require('crypto');
 
-const SECRET_KEY = '${merchant?.api_secret || 'YOUR_SECRET_KEY'}';
+const SECRET_KEY = '${merchant?.api_secret || 'sk_live_ваш_секрет'}';
 const SIGN_FIELDS = ['order_id', 'payment_id', 'status', 'amount', 'amount_usdt', 'timestamp'];
 
 function verifyWebhookSignature(payload, receivedSign) {
@@ -355,7 +355,7 @@ app.post('/webhook', (req, res) => {
       break;
       
     case 'completed':
-      // ✅ ПЛАТЁЖ УСПЕШЕН - зачислите средства клиенту!
+      // ПЛАТЁЖ УСПЕШЕН - зачислите средства клиенту!
       console.log(\`Заказ \${order_id}: УСПЕХ! Сумма: \${amount} RUB / \${amount_usdt} USDT\`);
       // await creditUserBalance(order_id, amount_usdt);
       break;
@@ -401,7 +401,7 @@ app.post('/webhook', (req, res) => {
               <span className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold shrink-0">1</span>
               <div>
                 <p className="text-sm text-white font-medium">Создайте платёж через API</p>
-                <p className="text-xs text-zinc-500 mt-1">POST /api/v1/invoice/create → получите payment_url</p>
+                <p className="text-xs text-zinc-500 mt-1">POST /api/v1/invoice/create — получите payment_url</p>
               </div>
             </div>
             <div className="flex gap-3 items-start">
@@ -586,10 +586,10 @@ app.post('/webhook', (req, res) => {
           <div>
             <h4 className="text-sm font-medium text-zinc-300 mb-2">Запрос:</h4>
             <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
-{`Header: X-Api-Key: ${merchant?.api_key || 'YOUR_API_KEY'}
+{`Header: X-Api-Key: ${merchant?.api_key || 'pk_live_ваш_ключ'}
 
 {
-  "merchant_id": "${merchant?.id || 'YOUR_MERCHANT_ID'}",
+  "merchant_id": "${merchant?.id || 'ваш_merchant_id'}",
   "order_id": "ORDER_123456",        // Уникальный ID в вашей системе
   "amount": 1500,                    // Сумма в рублях (мин. 100)
   "currency": "RUB",
@@ -641,7 +641,7 @@ app.post('/webhook', (req, res) => {
         <CardContent className="space-y-4">
           <pre className="bg-zinc-950 rounded-lg p-4 text-sm font-mono text-zinc-300 border border-zinc-800 overflow-x-auto">
 {`GET /api/v1/invoice/status?order_id=ORDER_123456
-Header: X-Api-Key: ${merchant?.api_key || 'YOUR_API_KEY'}
+Header: X-Api-Key: ${merchant?.api_key || 'pk_live_ваш_ключ'}
 
 // или по payment_id:
 GET /api/v1/invoice/status?payment_id=inv_20250128_ABC123
