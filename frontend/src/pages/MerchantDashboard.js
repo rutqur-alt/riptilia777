@@ -88,10 +88,9 @@ export default function MerchantDashboard() {
       key: "trading",
       title: "Торговля",
       icon: TrendingUp,
-      notifyKey: "trades",
       items: [
-        { path: "/merchant/withdrawal-requests", icon: ArrowUpRight, label: "Заявки на выплаты", notifyKey: "withdrawals" },
-        { path: "/merchant/payments", icon: DollarSign, label: "Платежи", notifyKey: "payments" }
+        { path: "/merchant/withdrawal-requests", icon: ArrowUpRight, label: "Заявки на выплаты" },
+        { path: "/merchant/payments", icon: DollarSign, label: "Платежи" }
       ]
     },
     {
@@ -114,15 +113,13 @@ export default function MerchantDashboard() {
       key: "finances",
       title: "Финансы",
       icon: Wallet,
-      items: [
-        { path: "/merchant/wallet", icon: Wallet, label: "Кошелёк" }
-      ]
+      single: true,
+      path: "/merchant/wallet"
     },
     {
       key: "messages",
       title: "Сообщения",
       icon: MessageCircle,
-      notifyKey: "messages",
       single: true,
       path: "/merchant/messages"
     },
@@ -280,7 +277,6 @@ export default function MerchantDashboard() {
                       }`}>
                         <section.icon className="w-4 h-4" />
                         <span className="text-sm">{section.title}</span>
-                        <Badge count={sidebarBadges[section.notifyKey]} />
                       </div>
                     </Link>
                   ) : (
@@ -295,7 +291,6 @@ export default function MerchantDashboard() {
                       >
                         <section.icon className="w-4 h-4" />
                         <span className="text-sm flex-1 text-left">{section.title}</span>
-                        <Badge count={sidebarBadges[section.notifyKey]} />
                         <ChevronDown className={`w-4 h-4 transition-transform ${expandedSections[section.key] ? "rotate-180" : ""}`} />
                       </button>
                       
@@ -310,7 +305,6 @@ export default function MerchantDashboard() {
                               }`}>
                                 <item.icon className="w-3.5 h-3.5" />
                                 <span className="text-xs">{item.label}</span>
-                                <Badge count={sidebarBadges[item.notifyKey]} />
                               </div>
                             </Link>
                           ))}
