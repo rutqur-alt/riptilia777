@@ -126,6 +126,7 @@ async def create_offer(data: OfferCreate, user: dict = Depends(require_role(["tr
         "id": str(uuid.uuid4()),
         "trader_id": user["id"],
         "trader_login": trader["login"],
+        "type": "sell",  # Трейдер продаёт USDT за рубли
         "amount_usdt": data.amount_usdt,
         "available_usdt": data.amount_usdt,
         "min_amount": min_amount,
