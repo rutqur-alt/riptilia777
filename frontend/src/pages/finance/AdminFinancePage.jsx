@@ -10,7 +10,7 @@ import {
   Wallet, ArrowDownCircle, ArrowUpCircle, Clock, CheckCircle, XCircle,
   Copy, RefreshCw, TrendingUp, TrendingDown, AlertTriangle, Search,
   Shield, Activity, Users, Download, Eye, Check, X, FileText, Settings,
-  PlusCircle, MinusCircle, ExternalLink, BarChart3
+  PlusCircle, MinusCircle, ExternalLink, BarChart3, Key
 } from 'lucide-react';
 
 const formatUSDT = (amount) => {
@@ -60,6 +60,12 @@ export default function AdminFinancePage() {
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
+  
+  // New wallet generation
+  const [showNewWalletModal, setShowNewWalletModal] = useState(false);
+  const [newWalletData, setNewWalletData] = useState(null);
+  const [seedCopied, setSeedCopied] = useState(false);
+  const [seedConfirmed, setSeedConfirmed] = useState(false);
 
   const isAdmin = user?.admin_role === 'owner' || user?.admin_role === 'admin';
 
@@ -223,17 +229,53 @@ export default function AdminFinancePage() {
   };
 
   const generateWallet = async () => {
-    if (!confirm('Сгенерировать новый кошелек?')) return;
+    if (!confirm('⚠️ ВНИМАНИЕ!\n\nВы собираетесь сгенерировать НОВЫЙ кошелёк биржи.\n\nСтарый кошелёк будет заменён!\n\nПродолжить?')) return;
     
     try {
       const res = await axios.post(`${API}/admin/wallet/generate`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      toast.success(res.data.message);
-      alert(`Новый адрес: ${res.data.wallet.address}\n\nМнемоника сохранена в файл на сервере.`);
+      // Show modal with seed phrase
+      setNewWalletData(res.data.wallet);
+      setSeedCopied(false);
+      setSeedConfirmed(false);
+      setShowNewWalletModal(true);
+      
+      toast.success('Новый кошелёк сгенерирован!');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Ошибка');
+      toast.error(error.response?.data?.detail || 'Ошибка генерации');
+    }
+  };
+  
+  const confirmSeedSaved = async () => {
+    if (!seedCopied) {
+      toast.error('Сначала скопируйте seed-фразу!');
+      return;
+    }
+    
+    try {
+      // Activate the new wallet on server
+      await axios.post(`${API}/admin/wallet/activate`, {
+        address: newWalletData.address
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setShowNewWalletModal(false);
+      setNewWalletData(null);
+      toast.success('Кошелёк активирован! Seed-фраза удалена с сервера.');
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Ошибка активации');
+    }
+  };
+
+  const copySeedPhrase = () => {
+    if (newWalletData?.mnemonic) {
+      navigator.clipboard.writeText(newWalletData.mnemonic);
+      setSeedCopied(true);
+      toast.success('Seed-фраза скопирована в буфер обмена');
     }
   };
 
@@ -994,6 +1036,108 @@ export default function AdminFinancePage() {
               </Button>
               <Button onClick={adjustBalance} className="flex-1">
                 Применить
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Wallet Seed Phrase Modal */}
+      {showNewWalletModal && newWalletData && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 p-6 rounded-xl max-w-2xl w-full mx-4 border border-red-500/50">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+                <Key className="w-6 h-6 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white">Новый кошелёк создан!</h3>
+                <p className="text-red-400 text-sm">⚠️ СОХРАНИТЕ SEED-ФРАЗУ ПРЯМО СЕЙЧАС</p>
+              </div>
+            </div>
+
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-4">
+              <p className="text-red-300 text-sm">
+                <strong>ВАЖНО:</strong> Это единственный раз когда вы увидите seed-фразу! 
+                После подтверждения она будет зашифрована и удалена с сервера.
+                Без seed-фразы восстановить доступ к кошельку НЕВОЗМОЖНО!
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-zinc-400 mb-1 block">Адрес кошелька:</label>
+                <div className="flex items-center gap-2 bg-zinc-800 p-3 rounded-lg">
+                  <span className="font-mono text-emerald-400 text-sm break-all">{newWalletData.address}</span>
+                  <button 
+                    onClick={() => {navigator.clipboard.writeText(newWalletData.address); toast.success('Адрес скопирован');}}
+                    className="text-zinc-400 hover:text-white"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-400 mb-1 block">SEED-ФРАЗА (24 слова):</label>
+                <div className="bg-zinc-800 p-4 rounded-lg border-2 border-yellow-500/50">
+                  <div className="grid grid-cols-4 gap-2 mb-4">
+                    {newWalletData.mnemonic?.split(' ').map((word, i) => (
+                      <div key={i} className="flex items-center gap-1 bg-zinc-700 px-2 py-1 rounded text-sm">
+                        <span className="text-zinc-500 text-xs w-4">{i+1}.</span>
+                        <span className="text-white font-mono">{word}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button 
+                    onClick={copySeedPhrase}
+                    className={`w-full ${seedCopied ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-yellow-600 hover:bg-yellow-700'}`}
+                  >
+                    {seedCopied ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Seed-фраза скопирована
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 mr-2" />
+                        Скопировать seed-фразу
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3 bg-zinc-800 p-3 rounded-lg">
+                <input 
+                  type="checkbox" 
+                  id="confirmSeed"
+                  checked={seedConfirmed}
+                  onChange={(e) => setSeedConfirmed(e.target.checked)}
+                  className="mt-1"
+                />
+                <label htmlFor="confirmSeed" className="text-sm text-zinc-300">
+                  Я понимаю что seed-фраза будет показана только ОДИН РАЗ. 
+                  Я сохранил её в надёжном месте и понимаю что без неё восстановить доступ к кошельку невозможно.
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button 
+                variant="outline" 
+                onClick={() => {setShowNewWalletModal(false); setNewWalletData(null);}}
+                className="flex-1"
+              >
+                Отмена (не активировать)
+              </Button>
+              <Button 
+                onClick={confirmSeedSaved}
+                disabled={!seedCopied || !seedConfirmed}
+                className={`flex-1 ${seedCopied && seedConfirmed ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-zinc-600'}`}
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                Подтвердить и активировать
               </Button>
             </div>
           </div>

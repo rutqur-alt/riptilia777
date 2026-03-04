@@ -887,7 +887,10 @@ async def generate_new_wallet(
     request: Request,
     user: dict = Depends(require_roles(["admin"]))
 ):
-    """Generate a new TON wallet"""
+    """
+    Generate a new TON wallet and return seed phrase ONE TIME.
+    The mnemonic is NOT saved on server until activation.
+    """
     import httpx
     
     try:
@@ -902,6 +905,15 @@ async def generate_new_wallet(
             
             wallet_data = response.json()
             
+            # Store temporarily in memory for activation
+            # Will be saved to .env only after user confirms they saved the seed
+            _pending_wallets[wallet_data['address']] = {
+                'mnemonic': wallet_data['mnemonic'],
+                'address': wallet_data['address'],
+                'created_at': datetime.now(timezone.utc).isoformat(),
+                'created_by': user['id']
+            }
+            
             await create_audit_log(
                 admin_user_id=user['id'],
                 action='generate_wallet',
@@ -909,13 +921,87 @@ async def generate_new_wallet(
                 ip_address=request.client.host
             )
             
+            # Return wallet data WITH mnemonic (one-time display)
             return {
                 "success": True,
-                "wallet": wallet_data,
-                "message": "Кошелек сгенерирован. Мнемоника сохранена в /app/ton-service/wallet-backup.json"
+                "wallet": {
+                    "address": wallet_data['address'],
+                    "mnemonic": wallet_data['mnemonic']  # ONE TIME ONLY!
+                },
+                "message": "Кошелёк сгенерирован. СОХРАНИТЕ SEED-ФРАЗУ!"
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Temporary storage for pending wallet activations
+_pending_wallets = {}
+
+
+@router.post("/admin/wallet/activate")
+async def activate_wallet(
+    request: Request,
+    user: dict = Depends(require_roles(["admin"]))
+):
+    """
+    Activate a generated wallet - save mnemonic to .env and restart TON service.
+    """
+    data = await request.json()
+    address = data.get('address')
+    
+    if not address or address not in _pending_wallets:
+        raise HTTPException(status_code=400, detail="Кошелёк не найден. Сгенерируйте новый.")
+    
+    pending = _pending_wallets[address]
+    mnemonic = pending['mnemonic']
+    
+    try:
+        import subprocess
+        
+        # Update TON service .env file
+        env_path = '/app/ton-service/.env'
+        
+        # Read current .env
+        with open(env_path, 'r') as f:
+            env_content = f.read()
+        
+        # Update mnemonic and address
+        import re
+        env_content = re.sub(
+            r'HOT_WALLET_MNEMONIC=.*',
+            f'HOT_WALLET_MNEMONIC={mnemonic}',
+            env_content
+        )
+        env_content = re.sub(
+            r'HOT_WALLET_ADDRESS=.*',
+            f'HOT_WALLET_ADDRESS={address}',
+            env_content
+        )
+        
+        # Write updated .env
+        with open(env_path, 'w') as f:
+            f.write(env_content)
+        
+        # Restart TON service
+        subprocess.run(['sudo', 'supervisorctl', 'restart', 'ton-service'], check=True)
+        
+        # Remove from pending
+        del _pending_wallets[address]
+        
+        await create_audit_log(
+            admin_user_id=user['id'],
+            action='activate_wallet',
+            new_value={"address": address},
+            ip_address=request.client.host
+        )
+        
+        return {
+            "success": True,
+            "message": "Кошелёк активирован! TON service перезапущен.",
+            "address": address
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка активации: {str(e)}")
 
 
 # ==================== FULL ANALYTICS (OPTIMIZED + CACHED) ====================
