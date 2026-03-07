@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   MessageCircle, Send, XCircle, UserCog, LogOut, Trash2,
-  CheckCircle, Scale, Briefcase, Store, HelpCircle, Shield, Loader
+  CheckCircle, Scale, Briefcase, Store, HelpCircle, Shield, Loader, ArrowLeft
 } from "lucide-react";
 import { getRoleInfo, getCategoryIcon, getCategoryColor, getCategoryLabel } from "./chatConstants";
 import ChatActions from "./ChatActions";
@@ -146,7 +146,11 @@ function ChatHeader({ selectedConv, setSelectedConv, onAddStaff, onLeaveConversa
     <div className={`p-3 border-b border-white/5 ${selectedConv.status === "disputed" ? "bg-[#EF4444]/5" : selectedConv.status === "closed" ? "bg-[#52525B]/5" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${iconColor.replace("text-", "bg-")}/20`}>
+          {/* Mobile back button */}
+          <Button variant="ghost" size="sm" onClick={() => setSelectedConv(null)} className="lg:hidden h-8 w-8 p-0 flex-shrink-0">
+            <ArrowLeft className="w-4 h-4 text-[#71717A]" />
+          </Button>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${iconColor.replace("text-", "bg-")}/20`}>
             <Icon className={`w-5 h-5 ${iconColor}`} />
           </div>
           <div>
@@ -157,6 +161,9 @@ function ChatHeader({ selectedConv, setSelectedConv, onAddStaff, onLeaveConversa
               )}
               {selectedConv.status === "dispute" && selectedConv.type === "crypto_order" && (
                 <span className="bg-[#EF4444] text-white text-[9px] px-1.5 py-0.5 rounded animate-pulse">СПОР</span>
+              )}
+              {selectedConv.is_qr_aggregator_dispute && (
+                <span className="bg-[#F97316] text-white text-[9px] px-1.5 py-0.5 rounded">QR-АГРЕГАТОР</span>
               )}
             </div>
             <p className="text-[#71717A] text-xs">{selectedConv.subtitle}</p>
@@ -228,7 +235,7 @@ function ChatHeader({ selectedConv, setSelectedConv, onAddStaff, onLeaveConversa
               <Trash2 className="w-4 h-4" />
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setSelectedConv(null)} className="h-7 w-7 p-0">
+          <Button variant="ghost" size="sm" onClick={() => setSelectedConv(null)} className="hidden lg:flex h-7 w-7 p-0">
             <XCircle className="w-4 h-4 text-[#71717A]" />
           </Button>
         </div>
@@ -258,12 +265,12 @@ function MessageBubble({ msg }) {
         {!isAdmin && (
           <div className="flex items-center gap-1.5 text-[10px] text-[#71717A] mb-0.5 ml-2">
             <div className={`w-2 h-2 rounded-full ${roleInfo.marker}`}></div>
-            <span>{msg.sender_nickname ? `${roleInfo.name} (${msg.sender_nickname})` : roleInfo.name}</span>
+            <span>{msg.sender_nickname || roleInfo.name}</span>
           </div>
         )}
         {isAdmin && (
           <div className="flex items-center gap-1.5 text-[10px] text-white/60 mb-0.5 mr-2 justify-end">
-            <span>{msg.sender_nickname ? `${roleInfo.name} (${msg.sender_nickname})` : roleInfo.name}</span>
+            <span>{msg.sender_nickname || roleInfo.name}</span>
             <div className={`w-2 h-2 rounded-full ${roleInfo.marker}`}></div>
           </div>
         )}
