@@ -180,6 +180,8 @@ api_router.include_router(event_notifications_router)
 api_router.include_router(wallet_api_router)
 from routes.shop_api import router as shop_api_router
 api_router.include_router(shop_api_router)
+from routes.qr_aggregator import router as qr_aggregator_router
+api_router.include_router(qr_aggregator_router)
 
 # Import shared WebSocket manager
 from core.websocket import manager

@@ -28,6 +28,7 @@ import BuyCrypto from "@/pages/BuyCrypto";
 import Referrals from "@/pages/Referrals";
 import PublicDisputePage from "@/pages/PublicDisputePage";
 import SelectOperatorPage from "@/pages/SelectOperatorPage";
+import QRProviderDashboard from "@/pages/QRProviderDashboard";
 
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -553,6 +554,7 @@ function App() {
             <Route path="/trade/:tradeId" element={<TradePage />} />
             <Route path="/dispute/:tradeId" element={<PublicDisputePage />} />
             <Route path="/select-operator/:invoiceId" element={<SelectOperatorPage />} />
+            <Route path="/qr-provider" element={<QRProviderDashboard />} />
             <Route path="/demo" element={<DemoShop />} />
             <Route path="/docs" element={<ApiDocs />} />
             <Route path="/buy/:offerId" element={<DirectBuyPage />} />

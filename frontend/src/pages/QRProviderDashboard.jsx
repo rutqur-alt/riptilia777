@@ -17,7 +17,7 @@ function useAuth() {
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    window.location.href = "/qr-provider/login";
+    window.location.href = "/login";
   };
   return { token, user, logout };
 }
@@ -131,7 +131,7 @@ export default function QRProviderDashboard() {
   const [currentPage, setCurrentPage] = useState("dashboard");
 
   if (!token || user?.role !== "qr_provider") {
-    window.location.href = "/qr-provider/login";
+    window.location.href = "/login";
     return null;
   }
 
