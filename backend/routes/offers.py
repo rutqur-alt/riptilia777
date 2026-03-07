@@ -358,6 +358,91 @@ async def get_public_offers(
             offer["trader_display_name"] = offer.get("trader_login", "")
             offer["is_online"] = False
     
+    # === Add QR aggregator providers to order book ===
+    try:
+        qr_settings = await db.qr_aggregator_settings.find_one({"type": "main"}, {"_id": 0})
+        if qr_settings and qr_settings.get("is_enabled", True):
+            # Fetch exchange rate for QR pricing
+            _payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+            exchange_rate = _payout_settings.get("base_rate", 78.0) if _payout_settings else 78.0
+            if not exchange_rate or exchange_rate <= 0:
+                _comm = await db.commission_settings.find_one({}, {"_id": 0})
+                exchange_rate = _comm.get("default_price_rub", 78.0) if _comm else 78.0
+            
+            qr_providers = await db.qr_providers.find({"is_active": True, "balance_usdt": {"$gt": 0}}, {"_id": 0}).to_list(50)
+            
+            for qrp in qr_providers:
+                available_balance = qrp.get("balance_usdt", 0) - qrp.get("frozen_usdt", 0)
+                if available_balance <= 0:
+                    continue
+                
+                # Check online status
+                is_online = False
+                if qrp.get("last_seen"):
+                    try:
+                        last_seen = datetime.fromisoformat(str(qrp["last_seen"]).replace("Z", "+00:00"))
+                        diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                        is_online = diff_minutes < 5
+                    except:
+                        pass
+                
+                display_name = qrp.get("display_name") or qrp.get("login", "QR Provider")
+                
+                for method_key in ["qr", "sng"]:
+                    tg_method = "nspk" if method_key == "qr" else "transgrant"
+                    if not qrp.get(f"{tg_method}_enabled", False):
+                        continue
+                    
+                    provider_markup = qrp.get(f"{tg_method}_commission_percent", 5.0)
+                    platform_markup = qr_settings.get(f"{tg_method}_commission_percent", 5.0)
+                    provider_price_rub = round(exchange_rate * (1 + provider_markup / 100) * (1 + platform_markup / 100), 2)
+                    
+                    method_label = "QR" if method_key == "qr" else "СНГ"
+                    method_name = "СБП (QR-код)" if method_key == "qr" else "СНГ перевод"
+                    
+                    min_amt = qr_settings.get(f"{tg_method}_min_amount", 100)
+                    max_amt = qr_settings.get(f"{tg_method}_max_amount", 100000)
+                    min_usdt = round(min_amt / provider_price_rub, 2) if provider_price_rub > 0 else 1
+                    max_usdt = min(round(max_amt / provider_price_rub, 2), available_balance)
+                    
+                    if payment_method and payment_method != "all" and payment_method != "sbp":
+                        continue
+                    
+                    qr_offer = {
+                        "id": f"qr_provider_{qrp['id']}_{method_key}",
+                        "offer_id": f"qr_provider_{qrp['id']}_{method_key}",
+                        "trader_id": qrp["id"],
+                        "trader_login": qrp.get("login", ""),
+                        "trader_display_name": f"{display_name} ({method_label})",
+                        "type": "sell",
+                        "price_rub": provider_price_rub,
+                        "available_usdt": round(available_balance, 2),
+                        "min_amount": min_usdt,
+                        "max_amount": max_usdt,
+                        "payment_methods": ["sbp"],
+                        "requisites": [{"id": f"qr_{qrp['id']}_{method_key}", "type": "sbp", "data": {"bank_name": method_name, "phone": "Автоматический"}}],
+                        "is_active": True,
+                        "is_online": is_online,
+                        "success_rate": qrp.get("success_rate", 100),
+                        "trades_count": qrp.get("total_operations", 0),
+                        "is_qr_aggregator": True,
+                        "qr_provider_id": qrp["id"],
+                        "qr_method": method_key,
+                        "conditions": f"Автоматическая оплата через {method_name}",
+                    }
+                    offers.append(qr_offer)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+    
+    # Re-sort after adding QR providers
+    if sort_by == "price" or sort_field == "price_rub":
+        offers.sort(key=lambda x: x.get("price_rub", 0))
+    elif sort_by == "amount":
+        offers.sort(key=lambda x: x.get("available_usdt", 0), reverse=True)
+    elif sort_by == "rating":
+        offers.sort(key=lambda x: x.get("success_rate", 0), reverse=True)
+    
     return offers
 
 

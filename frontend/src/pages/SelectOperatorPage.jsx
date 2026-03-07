@@ -260,15 +260,26 @@ export default function SelectOperatorPage() {
     setCreating(true);
     
     try {
-      const res = await axios.post(`${API}/trades`, {
-        amount_usdt: invoice.amount_usdt,
-        price_rub: selectedOperator.price_rub,
-        trader_id: selectedOperator.trader_id,
-        payment_link_id: invoiceId,
-        offer_id: selectedOperator.offer_id,
-        requisite_ids: [requisiteToUse.id],
-        buyer_type: "client"
-      });
+      let res;
+      if (selectedOperator.is_qr_aggregator) {
+        // QR aggregator trade - use dedicated endpoint
+        res = await axios.post(`${API}/qr-aggregator/buy-public`, {
+          amount_usdt: invoice.amount_usdt,
+          method: selectedOperator.qr_method || "qr",
+          payment_link_id: invoiceId
+        });
+      } else {
+        // Regular trader trade
+        res = await axios.post(`${API}/trades`, {
+          amount_usdt: invoice.amount_usdt,
+          price_rub: selectedOperator.price_rub,
+          trader_id: selectedOperator.trader_id,
+          payment_link_id: invoiceId,
+          offer_id: selectedOperator.offer_id,
+          requisite_ids: [requisiteToUse.id],
+          buyer_type: "client"
+        });
+      }
       
       // Сохраняем выбранный реквизит локально
       setSavedRequisite(requisiteToUse);

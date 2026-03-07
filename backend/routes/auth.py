@@ -225,6 +225,10 @@ async def login(data: LoginRequest, request: Request):
         role = "admin"
     
     if not user:
+        user = await db.qr_providers.find_one({"login": data.login}, {"_id": 0})
+        role = "qr_provider"
+    
+    if not user:
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
     
     password_field = user.get("password_hash") or user.get("password")
@@ -257,7 +261,7 @@ async def login(data: LoginRequest, request: Request):
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     
-    collection = db.traders if role == "trader" else db.merchants if role == "merchant" else db.admins
+    collection = db.traders if role == "trader" else db.merchants if role == "merchant" else db.qr_providers if role == "qr_provider" else db.admins
     await collection.update_one(
         {"id": user["id"]},
         {"$set": {"last_seen": datetime.now(timezone.utc).isoformat()}}
