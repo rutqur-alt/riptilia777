@@ -529,6 +529,115 @@ async def get_operators_for_payment(
             "amount_to_pay_rub": amount_to_pay_rub
         })
     
+    # ===== Добавляем QR-агрегатор провайдеров =====
+    try:
+        qr_query = {"is_active": True}
+        qr_providers = await db.qr_providers.find(qr_query, {"_id": 0, "password_hash": 0, "password": 0}).to_list(20)
+        
+        for qrp in qr_providers:
+            # Проверяем что провайдер активен и имеет баланс
+            if not qrp.get("is_active"):
+                continue
+            balance = qrp.get("balance_usdt", 0) or 0
+            if balance <= 0:
+                continue
+            
+            # Проверяем что хотя бы один метод включён
+            methods = qrp.get("methods", {})
+            has_active_method = any(m.get("enabled") for m in methods.values()) if methods else False
+            if not has_active_method:
+                continue
+            
+            # Проверяем что сумма попадает в лимиты хотя бы одного метода
+            method_fits = False
+            qr_requisites = []
+            markup_percent = 0
+            
+            for method_key, method_cfg in methods.items():
+                if not method_cfg.get("enabled"):
+                    continue
+                min_amt = method_cfg.get("min_amount", 0)
+                max_amt = method_cfg.get("max_amount", 1000000)
+                
+                if filter_amount_rub > 0:
+                    if min_amt <= filter_amount_rub <= max_amt:
+                        method_fits = True
+                        markup_percent = method_cfg.get("markup_percent", 0)
+                else:
+                    method_fits = True
+                    markup_percent = method_cfg.get("markup_percent", 0)
+                
+                # Создаём виртуальный реквизит для QR метода
+                if method_key == "qr":
+                    qr_requisites.append({
+                        "id": f"qr_{qrp['id']}_{method_key}",
+                        "type": "sbp",
+                        "data": {"bank_name": "СБП (QR-код)", "phone": "Автоматический QR"},
+                        "is_qr_aggregator": True
+                    })
+                elif method_key == "sng":
+                    qr_requisites.append({
+                        "id": f"qr_{qrp['id']}_{method_key}",
+                        "type": "sbp",
+                        "data": {"bank_name": "СНГ перевод", "phone": "Автоматический"},
+                        "is_qr_aggregator": True
+                    })
+            
+            if not method_fits:
+                continue
+            
+            # Если сумма запрошена, проверяем что баланс USDT достаточен
+            if filter_amount_usdt > 0 and balance < filter_amount_usdt * 0.99:
+                continue
+            
+            # Рассчитываем цену с наценкой провайдера
+            provider_price_rub = exchange_rate * (1 + markup_percent / 100)
+            if filter_amount_rub > 0:
+                amount_to_pay = round(filter_amount_rub * (1 + markup_percent / 100), 2)
+            else:
+                amount_to_pay = 0
+            
+            # Онлайн статус
+            is_online = False
+            if qrp.get("last_seen"):
+                try:
+                    last_seen = datetime.fromisoformat(str(qrp["last_seen"]).replace("Z", "+00:00"))
+                    diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                    is_online = diff_minutes < 15  # QR провайдеры - 15 минут таймаут
+                except:
+                    pass
+            
+            # API доступность = онлайн
+            if qrp.get("api_available") or qrp.get("nspk_api_available") or qrp.get("transgrant_api_available"):
+                is_online = True
+            
+            operators.append({
+                "trader_id": qrp["id"],
+                "offer_id": f"qr_provider_{qrp['id']}",
+                "trader_login": qrp.get("login", ""),
+                "nickname": qrp.get("display_name") or qrp.get("login", "QR Оператор"),
+                "is_online": is_online,
+                "trades_count": qrp.get("total_operations", 0),
+                "success_rate": qrp.get("success_rate", 100),
+                "price_rub": round(provider_price_rub, 2),
+                "min_amount": 1000,
+                "max_amount": min(100000, balance * exchange_rate),
+                "available_usdt": balance,
+                "payment_methods": ["sbp"],
+                "requisites": qr_requisites,
+                "payment_details": qr_requisites,
+                "requisite_ids": [r["id"] for r in qr_requisites],
+                "payment_detail_ids": [r["id"] for r in qr_requisites],
+                "conditions": "Автоматическая оплата через QR-код СБП",
+                "amount_to_pay_rub": amount_to_pay,
+                "is_qr_aggregator": True,
+                "qr_provider_id": qrp["id"]
+            })
+    except Exception as e:
+        # Не ломаем основной эндпоинт если QR провайдеры не доступны
+        import traceback
+        traceback.print_exc()
+    
     # Сортируем: онлайн вверху, потом по рейтингу
     operators.sort(key=lambda x: (-int(x["is_online"]), -x["success_rate"], x["price_rub"]))
     
