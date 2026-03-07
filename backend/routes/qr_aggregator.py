@@ -1730,6 +1730,7 @@ async def get_qr_aggregator_offers():
         offers.append({
             "id": f"qr_aggregator_{method_key}",
             "trader_id": "qr_aggregator",
+        "trader_login": provider.get("display_name", provider.get("login", "QR Оператор")),
             "trader_login": label,
             "trader_display_name": label,
             "type": "sell",
@@ -1973,6 +1974,7 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
     logger.info(f"[QR Buy Public] Trade {trade_id} created, method={method}, amount={data.amount_usdt} USDT, payment_link={data.payment_link_id}")
 
     return {
+        "id": trade_id,
         "trade_id": trade_id,
         "amount_usdt": data.amount_usdt,
         "amount_rub": amount_rub,

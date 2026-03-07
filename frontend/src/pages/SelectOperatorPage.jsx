@@ -268,6 +268,24 @@ export default function SelectOperatorPage() {
           method: selectedOperator.qr_method || "qr",
           payment_link_id: invoiceId
         });
+        
+        // QR trade created - link to invoice and redirect to payment URL
+        const tradeId = res.data.id || res.data.trade_id;
+        await axios.patch(`${API}/v1/invoice/${invoiceId}/link-trade`, { trade_id: tradeId }).catch(() => {});
+        
+        if (res.data.payment_url) {
+          // TrustGain payment - redirect to their payment page
+          window.location.href = res.data.payment_url;
+          return;
+        }
+        
+        // Fallback: load trade and show payment step
+        const tradeRes = await axios.get(`${API}/trades/${tradeId}/public`);
+        setTrade(tradeRes.data);
+        setShowOperatorDialog(false);
+        setStep("payment");
+        setCreating(false);
+        return;
       } else {
         // Regular trader trade
         res = await axios.post(`${API}/trades`, {

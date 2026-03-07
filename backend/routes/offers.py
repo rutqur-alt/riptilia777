@@ -397,16 +397,25 @@ async def get_public_offers(
                     platform_markup = qr_settings.get(f"{tg_method}_commission_percent", 5.0)
                     provider_price_rub = round(exchange_rate * (1 + provider_markup / 100) * (1 + platform_markup / 100), 2)
                     
-                    method_label = "QR" if method_key == "qr" else "СНГ"
-                    method_name = "СБП (QR-код)" if method_key == "qr" else "СНГ перевод"
+                    if method_key == "qr":
+                        method_label = "QR"
+                        method_name = "СБП (QR-код)"
+                        req_type = "qr_code"
+                        pm_type = "qr_code"
+                    else:
+                        method_label = "СНГ"
+                        method_name = "Банковская карта"
+                        req_type = "card"
+                        pm_type = "card"
                     
                     min_amt = qr_settings.get(f"{tg_method}_min_amount", 100)
                     max_amt = qr_settings.get(f"{tg_method}_max_amount", 100000)
                     min_usdt = round(min_amt / provider_price_rub, 2) if provider_price_rub > 0 else 1
                     max_usdt = min(round(max_amt / provider_price_rub, 2), available_balance)
                     
-                    if payment_method and payment_method != "all" and payment_method != "sbp":
-                        continue
+                    if payment_method and payment_method != "all":
+                        if payment_method != pm_type:
+                            continue
                     
                     qr_offer = {
                         "id": f"qr_provider_{qrp['id']}_{method_key}",
@@ -419,8 +428,8 @@ async def get_public_offers(
                         "available_usdt": round(available_balance, 2),
                         "min_amount": min_usdt,
                         "max_amount": max_usdt,
-                        "payment_methods": ["sbp"],
-                        "requisites": [{"id": f"qr_{qrp['id']}_{method_key}", "type": "sbp", "data": {"bank_name": method_name, "phone": "Автоматический"}}],
+                        "payment_methods": [pm_type],
+                        "requisites": [{"id": f"qr_{qrp['id']}_{method_key}", "type": req_type, "data": {"bank_name": method_name, "phone": "Автоматический" if method_key == "qr" else "", "card_number": "" if method_key == "sng" else ""}}],
                         "is_active": True,
                         "is_online": is_online,
                         "success_rate": qrp.get("success_rate", 100),
@@ -688,11 +697,11 @@ async def get_operators_for_payment(
                 if method_key == "qr":
                     method_name = "СБП (QR-код)"
                     method_label = "QR"
-                    req_type = "sbp"
+                    req_type = "qr_code"
                 elif method_key == "sng":
-                    method_name = "СНГ перевод"
+                    method_name = "Банковская карта"
                     method_label = "СНГ"
-                    req_type = "sbp"
+                    req_type = "card"
                 else:
                     method_name = method_key
                     method_label = method_key.upper()
