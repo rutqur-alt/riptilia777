@@ -1292,10 +1292,15 @@ async def _complete_qr_trade(operation: dict, provider_id: str):
     # Send merchant webhook
     try:
         from routes.trades import send_merchant_webhook_on_trade
-        await send_merchant_webhook_on_trade(trade, "completed", {
+        # Re-read trade to get merchant_receives_usdt calculated above
+        updated_trade = await db.trades.find_one({"id": trade_id}, {"_id": 0}) or trade
+        await send_merchant_webhook_on_trade(updated_trade, "completed", {
             "trade_id": trade_id,
             "completed_at": now,
             "qr_aggregator": True,
+            "rate": base_rate,
+            "merchant_amount_usdt": updated_trade.get("merchant_receives_usdt"),
+            "merchant_receives_rub": round(updated_trade.get("merchant_receives_usdt", 0) * base_rate, 2) if updated_trade.get("merchant_receives_usdt") else None,
         })
     except Exception as e:
         logger.error(f"[QR Trade] Webhook send error: {e}")
