@@ -59,6 +59,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 )
         elif role == "merchant":
             user = await db.merchants.find_one({"id": user_id}, {"_id": 0})
+        elif role == "qr_provider":
+            user = await db.qr_providers.find_one({"id": user_id}, {"_id": 0})
         else:
             raise HTTPException(status_code=401, detail="Invalid role")
         
