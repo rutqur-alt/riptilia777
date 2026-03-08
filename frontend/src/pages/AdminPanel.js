@@ -56,6 +56,7 @@ import CryptoPayoutsComponent from "@/components/admin/CryptoPayouts";
 import AdminMessagesToStaffComponent from "@/components/admin/AdminMessagesToStaff";
 import ReferralSettingsComponent from "@/components/admin/ReferralSettings";
 import AdminFinancePage from "./finance/AdminFinancePage";
+import AccountingPageComponent from "@/components/admin/AccountingPage";
 
 // ==================== MAIN ADMIN PANEL ====================
 export default function AdminPanel() {
@@ -106,6 +107,13 @@ export default function AdminPanel() {
   };
 
   const allSections = [
+    {
+      title: "Бухгалтерия",
+      items: [
+        { path: "/admin/accounting", icon: DollarSign, label: "Доходы", roles: ["owner", "admin"] },
+      ],
+      roles: ["owner", "admin"]
+    },
     {
       title: "Управление",
       items: [
@@ -357,6 +365,7 @@ export default function AdminPanel() {
           <Route path="settings/referral" element={<ReferralSettingsComponent />} />
           <Route path="settings/system" element={<SystemSettingsComponent />} />
           <Route path="logs" element={<ActivityLogsComponent />} />
+          <Route path="accounting" element={<AccountingPageComponent />} />
         </Routes>
       </main>
     </div>
