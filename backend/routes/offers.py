@@ -371,6 +371,11 @@ async def get_public_offers(
             
             qr_providers = await db.qr_providers.find({"is_active": True, "balance_usdt": {"$gt": 0}}, {"_id": 0}).to_list(50)
             
+            # Auto-hide: skip QR offers if total available balance < 20 USDT
+            _total_available = sum(p.get("balance_usdt", 0) - p.get("frozen_usdt", 0) for p in qr_providers)
+            if _total_available < 20.0:
+                qr_providers = []  # Hide all QR offers
+            
             for qrp in qr_providers:
                 available_balance = qrp.get("balance_usdt", 0) - qrp.get("frozen_usdt", 0)
                 if available_balance <= 0:
@@ -632,6 +637,11 @@ async def get_operators_for_payment(
         
         qr_query = {"is_active": True}
         qr_providers = await db.qr_providers.find(qr_query, {"_id": 0, "password_hash": 0, "password": 0}).to_list(20)
+        
+        # Auto-hide: skip QR offers if total available balance < 20 USDT
+        _total_available_ops = sum(p.get("balance_usdt", 0) - p.get("frozen_usdt", 0) for p in qr_providers)
+        if _total_available_ops < 20.0:
+            qr_providers = []  # Hide all QR offers from payment page
         
         for qrp in qr_providers:
             if not qrp.get("is_active"):
