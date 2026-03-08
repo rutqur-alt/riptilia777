@@ -791,45 +791,43 @@ export default function SelectOperatorPage() {
                 </div>
                 
                 {/* Реквизиты */}
-                {requisite ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-[#A1A1AA] text-sm">
-                      <ReqIcon className="w-4 h-4" />
-                      <span className="font-medium">{requisite.data?.bank_name || getRequisiteLabel(requisite.type)}</span>
-                    </div>
-                    
-                    {requisite.data?.card_number && (
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="text-[#71717A] text-xs mb-1">Номер карты</div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-white font-mono text-lg tracking-wider">{requisite.data.card_number}</div>
-                          <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.card_number.replace(/\s/g, ''))} className="text-[#7C3AED]">
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {requisite.data?.phone && (
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="text-[#71717A] text-xs mb-1">Номер телефона (СБП)</div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-white font-mono text-lg">{requisite.data.phone}</div>
-                          <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.phone.replace(/\D/g, ''))} className="text-[#7C3AED]">
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {requisite.data?.card_holder && (
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="text-[#71717A] text-xs mb-1">Получатель</div>
-                        <div className="text-white">{requisite.data.card_holder}</div>
-                      </div>
-                    )}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-[#A1A1AA] text-sm">
+                    <ReqIcon className="w-4 h-4" />
+                    <span className="font-medium">{requisite.data?.bank_name || getRequisiteLabel(requisite.type)}</span>
                   </div>
-                )}
+                  
+                  {requisite.data?.card_number && (
+                    <div className="bg-[#0A0A0A] rounded-xl p-4">
+                      <div className="text-[#71717A] text-xs mb-1">Номер карты</div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-mono text-lg tracking-wider">{requisite.data.card_number}</div>
+                        <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.card_number.replace(/\s/g, ''))} className="text-[#7C3AED]">
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {requisite.data?.phone && (
+                    <div className="bg-[#0A0A0A] rounded-xl p-4">
+                      <div className="text-[#71717A] text-xs mb-1">Номер телефона (СБП)</div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-mono text-lg">{requisite.data.phone}</div>
+                        <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.phone.replace(/\D/g, ''))} className="text-[#7C3AED]">
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {requisite.data?.card_holder && (
+                    <div className="bg-[#0A0A0A] rounded-xl p-4">
+                      <div className="text-[#71717A] text-xs mb-1">Получатель</div>
+                      <div className="text-white">{requisite.data.card_holder}</div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Кнопка оплаты */}
                 <Button onClick={markPaid} className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white text-lg rounded-xl mt-4" title="Подтвердить что оплата отправлена">
