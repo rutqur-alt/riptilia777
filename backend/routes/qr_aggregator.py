@@ -2136,6 +2136,150 @@ async def get_dispute_audit_log(
     logs = await db.dispute_audit_log.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     return {"logs": logs, "total": len(logs)}
 
+# ==================== QR Provider Dispute Chat ====================
+
+@router.get("/qr-aggregator/provider/disputes/{trade_id}/chat")
+async def get_provider_dispute_chat(trade_id: str, user: dict = Depends(get_current_user)):
+    """Get chat messages for a disputed QR trade (provider view)"""
+    if user.get("role") != "qr_provider":
+        raise HTTPException(status_code=403, detail="QR provider only")
+
+    trade = await db.trades.find_one(
+        {"id": trade_id, "provider_id": user["id"]},
+        {"_id": 0}
+    )
+    if not trade:
+        raise HTTPException(status_code=404, detail="Сделка не найдена")
+
+    # Get messages from trade_messages collection
+    messages = await db.trade_messages.find(
+        {"trade_id": trade_id},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(500)
+
+    # Also get unified_messages if conversation exists
+    conv = await db.unified_conversations.find_one(
+        {"related_id": trade_id, "type": "p2p_dispute"},
+        {"_id": 0}
+    )
+    if conv:
+        unified_msgs = await db.unified_messages.find(
+            {"conversation_id": conv["id"]},
+            {"_id": 0}
+        ).sort("created_at", 1).to_list(500)
+        # Merge unified messages into result, normalize format
+        for um in unified_msgs:
+            messages.append({
+                "id": um.get("id", ""),
+                "trade_id": trade_id,
+                "sender_id": um.get("sender_id", ""),
+                "sender_type": um.get("sender_type", um.get("sender_role", "")),
+                "sender_role": um.get("sender_role", um.get("sender_type", "")),
+                "sender_nickname": um.get("sender_name", um.get("sender_nickname", "")),
+                "content": um.get("content", um.get("text", "")),
+                "created_at": um.get("created_at", ""),
+            })
+        # Sort by created_at
+        messages.sort(key=lambda m: m.get("created_at", ""))
+        # Deduplicate by id
+        seen = set()
+        deduped = []
+        for m in messages:
+            mid = m.get("id", "")
+            if mid and mid in seen:
+                continue
+            seen.add(mid)
+            deduped.append(m)
+        messages = deduped
+
+        # Mark messages as read for this provider
+        await db.unified_conversations.update_one(
+            {"id": conv["id"]},
+            {"$set": {f"unread_counts.{user['id']}": 0}}
+        )
+
+    return {"trade": trade, "messages": messages}
+
+
+@router.post("/qr-aggregator/provider/disputes/{trade_id}/chat")
+async def provider_send_dispute_message(trade_id: str, data: dict = Body(...), user: dict = Depends(get_current_user)):
+    """QR Provider sends a message in dispute chat"""
+    if user.get("role") != "qr_provider":
+        raise HTTPException(status_code=403, detail="QR provider only")
+
+    trade = await db.trades.find_one(
+        {"id": trade_id, "provider_id": user["id"]},
+        {"_id": 0}
+    )
+    if not trade:
+        raise HTTPException(status_code=404, detail="Сделка не найдена")
+
+    if trade.get("status") not in ["disputed", "paid", "pending", "cancelled"]:
+        raise HTTPException(status_code=400, detail="Нельзя писать в чат этой сделки")
+
+    content = data.get("content", "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
+
+    provider = await db.qr_providers.find_one({"id": user["id"]}, {"_id": 0})
+    provider_name = provider.get("name", provider.get("login", "Provider")) if provider else "Provider"
+
+    now = datetime.now(timezone.utc).isoformat()
+    msg_id = str(uuid.uuid4())
+
+    # Save to trade_messages
+    msg = {
+        "id": msg_id,
+        "trade_id": trade_id,
+        "sender_id": user["id"],
+        "sender_type": "qr_provider",
+        "sender_role": "qr_provider",
+        "sender_nickname": provider_name,
+        "content": content,
+        "created_at": now
+    }
+    await db.trade_messages.insert_one(msg)
+
+    # Also save to unified_messages if conversation exists
+    conv = await db.unified_conversations.find_one(
+        {"related_id": trade_id, "type": "p2p_dispute"},
+        {"_id": 0}
+    )
+    if conv:
+        unified_msg = {
+            "id": msg_id,
+            "conversation_id": conv["id"],
+            "sender_id": user["id"],
+            "sender_role": "qr_provider",
+            "sender_name": provider_name,
+            "sender_type": "qr_provider",
+            "content": content,
+            "created_at": now,
+        }
+        await db.unified_messages.insert_one(unified_msg)
+
+        # Update conversation timestamp + increment unread for others
+        update_ops = {"$set": {"updated_at": now}}
+        participants = conv.get("participants", [])
+        for pid in participants:
+            if pid != user["id"]:
+                update_ops.setdefault("$inc", {})[f"unread_counts.{pid}"] = 1
+        await db.unified_conversations.update_one({"id": conv["id"]}, update_ops)
+
+    # Broadcast via websocket
+    try:
+        from routes.ws_routes import ws_manager
+        if ws_manager:
+            await ws_manager.broadcast(f"trade_{trade_id}", {
+                "type": "new_message",
+                "message": {k: v for k, v in msg.items() if k != "_id"}
+            })
+    except Exception:
+        pass
+
+    return {k: v for k, v in msg.items() if k != "_id"}
+
+
 # ==================== Order Book (Stakan) Integration ====================
 
 @router.get("/public/qr-offers")

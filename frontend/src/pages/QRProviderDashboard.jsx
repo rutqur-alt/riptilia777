@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
@@ -6,7 +6,7 @@ import { API } from "@/App";
 import {
   BarChart3, Wallet, FileText, RefreshCw, LogOut, Settings,
   ArrowDownCircle, ArrowUpCircle, Copy, DollarSign, TrendingUp,
-  Activity, CreditCard, AlertTriangle, MessageSquare
+  Activity, CreditCard, AlertTriangle, MessageSquare, X, Send, Loader, MessageCircle
 } from "lucide-react";
 
 
@@ -25,11 +25,164 @@ function useAuth() {
 // ==================== Main Dashboard ====================
 
 
+// ==================== Dispute Chat Modal ====================
+function DisputeChatModal({ open, onClose, tradeId, token }) {
+  const [messages, setMessages] = useState([]);
+  const [trade, setTrade] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const fetchChat = useCallback(async (silent = false) => {
+    if (!tradeId) return;
+    if (!silent) setLoading(true);
+    try {
+      const res = await axios.get(`${API}/qr-aggregator/provider/disputes/${tradeId}/chat`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setMessages(res.data.messages || []);
+      setTrade(res.data.trade || null);
+    } catch (e) {
+      if (!silent) toast.error("Ошибка загрузки чата");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [tradeId, token]);
+
+  useEffect(() => {
+    if (open && tradeId) {
+      fetchChat();
+      const interval = setInterval(() => fetchChat(true), 5000);
+      return () => clearInterval(interval);
+    }
+  }, [open, tradeId, fetchChat]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !tradeId) return;
+    setSending(true);
+    try {
+      await axios.post(`${API}/qr-aggregator/provider/disputes/${tradeId}/chat`,
+        { content: newMessage.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewMessage('');
+      await fetchChat(true);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Ошибка отправки');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#18181B] border border-white/10 rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-[#3B82F6]" />
+            <span className="text-white font-medium">Чат спора</span>
+            {trade && <span className="text-xs text-[#71717A] font-mono ml-2">#{tradeId?.slice(0, 10)}</span>}
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-white/10 text-[#71717A]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Trade Info */}
+        {trade && (
+          <div className="px-4 py-2 bg-[#0D0D1A] border-b border-white/5 text-xs flex items-center justify-between">
+            <div>
+              <span className="text-[#71717A]">Сумма: </span>
+              <span className="text-white">{(trade.amount_usdt || 0).toFixed(2)} USDT</span>
+              <span className="text-[#71717A] ml-3">Статус: </span>
+              <span className={trade.status === 'disputed' ? 'text-[#EF4444]' : 'text-[#71717A]'}>{trade.status}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 min-h-[200px] max-h-[400px]" style={{scrollbarWidth: "thin", scrollbarColor: "#333 transparent"}}>
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <Loader className="w-6 h-6 animate-spin text-[#71717A]" />
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="text-center py-10">
+              <MessageCircle className="w-12 h-12 text-[#52525B] mx-auto mb-3" />
+              <p className="text-[#71717A] text-sm">Сообщений нет</p>
+            </div>
+          ) : (
+            messages.map((msg, i) => (
+              <div key={msg.id || i} className={`flex ${msg.sender_role === "qr_provider" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[80%] rounded-xl px-3 py-2 ${
+                  msg.sender_role === "qr_provider"
+                    ? "bg-[#A855F7]/20 text-white"
+                    : msg.sender_role === "admin" || msg.sender_role === "moderator" || msg.sender_role === "system"
+                    ? "bg-[#F59E0B]/20 text-white"
+                    : msg.sender_role === "merchant"
+                    ? "bg-[#3B82F6]/20 text-white"
+                    : "bg-white/10 text-white"
+                }`}>
+                  <div className="text-xs font-medium mb-1" style={{color:
+                    msg.sender_role === "qr_provider" ? "#A855F7" :
+                    msg.sender_role === "admin" || msg.sender_role === "system" ? "#F59E0B" :
+                    msg.sender_role === "merchant" ? "#3B82F6" : "#A1A1AA"
+                  }}>
+                    {msg.sender_nickname || msg.sender_name || msg.sender_role || "Система"}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap break-words">{msg.content || msg.text || msg.message}</div>
+                  <div className="text-[10px] text-[#52525B] mt-1 text-right">
+                    {msg.created_at ? new Date(msg.created_at).toLocaleString("ru-RU") : ""}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Message Input */}
+        {trade && ['disputed', 'paid', 'pending', 'cancelled'].includes(trade.status) && (
+          <div className="p-3 border-t border-white/5">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                placeholder="Написать сообщение..."
+                className="flex-1 px-4 py-2.5 bg-[#0D0D1A] border border-white/10 rounded-xl text-white text-sm placeholder-[#52525B] focus:outline-none focus:border-[#A855F7]/50"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!newMessage.trim() || sending}
+                className="px-4 py-2.5 bg-[#A855F7] hover:bg-[#9333EA] disabled:opacity-50 text-white rounded-xl transition-colors"
+              >
+                {sending ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ==================== Disputes Page ====================
 function DisputesPage() {
   const { token } = useAuth();
   const [disputes, setDisputes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [chatTradeId, setChatTradeId] = useState(null);
+  const [showChat, setShowChat] = useState(false);
 
   const fetchDisputes = useCallback(async () => {
     try {
@@ -93,7 +246,20 @@ function DisputesPage() {
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-[#71717A]">{formatDate(d.disputed_at)}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setChatTradeId(d.trade_id); setShowChat(true); }}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-[#A855F7]/20 hover:bg-[#A855F7]/30 text-[#A855F7] rounded-lg text-xs transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" /> Чат
+                    {d.unread_count > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 bg-[#EF4444] text-white rounded-full text-[9px] font-bold">
+                        {d.unread_count}
+                      </span>
+                    )}
+                  </button>
+                  <span className="text-xs text-[#71717A]">{formatDate(d.disputed_at)}</span>
+                </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                 <div>
@@ -122,6 +288,14 @@ function DisputesPage() {
           ))}
         </div>
       )}
+
+      {/* Chat Modal */}
+      <DisputeChatModal
+        open={showChat}
+        onClose={() => { setShowChat(false); fetchDisputes(); }}
+        tradeId={chatTradeId}
+        token={token}
+      />
     </div>
   );
 }
