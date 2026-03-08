@@ -24,6 +24,7 @@ import MerchantDisputesPage from "./MerchantDisputesPage";
 import ShopChats from "./ShopChats";
 import MarketplaceGuarantorChat from "./MarketplaceGuarantorChat";
 import EventNotificationDropdown from "@/components/EventNotificationDropdown";
+import SidebarBadge from "@/components/shared/SidebarBadge";
 import UserFinancePage from "./finance/UserFinancePage";
 
 export default function MerchantDashboard() {
@@ -67,14 +68,8 @@ export default function MerchantDashboard() {
   const isPending = user?.status === "pending";
   const isRejected = user?.status === "rejected";
 
-  const Badge = ({ count }) => {
-    if (!count || count === 0) return null;
-    return (
-      <span className="ml-auto bg-[#EF4444] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-        {count > 99 ? "99+" : count}
-      </span>
-    );
-  };
+  // Badge component for sidebar (shared)
+  const Badge = SidebarBadge;
 
   const sections = isPending ? [] : [
     {
@@ -372,121 +367,8 @@ export default function MerchantDashboard() {
 }
 
 
-function NotificationDropdown({ badges, token, role }) {
-  const [open, setOpen] = useState(false);
-  const [localBadges, setLocalBadges] = useState(badges);
-  const dropdownRef = useRef(null);
-  const buttonRef = useRef(null);
-  const prefix = role === "merchant" ? "/merchant" : "/trader";
-
-  useEffect(() => { setLocalBadges(badges); }, [badges]);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target) && buttonRef.current && !buttonRef.current.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const declension = (n) => {
-    const abs = Math.abs(n) % 100;
-    const n1 = abs % 10;
-    if (abs > 10 && abs < 20) return "событий";
-    if (n1 > 1 && n1 < 5) return "события";
-    if (n1 === 1) return "событие";
-    return "событий";
-  };
-
-  const buildNotificationList = () => {
-    const b = localBadges;
-    const items = [];
-    if (b.trades > 0) items.push({ key: "trades", label: "Активные сделки", path: `${prefix}/payments`, count: b.trades });
-    if (b.shop_messages > 0) items.push({ key: "shop_messages", label: "Сообщения магазина", path: `${prefix}/shop`, count: b.shop_messages });
-    if (b.messages > 0) items.push({ key: "messages", label: "Сообщения", path: `${prefix}/messages`, count: b.messages });
-    if (b.deposits > 0) items.push({ key: "deposits", label: "Пополнения", path: `${prefix}/transactions`, count: b.deposits });
-    if (b.withdrawals > 0) items.push({ key: "withdrawals", label: "Вывод средств", path: `${prefix}/withdraw`, count: b.withdrawals });
-    if (b.trade_payment > 0) items.push({ key: "trade_payment", label: "Оплата в сделке", path: `${prefix}/payments`, count: b.trade_payment });
-    if (b.trade_message > 0) items.push({ key: "trade_message", label: "Сообщение в сделке", path: `${prefix}/payments`, count: b.trade_message });
-    if (b.trade_dispute > 0) items.push({ key: "trade_dispute", label: "Спор в сделке", path: `${prefix}/disputes`, count: b.trade_dispute });
-    return items;
-  };
-
-  const handleItemClick = async (item) => {
-    const updated = { ...localBadges, [item.key]: 0 };
-    updated.total = Object.entries(updated).filter(([k]) => !["total","trade_payments","trade_events","disputes","guarantor_unread","support","shop_customer_messages"].includes(k)).reduce((s, [, v]) => s + (v || 0), 0);
-    setLocalBadges(updated);
-    setOpen(false);
-    try {
-      await axios.post(`${API}/notifications/read`, { type: item.key }, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (e) { console.error(e); }
-    window.location.href = item.path;
-  };
-
-  const handleReadAll = async () => {
-    const zeroed = {};
-    Object.keys(localBadges).forEach(k => zeroed[k] = 0);
-    setLocalBadges(zeroed);
-    setOpen(false);
-    try {
-      await axios.post(`${API}/notifications/read`, {}, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (e) { console.error(e); }
-  };
-
-  const total = localBadges.total || 0;
-  const items = buildNotificationList();
-
-  const getDropdownPos = () => {
-    if (!buttonRef.current) return { top: 100, left: 60 };
-    const r = buttonRef.current.getBoundingClientRect();
-    return { top: r.bottom + 4, left: Math.max(r.left, 10) };
-  };
-
-  return (
-    <>
-      <button
-        ref={buttonRef}
-        onClick={() => setOpen(!open)}
-        className={total > 0 ? "text-xs text-[#EF4444] bg-[#EF4444]/10 px-2 py-0.5 rounded-full hover:bg-[#EF4444]/20 transition-colors cursor-pointer whitespace-nowrap" : "text-xs text-[#52525B] bg-white/5 px-2 py-0.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer whitespace-nowrap"}
-      >
-        {total > 0 ? `${total} ${declension(total)}` : "Нет событий"}
-      </button>
-      {open && createPortal(
-        <div ref={dropdownRef} style={{position: "fixed", top: getDropdownPos().top, left: getDropdownPos().left, zIndex: 99999, minWidth: "300px", width: "320px"}} className="bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
-          <div className="p-3 border-b border-white/5">
-            <div className="text-xs font-medium text-white">Оповещения</div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            {items.length === 0 ? (
-              <div className="p-4 text-center text-xs text-[#52525B]">Нет оповещений</div>
-            ) : (
-              items.map((item) => (
-                <button
-                  key={item.key}
-                  onClick={() => handleItemClick(item)}
-                  className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 flex items-center justify-between gap-3"
-                >
-                  <span className="text-sm text-[#A1A1AA]">{item.label}</span>
-                  <span className="text-[10px] bg-[#EF4444] text-white rounded-full px-1.5 py-0.5 min-w-[20px] text-center font-bold flex-shrink-0">
-                    {item.count}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-          <div className="p-2 border-t border-white/5">
-            <button onClick={handleReadAll} className="w-full text-center py-2 text-xs text-[#7C3AED] hover:bg-[#7C3AED]/10 rounded-lg transition-colors">
-              Прочитать всё
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
+// NOTE: NotificationDropdown was removed — dead code, replaced by EventNotificationDropdown.
+// Shared version available at @/components/shared/NotificationDropdown.jsx if needed.
 
 // ==================== PENDING MERCHANT CHAT ====================
 function PendingMerchantChat() {
