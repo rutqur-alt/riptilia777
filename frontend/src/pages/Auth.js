@@ -29,7 +29,7 @@ export default function Auth() {
 
   // Redirect if already authenticated (but not if showing recovery key)
   if (isAuthenticated && user && !recoveryKey) {
-    const dashboardPath = user.role === "trader" ? "/trader" : user.role === "merchant" ? "/merchant" : "/admin";
+    const dashboardPath = user.role === "trader" ? "/trader" : user.role === "merchant" ? "/merchant" : user.role === "qr_provider" ? "/qr-provider" : "/admin";
     navigate(dashboardPath, { replace: true });
     return null;
   }
@@ -40,7 +40,7 @@ export default function Auth() {
     try {
       const userData = await login(loginData);
       toast.success("Добро пожаловать!");
-      const dashboardPath = userData.role === "trader" ? "/trader" : userData.role === "merchant" ? "/merchant" : "/admin";
+      const dashboardPath = userData.role === "trader" ? "/trader" : userData.role === "merchant" ? "/merchant" : userData.role === "qr_provider" ? "/qr-provider" : "/admin";
       navigate(dashboardPath);
     } catch (error) {
       const detail = error.response?.data?.detail;
