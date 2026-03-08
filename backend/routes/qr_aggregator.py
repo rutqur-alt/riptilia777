@@ -3159,6 +3159,97 @@ async def create_qr_operation(request: Request, background_tasks: BackgroundTask
 
 # ==================== Health Check Background Task ====================
 
+async def _cleanup_failed_trustgain_trades():
+    """Auto-cancel QR trades where TrustGain operation creation failed.
+    
+    These are trades that:
+    - Have status 'paid' or 'pending' 
+    - Have empty trustgain_operation_id (TrustGain never got the operation)
+    - Their QR operation has trustgain_data.success == False
+    - Have been stuck for more than 2 minutes
+    
+    This happens when TrustGain returns errors like 'Temporarily no payment_requisite available'.
+    """
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Find QR trades that are stuck with no TrustGain operation
+        stuck_trades = await db.trades.find({
+            "$or": [{"trader_id": "qr_aggregator"}, {"qr_aggregator_trade": True}],
+            "status": {"$in": ["pending", "paid"]},
+            "trustgain_operation_id": {"$in": [None, ""]},
+            "created_at": {"$lt": cutoff},
+        }).to_list(100)
+
+        cancelled_count = 0
+        for trade in stuck_trades:
+            trade_id = trade["id"]
+            provider_id = trade.get("provider_id")
+            total_freeze = trade.get("total_freeze_usdt", 0)
+
+            # Verify the QR operation also failed
+            op = await db.qr_provider_operations.find_one(
+                {"trade_id": trade_id},
+                {"_id": 0, "trustgain_data": 1, "trustgain_operation_id": 1, "id": 1}
+            )
+            
+            # Only cancel if operation has trustgain_data.success == False or no operation at all
+            if op:
+                tg_data = op.get("trustgain_data", {})
+                tg_op_id = op.get("trustgain_operation_id", "")
+                if tg_data.get("success") is not False and tg_op_id:
+                    # Operation seems valid, skip
+                    continue
+
+            # Cancel the trade
+            await db.trades.update_one(
+                {"id": trade_id, "status": {"$in": ["pending", "paid"]}},
+                {"$set": {
+                    "status": "cancelled",
+                    "cancelled_at": now,
+                    "cancel_reason": "trustgain_creation_failed",
+                }}
+            )
+
+            # Unfreeze provider funds
+            if provider_id and total_freeze > 0:
+                result = await db.qr_providers.update_one(
+                    {"id": provider_id, "frozen_usdt": {"$gte": total_freeze}},
+                    {"$inc": {"frozen_usdt": -total_freeze, "active_operations_count": -1}}
+                )
+                if result.modified_count == 0:
+                    p = await db.qr_providers.find_one({"id": provider_id})
+                    if p:
+                        await db.qr_providers.update_one(
+                            {"id": provider_id},
+                            {"$set": {
+                                "frozen_usdt": max(0, p.get("frozen_usdt", 0) - total_freeze),
+                                "active_operations_count": max(0, p.get("active_operations_count", 0) - 1),
+                            }}
+                        )
+
+            # Cancel the QR operation too
+            if op:
+                await db.qr_provider_operations.update_one(
+                    {"id": op["id"]},
+                    {"$set": {"status": "cancelled", "updated_at": now}}
+                )
+
+            cancelled_count += 1
+            tg_errors = ""
+            if op:
+                tg_errors = str(op.get("trustgain_data", {}).get("errors", ""))
+            logger.info(f"[QR Cleanup] Auto-cancelled failed trade {trade_id}: "
+                       f"unfrozen {total_freeze:.4f} USDT for provider {provider_id}. "
+                       f"TrustGain errors: {tg_errors}")
+
+        if cancelled_count > 0:
+            logger.info(f"[QR Cleanup] Auto-cancelled {cancelled_count} failed TrustGain trades")
+    except Exception as e:
+        logger.error(f"[QR Cleanup] Error in _cleanup_failed_trustgain_trades: {e}")
+
+
 async def _cleanup_expired_trades():
     """Cleanup expired QR trades and unfreeze provider funds"""
     try:
@@ -3213,6 +3304,9 @@ async def qr_health_check_loop():
     while True:
         # Cleanup expired trades on each cycle
         await _cleanup_expired_trades()
+
+        # Auto-cancel trades where TrustGain creation failed
+        await _cleanup_failed_trustgain_trades()
 
         # Process pending completions for all providers
         try:
