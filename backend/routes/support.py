@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import uuid
 
 from core.database import db
-from core.auth import require_role, get_current_user
+from core.auth import require_role, get_current_user, require_admin_level
 
 router = APIRouter(tags=["support"])
 
@@ -23,18 +23,6 @@ TICKET_CATEGORIES = {
     "complaint": "Жалоба",
     "suggestion": "Предложение"
 }
-
-
-def require_admin_level(min_level: int = 30):
-    """Check admin has sufficient permission level"""
-    async def admin_checker(user: dict = Depends(get_current_user)):
-        if user.get("role") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required")
-        level = {"owner": 100, "admin": 80, "mod_p2p": 50, "mod_market": 50, "support": 30}.get(user.get("admin_role", ""), 0)
-        if level < min_level:
-            raise HTTPException(status_code=403, detail=f"Insufficient admin level")
-        return user
-    return admin_checker
 
 
 class TicketCreate(BaseModel):

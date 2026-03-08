@@ -8,35 +8,9 @@ from typing import Optional
 import uuid
 
 from core.database import db
-from core.auth import require_role, get_current_user, hash_password
+from core.auth import require_role, get_current_user, hash_password, require_admin_level, log_admin_action
 
 router = APIRouter(prefix="/super-admin", tags=["super-admin"])
-
-
-def require_admin_level(min_level: int = 30):
-    """Check admin has sufficient permission level"""
-    async def admin_checker(user: dict = Depends(get_current_user)):
-        if user.get("role") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required")
-        level = {"owner": 100, "admin": 80, "mod_p2p": 50, "mod_market": 50, "support": 30}.get(user.get("admin_role", ""), 0)
-        if level < min_level:
-            raise HTTPException(status_code=403, detail=f"Insufficient admin level. Required: {min_level}")
-        return user
-    return admin_checker
-
-
-async def log_admin_action(admin_id: str, action: str, target_type: str, target_id: str, details: dict = None):
-    """Log administrative action"""
-    log_doc = {
-        "id": str(uuid.uuid4()),
-        "admin_id": admin_id,
-        "action": action,
-        "target_type": target_type,
-        "target_id": target_id,
-        "details": details or {},
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db.admin_logs.insert_one(log_doc)
 
 
 @router.get("/overview")
