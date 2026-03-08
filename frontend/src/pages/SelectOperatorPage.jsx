@@ -725,6 +725,26 @@ export default function SelectOperatorPage() {
     const requisite = getDisplayRequisite();
     const ReqIcon = requisite ? getRequisiteIcon(requisite.type) : CreditCard;
     
+    // Если реквизиты ещё не загрузились — показываем только спиннер и кнопку назад
+    if (!requisite) {
+      return (
+        <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-[#7C3AED] animate-spin mx-auto mb-4" />
+            <p className="text-[#A1A1AA] text-lg mb-6">Реквизиты загружаются...</p>
+            <Button 
+              variant="outline" 
+              onClick={() => { setStep("select_operator"); setTrade(null); setSavedRequisite(null); loadData(); }}
+              className="border-white/10 text-[#A1A1AA] hover:bg-white/5"
+              title="Вернуться к выбору оператора"
+            >
+              Назад
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="min-h-screen bg-[#0A0A0A]">
         <div className="max-w-4xl mx-auto p-4">
@@ -808,12 +828,6 @@ export default function SelectOperatorPage() {
                         <div className="text-white">{requisite.data.card_holder}</div>
                       </div>
                     )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-[#71717A]">
-                    <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[#F59E0B]" />
-                    <p>Реквизиты загружаются...</p>
-                    <p className="text-sm mt-1">Напишите оператору в чат</p>
                   </div>
                 )}
 
