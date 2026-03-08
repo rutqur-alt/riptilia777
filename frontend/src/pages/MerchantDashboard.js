@@ -1227,11 +1227,16 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
     }
   };
 
+  const isQrTrade = trade?.qr_aggregator_trade || trade?.is_qr_aggregator;
+
   const handleOpenDispute = async () => {
     if (!window.confirm("Вы уверены что хотите открыть спор по этой сделке?")) return;
     setOpeningDispute(true);
     try {
-      await axios.post(`${API}/merchant/disputes/${tradeId}/open`, {}, {
+      const url = isQrTrade
+        ? `${API}/qr-aggregator/trades/${tradeId}/dispute`
+        : `${API}/merchant/disputes/${tradeId}/open`;
+      await axios.post(url, { reason: "Спор открыт мерчантом" }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success("Спор открыт");
@@ -1358,22 +1363,24 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
           </div>
         )}
 
-        {/* Open Dispute button */}
-        {canOpenDispute && trade && !["dispute", "disputed", "completed", "cancelled"].includes(trade.status) && (
-          <div className="pt-2 border-t border-white/5">
-            <Button
-              onClick={handleOpenDispute}
-              disabled={openingDispute}
-              className="w-full bg-[#EF4444] hover:bg-[#DC2626] text-white h-10 rounded-xl"
-            >
-              {openingDispute ? (
-                <Loader className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 mr-2" />
-              )}
-              Открыть спор
-            </Button>
-          </div>
+        {/* Open Dispute button — for regular trades: not cancelled/completed; for QR trades: also cancelled */}
+        {canOpenDispute && trade && !['dispute', 'disputed', 'completed'].includes(trade.status) && (
+          (isQrTrade ? !['dispute', 'disputed', 'completed'].includes(trade.status) : !['cancelled'].includes(trade.status)) && (
+            <div className="pt-2 border-t border-white/5">
+              <Button
+                onClick={handleOpenDispute}
+                disabled={openingDispute}
+                className="w-full bg-[#EF4444] hover:bg-[#DC2626] text-white h-10 rounded-xl"
+              >
+                {openingDispute ? (
+                  <Loader className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                )}
+                Открыть спор
+              </Button>
+            </div>
+          )
         )}
       </DialogContent>
     </Dialog>
@@ -1892,6 +1899,11 @@ function MerchantPayments() {
                   )}
                   {payment.status === "completed" && (
                     <span className="px-2 py-1 bg-[#10B981]/10 text-[#10B981] rounded-lg text-xs">Завершено</span>
+                  )}
+                  {payment.status === "cancelled" && (payment.qr_aggregator_trade || payment.is_qr_aggregator) && !payment.has_dispute && (
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setChatTradeId(payment.id); setShowChat(true); }} className="border-[#EF4444]/30 text-[#EF4444] hover:bg-[#EF4444]/10 text-xs">
+                      <AlertTriangle className="w-3 h-3 mr-1" /> Открыть спор
+                    </Button>
                   )}
                   {payment.status === "cancelled" && (
                     <span className="px-2 py-1 bg-[#71717A]/10 text-[#71717A] rounded-lg text-xs">Отменено</span>
