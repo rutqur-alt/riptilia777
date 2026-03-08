@@ -1271,7 +1271,8 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
   const getStatusLabel = (status) => {
     const labels = {
       pending: "Ожидает", active: "Активна", paid: "Оплачено", waiting: "Ожидание",
-      completed: "Завершено", cancelled: "Отменено", dispute: "Спор", disputed: "Спор"
+      completed: "Завершено", cancelled: "Отменено", dispute: "Спор", disputed: "Спор",
+      pending_completion: "⏳ Завершается"
     };
     return labels[status] || status;
   };
@@ -1280,6 +1281,7 @@ function ChatHistoryModal({ open, onClose, tradeId, token, canOpenDispute, onDis
     if (["completed"].includes(status)) return "text-[#10B981]";
     if (["cancelled"].includes(status)) return "text-[#71717A]";
     if (["dispute", "disputed"].includes(status)) return "text-[#EF4444]";
+    if (status === "pending_completion") return "text-[#F59E0B]";
     return "text-[#F59E0B]";
   };
 
@@ -2066,6 +2068,9 @@ function MerchantDealsArchive() {
   });
 
   const getStatusBadge = (status) => {
+    if (status === "pending_completion") {
+      return <span className="px-2 py-1 rounded-lg text-xs bg-[#F59E0B]/10 text-[#F59E0B] inline-flex items-center gap-1" title="Ожидайте, скоро сделка завершится">⏳ Завершается</span>;
+    }
     const styles = {
       pending: "bg-[#F59E0B]/10 text-[#F59E0B]",
       paid: "bg-[#3B82F6]/10 text-[#3B82F6]",

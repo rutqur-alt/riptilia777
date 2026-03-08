@@ -818,12 +818,23 @@ async def admin_adjust_provider_balance(provider_id: str, data: AdminAdjustBalan
     
     logger.info(f"[QR Admin] Balance adjusted for {provider_id}: {current_balance} -> {new_balance} ({data.amount:+.4f}) by {user.get('login')}, reason: {data.reason}")
     
+    # If balance was increased, try to process pending completions
+    pending_completed = 0
+    if data.amount > 0:
+        try:
+            pending_completed = await _process_pending_completions(provider_id)
+            if pending_completed > 0:
+                logger.info(f"[QR Admin] Auto-completed {pending_completed} pending trades after balance adjustment for {provider_id}")
+        except Exception as e:
+            logger.error(f"[QR Admin] Error processing pending completions: {e}")
+    
     return {
         "status": "success",
         "old_balance": round(current_balance, 4),
         "new_balance": round(new_balance, 4),
         "adjustment": data.amount,
         "available": round(new_balance - current_frozen, 4),
+        "pending_completed": pending_completed,
     }
 
 @router.post("/admin/qr-providers/{provider_id}/reconcile-frozen")
@@ -1078,7 +1089,18 @@ async def process_webhook(provider_id: str, webhook_data: dict, webhook_record_i
 
         # Complete trade
         if mapped_status == "completed" and operation.get("trade_id"):
-            await _complete_qr_trade(operation, provider_id)
+            # Check if the trade is already cancelled — auto_approve came after cancellation
+            trade = await db.trades.find_one({"id": operation["trade_id"]}, {"_id": 0})
+            if trade and trade.get("status") == "cancelled":
+                # Payment confirmed after trade was cancelled — try to complete with balance check
+                logger.info(f"[QR Webhook] auto_approve on cancelled trade {operation['trade_id']} — attempting deferred completion")
+                await _try_complete_trade_with_balance_check(trade, provider_id, source="webhook_auto_approve")
+            elif trade and trade.get("status") == "pending_completion":
+                # Already pending — try again (maybe balance was added)
+                logger.info(f"[QR Webhook] auto_approve on pending_completion trade {operation['trade_id']} — retrying")
+                await _try_complete_trade_with_balance_check(trade, provider_id, source="webhook_retry")
+            else:
+                await _complete_qr_trade(operation, provider_id)
 
         # Cancel trade
         if mapped_status in ("rejected", "expired", "cancelled") and operation.get("trade_id"):
@@ -1333,6 +1355,159 @@ async def _complete_qr_trade(operation: dict, provider_id: str):
         logger.error(f"[QR Trade] Webhook send error: {e}")
 
     logger.info(f"[QR Trade] Trade {trade_id} completed via QR Aggregator ({method})")
+
+
+async def _set_pending_completion(trade: dict, reason: str = "insufficient_provider_balance"):
+    """Set trade to pending_completion status when provider has insufficient balance.
+    The trade will be auto-completed when provider tops up their balance."""
+    trade_id = trade["id"]
+    now = datetime.now(timezone.utc).isoformat()
+
+    await db.trades.update_one(
+        {"id": trade_id},
+        {"$set": {
+            "status": "pending_completion",
+            "pending_completion_at": now,
+            "pending_completion_reason": reason,
+            "payment_confirmed": True,
+        }}
+    )
+
+    # System message
+    system_msg = {
+        "id": str(uuid.uuid4()),
+        "trade_id": trade_id,
+        "sender_id": "system",
+        "sender_type": "system",
+        "sender_role": "system",
+        "content": "Оплата подтверждена. Ожидание баланса провайдера для завершения сделки.",
+        "created_at": now
+    }
+    await db.trade_messages.insert_one(system_msg)
+
+    logger.info(f"[QR Trade] Trade {trade_id} set to pending_completion: {reason}")
+
+
+async def _try_complete_trade_with_balance_check(trade: dict, provider_id: str, source: str = "webhook"):
+    """Try to complete a trade. If provider has insufficient balance, set to pending_completion.
+    
+    This handles the case where:
+    1. Webhook auto_approve arrives on a cancelled trade
+    2. Dispute is resolved as 'complete' but provider has insufficient balance
+    
+    Returns True if completed immediately, False if set to pending.
+    """
+    trade_id = trade["id"]
+    total_freeze_usdt = trade.get("total_freeze_usdt", 0)
+
+    if total_freeze_usdt == 0:
+        amount_usdt = trade.get("amount_usdt", 0)
+        platform_markup_pct = trade.get("platform_markup_pct", 5.0)
+        platform_commission_usdt = round(amount_usdt * platform_markup_pct / 100, 6)
+        total_freeze_usdt = round(amount_usdt + platform_commission_usdt, 6)
+
+    # Check provider balance
+    provider = await db.qr_providers.find_one({"id": provider_id})
+    if not provider:
+        logger.error(f"[QR Trade] Provider {provider_id} not found for trade {trade_id}")
+        return False
+
+    current_balance = provider.get("balance_usdt", 0)
+    current_frozen = provider.get("frozen_usdt", 0)
+
+    # Provider needs enough balance to freeze + deduct
+    if current_balance < total_freeze_usdt:
+        # Insufficient balance — set to pending_completion
+        await _set_pending_completion(trade, f"{source}_insufficient_balance")
+        logger.warning(f"[QR Trade] Trade {trade_id}: insufficient provider balance "
+                      f"({current_balance:.4f} < {total_freeze_usdt:.4f}). Set to pending_completion.")
+        return False
+
+    # Freeze funds first (re-freeze since trade was cancelled/disputed and funds were unfrozen)
+    result = await db.qr_providers.update_one(
+        {"id": provider_id, "balance_usdt": {"$gte": total_freeze_usdt}},
+        {"$inc": {"frozen_usdt": total_freeze_usdt}}
+    )
+    if result.modified_count == 0:
+        # Race condition — balance changed between check and freeze
+        await _set_pending_completion(trade, f"{source}_freeze_failed")
+        logger.warning(f"[QR Trade] Trade {trade_id}: freeze failed (race condition). Set to pending_completion.")
+        return False
+
+    # Now complete the trade using the existing _complete_qr_trade logic
+    # First update trade status to allow _complete_qr_trade to work
+    now = datetime.now(timezone.utc).isoformat()
+    await db.trades.update_one(
+        {"id": trade_id},
+        {"$set": {"status": "paid", "paid_at": now, "payment_confirmed": True}}
+    )
+
+    # Build operation dict for _complete_qr_trade
+    operation = await db.qr_provider_operations.find_one({"trade_id": trade_id}, {"_id": 0})
+    if not operation:
+        # Construct minimal operation from trade data
+        operation = {
+            "trade_id": trade_id,
+            "amount_rub": trade.get("amount_rub", 0),
+            "payment_method": trade.get("qr_method", "nspk"),
+        }
+
+    await _complete_qr_trade(operation, provider_id)
+
+    # Close any active dispute conversation if exists
+    conv = await db.unified_conversations.find_one(
+        {"related_id": trade_id, "type": "p2p_dispute", "status": {"$nin": ["resolved", "closed"]}},
+        {"_id": 0}
+    )
+    if conv:
+        await db.unified_conversations.update_one(
+            {"id": conv["id"]},
+            {"$set": {
+                "resolved": True, "resolved_at": now,
+                "resolved_by": "system_auto", "status": "resolved",
+            }}
+        )
+        await db.unified_messages.insert_one({
+            "id": str(uuid.uuid4()), "conversation_id": conv["id"],
+            "sender_id": "system", "sender_role": "system",
+            "sender_name": "Система",
+            "content": "Сделка автоматически завершена: баланс провайдера пополнен.",
+            "is_system": True, "is_deleted": False, "created_at": now,
+        })
+
+    logger.info(f"[QR Trade] Trade {trade_id} completed via {source} (balance check passed)")
+    return True
+
+
+async def _process_pending_completions(provider_id: str):
+    """Process all pending_completion trades for a provider.
+    Called when provider balance increases (deposit, admin adjustment, etc.)."""
+    pending_trades = await db.trades.find({
+        "status": "pending_completion",
+        "provider_id": provider_id,
+        "$or": [{"qr_aggregator_trade": True}, {"is_qr_aggregator": True}, {"trader_id": "qr_aggregator"}],
+    }, {"_id": 0}).sort("pending_completion_at", 1).to_list(100)
+
+    if not pending_trades:
+        return 0
+
+    completed_count = 0
+    for trade in pending_trades:
+        try:
+            success = await _try_complete_trade_with_balance_check(trade, provider_id, source="auto_balance_check")
+            if success:
+                completed_count += 1
+            else:
+                # If this one failed (insufficient balance), no point trying the rest
+                break
+        except Exception as e:
+            logger.error(f"[QR Pending] Error processing trade {trade['id']}: {e}")
+            continue
+
+    if completed_count > 0:
+        logger.info(f"[QR Pending] Processed {completed_count} pending_completion trades for provider {provider_id}")
+
+    return completed_count
 
 
 async def _cancel_qr_trade(operation: dict):
@@ -1671,103 +1846,41 @@ async def resolve_qr_dispute(
     total_freeze_usdt = trade.get("total_freeze_usdt", 0)
 
     if resolution == "complete":
-        # --- COMPLETE TRADE: standard financial calculations ---
-        base_rate = await _get_base_rate()
-        amount_usdt = trade.get("amount_usdt", 0)
-        amount_rub = trade.get("amount_rub", 0)
-        platform_commission_usdt = trade.get("platform_commission_usdt", 0)
-
-        platform_total_usdt = platform_commission_usdt
-
-        if trade.get("merchant_id"):
-            merchant = await db.merchants.find_one({"id": trade["merchant_id"]}, {"_id": 0})
-            if merchant:
-                commission_rate = merchant.get("commission_rate", 5.0)
-                merchant_commission_usdt = round(amount_usdt * commission_rate / 100, 6)
-                merchant_receives_usdt = round(amount_usdt - merchant_commission_usdt, 6)
-                platform_total_usdt = round(platform_commission_usdt + merchant_commission_usdt, 6)
-
-                await db.trades.update_one(
-                    {"id": trade_id},
-                    {"$set": {
-                        "merchant_receives_usdt": merchant_receives_usdt,
-                        "merchant_commission_usdt": merchant_commission_usdt,
-                        "platform_receives_usdt": platform_total_usdt,
-                    }}
-                )
-                await db.merchants.update_one(
-                    {"id": trade["merchant_id"]},
-                    {"$inc": {"balance_usdt": merchant_receives_usdt}}
-                )
-                logger.info(f"[QR Dispute Resolve] Merchant {trade['merchant_id']} credited {merchant_receives_usdt:.4f} USDT")
-        else:
-            # Exchange trade: credit buyer
-            buyer_id = trade.get("buyer_id")
-            if buyer_id:
-                await db.traders.update_one(
-                    {"id": buyer_id},
-                    {"$inc": {"balance_usdt": amount_usdt}}
-                )
-                logger.info(f"[QR Dispute Resolve] Buyer {buyer_id} credited {amount_usdt:.4f} USDT")
-
-            await db.trades.update_one(
-                {"id": trade_id},
-                {"$set": {
-                    "platform_receives_usdt": platform_total_usdt,
-                    "buyer_receives_usdt": amount_usdt,
-                }}
+        # --- COMPLETE TRADE: check provider balance first ---
+        # First unfreeze the dispute-frozen funds (they were frozen during dispute opening)
+        if provider_id and total_freeze_usdt > 0 and trade.get("dispute_freeze_applied"):
+            await db.qr_providers.update_one(
+                {"id": provider_id, "frozen_usdt": {"$gte": total_freeze_usdt}},
+                {"$inc": {"frozen_usdt": -total_freeze_usdt}}
             )
+            logger.info(f"[QR Dispute Resolve] Unfrozen dispute-held {total_freeze_usdt:.4f} USDT for provider {provider_id}")
 
-        # Provider: unfreeze and deduct (same as normal completion)
-        if provider_id and total_freeze_usdt > 0:
-            result = await db.qr_providers.update_one(
-                {"id": provider_id, "frozen_usdt": {"$gte": total_freeze_usdt}, "balance_usdt": {"$gte": total_freeze_usdt}},
-                {"$inc": {"frozen_usdt": -total_freeze_usdt, "balance_usdt": -total_freeze_usdt}}
-            )
-            if result.modified_count == 0:
-                prov = await db.qr_providers.find_one({"id": provider_id})
-                if prov:
-                    new_frozen = max(0, prov.get("frozen_usdt", 0) - total_freeze_usdt)
-                    new_bal = max(0, prov.get("balance_usdt", 0) - total_freeze_usdt)
-                    await db.qr_providers.update_one(
-                        {"id": provider_id},
-                        {"$set": {"frozen_usdt": new_frozen, "balance_usdt": new_bal}}
-                    )
-
-        # Platform balance
-        await db.settings.update_one(
-            {"type": "platform_balance"},
-            {"$inc": {"balance_usdt": platform_total_usdt}},
-            upsert=True
-        )
-
-        # Update trade status
+        # Now try to complete with balance check (will set pending_completion if insufficient)
+        # Mark dispute as resolved first
         await db.trades.update_one(
             {"id": trade_id},
             {"$set": {
-                "status": "completed", "completed_at": now,
                 "dispute_resolved_at": now, "dispute_resolved_by": user["id"],
                 "dispute_resolution": "completed",
             }}
         )
 
-        # Update invoice
-        if trade.get("invoice_id"):
-            await db.merchant_invoices.update_one(
-                {"id": trade["invoice_id"]}, {"$set": {"status": "completed", "completed_at": now}}
-            )
+        completed = await _try_complete_trade_with_balance_check(trade, provider_id, source="dispute_resolve")
 
-        message = f"Спор разрешён: сделка завершена. Стандартные расчёты выполнены. {resolve_reason}"
+        if completed:
+            message = f"Спор разрешён: сделка завершена. Стандартные расчёты выполнены. {resolve_reason}"
+        else:
+            message = f"Спор разрешён в пользу покупателя. Ожидание баланса провайдера для завершения. {resolve_reason}"
 
         # Webhook
         try:
             from routes.trades import send_merchant_webhook_on_trade
             updated_trade = await db.trades.find_one({"id": trade_id}, {"_id": 0}) or trade
-            await send_merchant_webhook_on_trade(updated_trade, "completed", {
-                "trade_id": trade_id, "completed_at": now,
+            status_for_webhook = "completed" if completed else "pending_completion"
+            await send_merchant_webhook_on_trade(updated_trade, status_for_webhook, {
+                "trade_id": trade_id,
                 "qr_aggregator": True, "resolved_from_dispute": True,
-                "rate": base_rate,
-                "merchant_amount_usdt": updated_trade.get("merchant_receives_usdt"),
+                "pending_completion": not completed,
             })
         except Exception as e:
             logger.error(f"[QR Dispute Resolve] Webhook error: {e}")
@@ -3100,6 +3213,20 @@ async def qr_health_check_loop():
     while True:
         # Cleanup expired trades on each cycle
         await _cleanup_expired_trades()
+
+        # Process pending completions for all providers
+        try:
+            providers_with_pending = await db.trades.distinct("provider_id", {"status": "pending_completion"})
+            for pid in providers_with_pending:
+                if pid:
+                    try:
+                        completed = await _process_pending_completions(pid)
+                        if completed > 0:
+                            logger.info(f"[QR Health] Auto-completed {completed} pending trades for provider {pid}")
+                    except Exception as e:
+                        logger.error(f"[QR Health] Error processing pending for {pid}: {e}")
+        except Exception as e:
+            logger.error(f"[QR Health] Pending completions check error: {e}")
 
         interval = 45
         try:

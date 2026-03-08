@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth, API } from "@/App";
 import axios from "axios";
-import { History, ArrowLeft, MessageCircle, Copy, AlertTriangle } from "lucide-react";
+import { History, ArrowLeft, MessageCircle, Copy, AlertTriangle, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { TradeChatModal } from "@/components/trader/TradeChatModal";
 
@@ -36,6 +36,14 @@ export default function TraderHistoryPurchases() {
   };
 
   const getStatusBadge = (status) => {
+    if (status === "pending_completion") {
+      return (
+        <span className="px-2 py-1 text-xs rounded-full font-medium bg-[#F59E0B]/10 text-[#F59E0B] flex items-center gap-1" title="Ожидайте, скоро сделка завершится">
+          <Clock className="w-3 h-3" />
+          Завершается
+        </span>
+      );
+    }
     const styles = {
       completed: "bg-[#10B981]/10 text-[#10B981]",
       cancelled: "bg-[#EF4444]/10 text-[#EF4444]",

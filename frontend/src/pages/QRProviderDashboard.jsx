@@ -215,6 +215,7 @@ function DisputesPage() {
       case "disputed": return <span className="px-2 py-0.5 bg-[#EF4444]/20 text-[#EF4444] rounded text-xs">Открыт</span>;
       case "completed": return <span className="px-2 py-0.5 bg-[#10B981]/20 text-[#10B981] rounded text-xs">Решён</span>;
       case "cancelled": return <span className="px-2 py-0.5 bg-[#71717A]/20 text-[#71717A] rounded text-xs">Отменён</span>;
+      case "pending_completion": return <span className="px-2 py-0.5 bg-[#F59E0B]/20 text-[#F59E0B] rounded text-xs inline-flex items-center gap-1" title="Ожидайте, скоро сделка завершится">⏳ Завершается</span>;
       default: return <span className="px-2 py-0.5 bg-[#F59E0B]/20 text-[#F59E0B] rounded text-xs">{status}</span>;
     }
   };
