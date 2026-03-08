@@ -1861,6 +1861,8 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
     invoice_id_from_link = None
     merchant_commission = 0.0
     buyer_id = "anonymous_client"
+    # Generate a unique client_id for TrustGain (staging cancels "anonymous_client")
+    tg_client_id = str(uuid.uuid4())
     if data.payment_link_id:
         link = await db.payment_links.find_one({"id": data.payment_link_id}, {"_id": 0})
         if link:
@@ -1942,7 +1944,7 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
             amount=str(amount_rub),
             merchant_id=merchant_id_tg,
             gateway_id=gateway_id,
-            client_id=buyer_id,
+            client_id=tg_client_id,
             client_ip="127.0.0.1",
             idempotency_key=idempotency_key,
             webhook_url=webhook_url,
