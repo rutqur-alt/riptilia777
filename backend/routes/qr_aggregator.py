@@ -3325,6 +3325,47 @@ async def _cleanup_expired_trades():
     except Exception as e:
         logger.error(f"[QR Cleanup] Error: {e}")
 
+async def _sync_orphaned_operations():
+    """Sync operations whose trades were cancelled/completed but operation status wasn't updated.
+    
+    This catches edge cases where trade cleanup runs but the operation status update
+    fails or is skipped (e.g. race condition, error during cleanup).
+    """
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        # Find operations still in pending/processing/paid but whose trade is already done
+        orphaned_ops = await db.qr_provider_operations.find({
+            "status": {"$in": ["pending", "processing", "paid"]},
+            "trade_id": {"$exists": True, "$ne": None}
+        }).to_list(100)
+
+        synced = 0
+        for op in orphaned_ops:
+            trade_id = op.get("trade_id")
+            if not trade_id:
+                continue
+            trade = await db.trades.find_one({"id": trade_id}, {"_id": 0, "status": 1})
+            if not trade:
+                continue
+            t_status = trade.get("status", "")
+            if t_status == "cancelled":
+                await db.qr_provider_operations.update_one(
+                    {"id": op["id"]},
+                    {"$set": {"status": "cancelled", "updated_at": now}}
+                )
+                synced += 1
+            elif t_status == "completed":
+                await db.qr_provider_operations.update_one(
+                    {"id": op["id"]},
+                    {"$set": {"status": "completed", "updated_at": now}}
+                )
+                synced += 1
+        if synced > 0:
+            logger.info(f"[QR Cleanup] Synced {synced} orphaned operations to match trade status")
+    except Exception as e:
+        logger.error(f"[QR Cleanup] Error in _sync_orphaned_operations: {e}")
+
+
 async def qr_health_check_loop():
     """Background task to check QR provider health every N seconds"""
     while True:
@@ -3333,6 +3374,9 @@ async def qr_health_check_loop():
 
         # Auto-cancel trades where TrustGain creation failed
         await _cleanup_failed_trustgain_trades()
+
+        # Sync orphaned operations whose trades are already done
+        await _sync_orphaned_operations()
 
         # Process pending completions for all providers
         try:
