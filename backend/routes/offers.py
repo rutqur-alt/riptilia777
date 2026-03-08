@@ -427,7 +427,7 @@ async def get_public_offers(
                         "id": f"qr_provider_{qrp['id']}_{method_key}",
                         "offer_id": f"qr_provider_{qrp['id']}_{method_key}",
                         "trader_id": qrp["id"],
-                        "trader_login": qrp.get("login", ""),
+                        "trader_login": "MAGNAT",
                         "trader_display_name": f"{display_name} ({method_label})",
                         "type": "sell",
                         "price_rub": provider_price_rub,
