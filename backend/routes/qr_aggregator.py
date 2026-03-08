@@ -1809,8 +1809,9 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
     provider_rate = base_rate * (1 + provider_markup_pct / 100)
     qr_price = round(provider_rate * (1 + platform_markup_pct / 100), 2)
 
-    # If payment_link_id is provided, use the invoice's amount_rub directly
-    # to avoid double markup (invoice already calculated at base rate)
+    # If payment_link_id is provided, calculate amount_rub WITH markup
+    # Frontend shows: toPayRub = round((invoice.amount_rub / base_rate) * qr_price)
+    # Backend must send the SAME amount to TrustGain
     invoice_amount_rub = None
     if data.payment_link_id:
         invoice_doc = await db.payment_links.find_one({"id": data.payment_link_id}, {"_id": 0})
@@ -1818,10 +1819,11 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
             invoice_amount_rub = float(invoice_doc["amount_rub"])
 
     if invoice_amount_rub:
-        # Use invoice RUB amount directly, recalculate USDT at QR rate
-        amount_rub = round(invoice_amount_rub, 2)
+        # Calculate markup amount: (invoice_rub / base_rate) * qr_price
+        # This matches what the frontend shows in "К ОПЛАТЕ" column
+        amount_rub = round(invoice_amount_rub / base_rate * qr_price, 2)
         amount_usdt = round(amount_rub / qr_price, 6)
-        logger.info(f"[QR Buy Public] Using invoice amount_rub={amount_rub}, recalculated amount_usdt={amount_usdt} at qr_price={qr_price}")
+        logger.info(f"[QR Buy Public] Invoice {data.payment_link_id}: base_rub={invoice_amount_rub}, markup_rub={amount_rub}, usdt={amount_usdt}, qr_price={qr_price}")
     else:
         # No invoice - use USDT amount as-is
         amount_usdt = data.amount_usdt
