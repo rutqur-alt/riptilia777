@@ -266,6 +266,26 @@ async def get_qr_provider_operations(
         query, {"_id": 0}
     ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
 
+    # Enrich with trade numbers/statuses for удобной сверки
+    trade_ids = [op.get("trade_id") for op in operations if op.get("trade_id")]
+    trades_by_id: Dict[str, dict] = {}
+    if trade_ids:
+        trades = await db.trades.find(
+            {"id": {"$in": trade_ids}},
+            {"_id": 0, "id": 1, "trade_number": 1, "status": 1, "amount_usdt": 1, "expires_at": 1, "merchant_id": 1, "buyer_id": 1}
+        ).to_list(len(trade_ids))
+        trades_by_id = {t["id"]: t for t in trades if t.get("id")}
+
+    for op in operations:
+        t = trades_by_id.get(op.get("trade_id"))
+        if t:
+            op["trade_number"] = t.get("trade_number")
+            op["trade_status"] = t.get("status")
+            op["trade_amount_usdt"] = t.get("amount_usdt")
+            op["trade_expires_at"] = t.get("expires_at")
+            op["trade_merchant_id"] = t.get("merchant_id")
+            op["trade_buyer_id"] = t.get("buyer_id")
+
     return {
         "operations": operations,
         "total": total,

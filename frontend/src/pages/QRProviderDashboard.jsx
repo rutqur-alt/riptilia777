@@ -516,6 +516,16 @@ function OperationsPage() {
     completed: "Завершена", rejected: "Отклонена", expired: "Истекла", cancelled: "Отменена",
   };
 
+  const copyToClipboard = async (text, label = "") => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(String(text));
+      toast.success(label ? `${label} скопирован` : "Скопировано");
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -544,25 +554,103 @@ function OperationsPage() {
         <div className="space-y-2">
           {operations.map((op) => (
             <div key={op.id} className="bg-[#1A1A2E] border border-gray-700 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white font-medium">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm text-white font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className={op.payment_method === 'nspk' ? 'text-blue-400' : 'text-orange-400'}>
                       {op.payment_method === 'nspk' ? 'NSPK' : 'TransGrant'}
                     </span>
-                    {' '} - {(op.amount_rub || 0).toLocaleString()} P
+                    <span className="text-gray-500">•</span>
+                    <span>{(op.amount_rub || 0).toLocaleString()} ₽</span>
+                    {op.trade_amount_usdt != null && (
+                      <>
+                        <span className="text-gray-500">•</span>
+                        <span className="text-gray-300">{Number(op.trade_amount_usdt).toFixed(4)} USDT</span>
+                      </>
+                    )}
+                    {op.trade_number && (
+                      <>
+                        <span className="text-gray-500">•</span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(op.trade_number, "Номер сделки")}
+                          className="inline-flex items-center gap-1 text-[#A855F7] hover:underline"
+                          title="Скопировать номер сделки"
+                        >
+                          №{op.trade_number} <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    ID: {op.id?.slice(0, 8)}... | {op.created_at ? new Date(op.created_at).toLocaleString() : ''}
-                  </p>
+
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-400">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-gray-500">Trade ID:</span>
+                      <span className="font-mono text-gray-300 truncate">{op.trade_id || "-"}</span>
+                      {op.trade_id && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(op.trade_id, "Trade ID")}
+                          className="p-1 rounded hover:bg-white/10"
+                          title="Скопировать Trade ID"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-gray-500">TrustGain:</span>
+                      <span className="font-mono text-gray-300 truncate">{op.trustgain_operation_id || "-"}</span>
+                      {op.trustgain_operation_id && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(op.trustgain_operation_id, "TrustGain ID")}
+                          className="p-1 rounded hover:bg-white/10"
+                          title="Скопировать TrustGain ID"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-gray-500">Op ID:</span>
+                      <span className="font-mono text-gray-300 truncate">{op.id}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(op.id, "ID операции")}
+                        className="p-1 rounded hover:bg-white/10"
+                        title="Скопировать ID операции"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500">Создано:</span>
+                      <span className="text-gray-300">{op.created_at ? new Date(op.created_at).toLocaleString("ru-RU") : "-"}</span>
+                      {op.status === "pending" && op.trade_expires_at && (
+                        <span className="ml-2 text-[#F59E0B]" title="Авто-отмена через 30 минут, если оплата не пройдёт">
+                          истекает: {new Date(op.trade_expires_at).toLocaleTimeString("ru-RU")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right">
+
+                <div className="text-right shrink-0">
                   {op.provider_earning_usdt > 0 && (
                     <p className="text-sm text-green-400">+{op.provider_earning_usdt.toFixed(4)} USDT</p>
                   )}
                   <span className={`text-xs px-2 py-1 rounded ${statusColors[op.status] || 'bg-gray-500/20 text-gray-400'}`}>
                     {statusLabels[op.status] || op.status}
                   </span>
+                  {op.trade_status && op.trade_status !== op.status && (
+                    <div className="mt-1 text-[10px] text-gray-500">
+                      статус сделки: <span className="font-mono">{op.trade_status}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
