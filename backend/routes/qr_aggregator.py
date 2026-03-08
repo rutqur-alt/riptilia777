@@ -1808,16 +1808,33 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
 
     provider_rate = base_rate * (1 + provider_markup_pct / 100)
     qr_price = round(provider_rate * (1 + platform_markup_pct / 100), 2)
-    amount_rub = round(data.amount_usdt * qr_price, 2)
 
-    platform_commission_usdt = round(data.amount_usdt * platform_markup_pct / 100, 6)
-    total_freeze_usdt = round(data.amount_usdt + platform_commission_usdt, 6)
+    # If payment_link_id is provided, use the invoice's amount_rub directly
+    # to avoid double markup (invoice already calculated at base rate)
+    invoice_amount_rub = None
+    if data.payment_link_id:
+        invoice_doc = await db.payment_links.find_one({"id": data.payment_link_id}, {"_id": 0})
+        if invoice_doc and invoice_doc.get("amount_rub"):
+            invoice_amount_rub = float(invoice_doc["amount_rub"])
+
+    if invoice_amount_rub:
+        # Use invoice RUB amount directly, recalculate USDT at QR rate
+        amount_rub = round(invoice_amount_rub, 2)
+        amount_usdt = round(amount_rub / qr_price, 6)
+        logger.info(f"[QR Buy Public] Using invoice amount_rub={amount_rub}, recalculated amount_usdt={amount_usdt} at qr_price={qr_price}")
+    else:
+        # No invoice - use USDT amount as-is
+        amount_usdt = data.amount_usdt
+        amount_rub = round(amount_usdt * qr_price, 2)
+
+    platform_commission_usdt = round(amount_usdt * platform_markup_pct / 100, 6)
+    total_freeze_usdt = round(amount_usdt + platform_commission_usdt, 6)
 
     min_amount_rub = qr_settings.get(f"{tg_payment_method}_min_amount", 100)
     total_available_usdt = sum(p.get("balance_usdt", 0) - p.get("frozen_usdt", 0) for p in providers_for_method)
     max_amount_usdt = round(total_available_usdt / (1 + platform_markup_pct / 100), 2) if total_available_usdt > 0 else 0
 
-    if data.amount_usdt > max_amount_usdt:
+    if amount_usdt > max_amount_usdt:
         raise HTTPException(status_code=400, detail=f"Максимум: {max_amount_usdt} USDT")
     if amount_rub < min_amount_rub:
         raise HTTPException(status_code=400, detail=f"Минимальная сумма: {min_amount_rub} ₽")
@@ -1845,7 +1862,7 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
             if merchant_id_from_link:
                 merchant = await db.merchants.find_one({"id": merchant_id_from_link}, {"_id": 0})
                 if merchant:
-                    merchant_commission = round(data.amount_usdt * merchant.get("commission_rate", 5.0) / 100, 6)
+                    merchant_commission = round(amount_usdt * merchant.get("commission_rate", 5.0) / 100, 6)
 
     trade_id = f"trd_{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
@@ -1857,7 +1874,7 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
         "trader_id": "qr_aggregator",
         "buyer_id": buyer_id,
         "buyer_type": "client",
-        "amount_usdt": data.amount_usdt,
+        "amount_usdt": amount_usdt,
         "amount_rub": amount_rub,
         "price_rub": qr_price,
         "base_rate": base_rate,
@@ -1976,7 +1993,7 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
     return {
         "id": trade_id,
         "trade_id": trade_id,
-        "amount_usdt": data.amount_usdt,
+        "amount_usdt": amount_usdt,
         "amount_rub": amount_rub,
         "price_rub": qr_price,
         "payment_url": payment_url,
@@ -2083,7 +2100,7 @@ async def qr_aggregator_buy(data: QRAggregatorBuyRequest, background_tasks: Back
             if merchant_id_from_link:
                 merchant = await db.merchants.find_one({"id": merchant_id_from_link}, {"_id": 0})
                 if merchant:
-                    merchant_commission = round(data.amount_usdt * merchant.get("commission_rate", 5.0) / 100, 6)
+                    merchant_commission = round(amount_usdt * merchant.get("commission_rate", 5.0) / 100, 6)
 
     # Create trade record first
     trade_id = f"trd_{uuid.uuid4().hex[:8]}"
@@ -2096,7 +2113,7 @@ async def qr_aggregator_buy(data: QRAggregatorBuyRequest, background_tasks: Back
         "trader_id": "qr_aggregator",
         "buyer_id": user["id"],
         "buyer_type": "trader",
-        "amount_usdt": data.amount_usdt,
+        "amount_usdt": amount_usdt,
         "amount_rub": amount_rub,
         "price_rub": qr_price,
         "base_rate": base_rate,
@@ -2237,7 +2254,7 @@ async def qr_aggregator_buy(data: QRAggregatorBuyRequest, background_tasks: Back
     return {
         "trade_id": trade_id,
         "operation_id": op_id,
-        "amount_usdt": data.amount_usdt,
+        "amount_usdt": amount_usdt,
         "amount_rub": amount_rub,
         "price_rub": qr_price,
         "payment_url": payment_url,
