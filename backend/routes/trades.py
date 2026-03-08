@@ -438,7 +438,7 @@ async def get_trader_purchases_history(user: dict = Depends(require_role(["trade
         {
             "buyer_id": user["id"],
             "buyer_type": "trader",
-            "status": {"$in": ["completed", "cancelled", "refunded"]}
+            "status": {"$in": ["completed", "cancelled", "refunded", "disputed"]}
         },
         {"_id": 0}
     ).sort("created_at", -1).to_list(100)
@@ -1411,7 +1411,9 @@ async def get_trade_chat_history(trade_id: str, user: dict = Depends(get_current
             "disputed_by_role": trade.get("disputed_by_role"),
             "seller_nickname": seller.get("nickname", seller.get("login", "")) if seller else "",
             "buyer_nickname": buyer.get("nickname", buyer.get("login", "")) if buyer else "Клиент",
-            "requisites": trade.get("requisites", [])
+            "requisites": trade.get("requisites", []),
+            "qr_aggregator_trade": trade.get("qr_aggregator_trade", False),
+            "is_qr_aggregator": trade.get("is_qr_aggregator", False)
         },
         "messages": messages
     }

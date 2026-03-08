@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth, API } from "@/App";
 import axios from "axios";
-import { History, ArrowLeft, MessageCircle, Copy } from "lucide-react";
+import { History, ArrowLeft, MessageCircle, Copy, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { TradeChatModal } from "@/components/trader/TradeChatModal";
 
@@ -38,9 +38,10 @@ export default function TraderHistoryPurchases() {
   const getStatusBadge = (status) => {
     const styles = {
       completed: "bg-[#10B981]/10 text-[#10B981]",
-      cancelled: "bg-[#EF4444]/10 text-[#EF4444]"
+      cancelled: "bg-[#EF4444]/10 text-[#EF4444]",
+      disputed: "bg-[#EF4444]/10 text-[#EF4444]"
     };
-    const labels = { completed: "Завершена", cancelled: "Отменена" };
+    const labels = { completed: "Завершена", cancelled: "Отменена", disputed: "Спор" };
     return (
       <span className={`px-2 py-1 text-xs rounded-full font-medium ${styles[status] || "bg-[#52525B]/10 text-[#52525B]"}`}>
         {labels[status] || status}
@@ -94,7 +95,15 @@ export default function TraderHistoryPurchases() {
                   <div className="text-white font-medium">-{trade.amount_rub?.toLocaleString()} ₽</div>
                   <div className="text-xs text-[#71717A]">{new Date(trade.created_at).toLocaleDateString()}</div>
                 </div>
-                {getStatusBadge(trade.status)}
+                <div className="flex items-center gap-2">
+                  {getStatusBadge(trade.status)}
+                  {trade.status === "cancelled" && (trade.qr_aggregator_trade || trade.is_qr_aggregator) && (
+                    <span className="px-2 py-1 text-xs rounded-full font-medium bg-[#F59E0B]/10 text-[#F59E0B] flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      Спор
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
