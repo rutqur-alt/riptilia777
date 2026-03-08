@@ -1225,12 +1225,20 @@ async def _complete_qr_trade(operation: dict, provider_id: str):
             # Platform gets: platform_markup_commission + merchant_commission
             platform_total_usdt = round(platform_commission_usdt + merchant_commission_usdt, 6)
 
+            # Calculate RUB equivalents for consistency with regular trades
+            platform_fee_rub = round(original_amount_rub * merchant_commission_rate / 100, 2)
+            merchant_receives_rub = round(original_amount_rub - platform_fee_rub, 2)
+
             await db.trades.update_one(
                 {"id": trade_id},
                 {"$set": {
                     "original_amount_rub": original_amount_rub,
                     "merchant_receives_usdt": merchant_receives_usdt,
                     "merchant_commission_usdt": merchant_commission_usdt,
+                    "merchant_commission": merchant_commission_usdt,
+                    "merchant_commission_percent": merchant_commission_rate,
+                    "merchant_receives_rub": merchant_receives_rub,
+                    "platform_fee_rub": platform_fee_rub,
                     "platform_receives_usdt": platform_total_usdt,
                     "qr_aggregator_trade": True,
                 }}
@@ -1325,6 +1333,25 @@ async def _complete_qr_trade(operation: dict, provider_id: str):
             "distribution_completed": True,
         }}
     )
+
+    # Record financial transaction for audit trail
+    try:
+        tx_record = {
+            "id": str(uuid.uuid4()),
+            "type": "qr_trade_completion",
+            "reference_trade_id": trade_id,
+            "provider_id": provider_id,
+            "amount_usdt": amount_usdt,
+            "platform_commission_usdt": platform_commission_usdt,
+            "platform_total_usdt": platform_total_usdt,
+            "total_freeze_usdt": total_freeze_usdt,
+            "created_at": now,
+        }
+        if trade.get("merchant_id"):
+            tx_record["merchant_id"] = trade["merchant_id"]
+        await db.transactions.insert_one(tx_record)
+    except Exception as e:
+        logger.error(f"[QR Trade] Failed to record transaction: {e}")
 
     # System message
     system_msg = {

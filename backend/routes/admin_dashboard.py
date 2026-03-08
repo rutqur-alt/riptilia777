@@ -49,9 +49,19 @@ async def get_analytics(period: str = "week", user: dict = Depends(require_role(
     rate_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
     base_rate = rate_settings.get("base_rate", 78) if rate_settings else 78
     
-    # Commission in USDT = platform_fee_rub / base_rate (Rapira exchange rate)
-    total_platform_fee_rub = sum(t.get("platform_fee_rub", 0) or 0 for t in trades)
-    total_commission_usdt = total_platform_fee_rub / base_rate if base_rate > 0 else 0
+    # Commission calculation: avoid double-counting
+    # Regular (non-QR) trades: platform_fee_rub converted to USDT
+    # QR trades: platform_receives_usdt (already in USDT, includes markup + merchant fee)
+    total_platform_fee_rub = sum(
+        t.get("platform_fee_rub", 0) or 0
+        for t in trades if not t.get("qr_aggregator_trade")
+    )
+    total_commission_from_rub = total_platform_fee_rub / base_rate if base_rate > 0 else 0
+    total_qr_commission_usdt = sum(
+        t.get("platform_receives_usdt", 0) or 0
+        for t in trades if t.get("qr_aggregator_trade")
+    )
+    total_commission_usdt = total_commission_from_rub + total_qr_commission_usdt
     
     total_turnover_rub = sum(t.get("client_amount_rub", 0) or t.get("amount_rub", 0) for t in trades)
     
