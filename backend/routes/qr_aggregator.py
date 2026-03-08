@@ -1810,20 +1810,25 @@ async def qr_aggregator_buy_public(data: QRAggregatorBuyPublicRequest, backgroun
     qr_price = round(provider_rate * (1 + platform_markup_pct / 100), 2)
 
     # If payment_link_id is provided, calculate amount_rub WITH markup
-    # Frontend shows: toPayRub = round((invoice.amount_rub / base_rate) * qr_price)
-    # Backend must send the SAME amount to TrustGain
-    invoice_amount_rub = None
+    # Frontend formula: toPayRub = Math.round((deposit / exchangeRate) * op.price_rub)
+    # Where deposit = inv.original_amount_rub || inv.amount_rub
+    # IMPORTANT: use original_amount_rub (without marker), not amount_rub (with marker)
+    invoice_deposit_rub = None
     if data.payment_link_id:
-        invoice_doc = await db.payment_links.find_one({"id": data.payment_link_id}, {"_id": 0})
-        if invoice_doc and invoice_doc.get("amount_rub"):
-            invoice_amount_rub = float(invoice_doc["amount_rub"])
+        # Check both collections (merchant_invoices for Invoice API, payment_links for legacy)
+        invoice_doc = await db.merchant_invoices.find_one({"id": data.payment_link_id}, {"_id": 0})
+        if not invoice_doc:
+            invoice_doc = await db.payment_links.find_one({"id": data.payment_link_id}, {"_id": 0})
+        if invoice_doc:
+            # Use original_amount_rub (merchant's requested amount, without marker)
+            # Fallback to amount_rub if original_amount_rub not set
+            invoice_deposit_rub = float(invoice_doc.get("original_amount_rub") or invoice_doc.get("amount_rub") or 0)
 
-    if invoice_amount_rub:
-        # Calculate markup amount: (invoice_rub / base_rate) * qr_price
-        # This matches what the frontend shows in "К ОПЛАТЕ" column
-        amount_rub = round(invoice_amount_rub / base_rate * qr_price, 2)
+    if invoice_deposit_rub and invoice_deposit_rub > 0:
+        # Calculate markup amount same as frontend: (deposit / base_rate) * qr_price
+        amount_rub = round(invoice_deposit_rub / base_rate * qr_price, 2)
         amount_usdt = round(amount_rub / qr_price, 6)
-        logger.info(f"[QR Buy Public] Invoice {data.payment_link_id}: base_rub={invoice_amount_rub}, markup_rub={amount_rub}, usdt={amount_usdt}, qr_price={qr_price}")
+        logger.info(f"[QR Buy Public] Invoice {data.payment_link_id}: deposit_rub={invoice_deposit_rub}, markup_rub={amount_rub}, usdt={amount_usdt}, qr_price={qr_price}, base_rate={base_rate}")
     else:
         # No invoice - use USDT amount as-is
         amount_usdt = data.amount_usdt
