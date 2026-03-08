@@ -391,7 +391,8 @@ async def get_public_offers(
                     except:
                         pass
                 
-                display_name = qrp.get("display_name") or qrp.get("login", "QR Provider")
+                # QR aggregator offers always show unified platform name
+                display_name = "MAGNAT"
                 
                 for method_key in ["qr", "sng"]:
                     tg_method = "nspk" if method_key == "qr" else "transgrant"
@@ -720,12 +721,13 @@ async def get_operators_for_payment(
                     "qr_method": method_key
                 }
                 
-                display_name = qrp.get("display_name") or qrp.get("login", "QR Оператор")
+                # QR aggregator offers always show unified platform name
+                display_name = "MAGNAT"
                 
                 operators.append({
                     "trader_id": qrp["id"],
                     "offer_id": f"qr_provider_{qrp['id']}_{method_key}",
-                    "trader_login": qrp.get("login", ""),
+                    "trader_login": "MAGNAT",
                     "nickname": f"{display_name} ({method_label})",
                     "is_online": is_online,
                     "trades_count": qrp.get("total_operations", 0),

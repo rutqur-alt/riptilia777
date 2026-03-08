@@ -2476,9 +2476,8 @@ async def get_qr_aggregator_offers():
         offers.append({
             "id": f"qr_aggregator_{method_key}",
             "trader_id": "qr_aggregator",
-        "trader_login": provider.get("display_name", provider.get("login", "QR Оператор")),
-            "trader_login": label,
-            "trader_display_name": label,
+            "trader_login": "MAGNAT",
+            "trader_display_name": f"MAGNAT ({label})",
             "type": "sell",
             "payment_methods": [method_name],
             "price_rub": round(price, 2),
