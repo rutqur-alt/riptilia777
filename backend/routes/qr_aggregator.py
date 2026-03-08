@@ -3366,6 +3366,49 @@ async def _sync_orphaned_operations():
         logger.error(f"[QR Cleanup] Error in _sync_orphaned_operations: {e}")
 
 
+async def _reconcile_frozen_balances():
+    """Reconcile frozen_usdt and active_operations_count for all providers.
+    
+    Recalculates these values from actual active trades to fix any drift
+    caused by race conditions or errors in the freeze/unfreeze logic.
+    """
+    try:
+        providers = await db.qr_providers.find({}, {"_id": 0, "id": 1, "frozen_usdt": 1, "active_operations_count": 1}).to_list(100)
+        for provider in providers:
+            pid = provider.get("id")
+            if not pid:
+                continue
+
+            # Calculate correct frozen amount from active trades
+            active_trades = await db.trades.find({
+                "provider_id": pid,
+                "status": {"$in": ["pending", "paid", "processing", "pending_completion"]},
+                "total_freeze_usdt": {"$gt": 0}
+            }, {"_id": 0, "total_freeze_usdt": 1}).to_list(200)
+
+            correct_frozen = sum(t.get("total_freeze_usdt", 0) for t in active_trades)
+            correct_active = len(active_trades)
+            current_frozen = provider.get("frozen_usdt", 0)
+            current_active = provider.get("active_operations_count", 0)
+
+            # Only update if there's a discrepancy
+            if abs(correct_frozen - current_frozen) > 0.001 or correct_active != current_active:
+                await db.qr_providers.update_one(
+                    {"id": pid},
+                    {"$set": {
+                        "frozen_usdt": correct_frozen,
+                        "active_operations_count": correct_active,
+                    }}
+                )
+                logger.info(
+                    f"[QR Reconcile] Provider {pid}: "
+                    f"frozen {current_frozen:.4f} -> {correct_frozen:.4f}, "
+                    f"active_ops {current_active} -> {correct_active}"
+                )
+    except Exception as e:
+        logger.error(f"[QR Reconcile] Error: {e}")
+
+
 async def qr_health_check_loop():
     """Background task to check QR provider health every N seconds"""
     while True:
@@ -3377,6 +3420,9 @@ async def qr_health_check_loop():
 
         # Sync orphaned operations whose trades are already done
         await _sync_orphaned_operations()
+
+        # Reconcile frozen balances to fix any drift
+        await _reconcile_frozen_balances()
 
         # Process pending completions for all providers
         try:
