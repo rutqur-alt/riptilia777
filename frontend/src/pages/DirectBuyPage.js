@@ -148,8 +148,9 @@ export default function DirectBuyPage() {
       toast.error("Укажите сумму");
       return;
     }
-    // QR aggregator: no payment method selection needed
-    if (!offer.is_qr_aggregator && !selectedRequisite) {
+    // For QR aggregator offers, no requisite selection needed
+    const isQr = offer.is_qr_aggregator;
+    if (!isQr && !selectedRequisite) {
       toast.error("Выберите способ оплаты");
       return;
     }
@@ -171,34 +172,16 @@ export default function DirectBuyPage() {
     setCreating(true);
     try {
       let response;
-      if (offer.is_qr_aggregator) {
-        // QR Aggregator: use dedicated endpoint
+      if (isQr) {
+        // QR aggregator: use dedicated endpoint
         response = await axios.post(`${API}/qr-aggregator/buy`, {
           amount_usdt: amountUsdt,
-          qr_method: offer.qr_method || "qr"
+          method: offer.qr_method || "qr"
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        // Build trade-like object from response for the paying step
-        const r = response.data;
-        const tradeObj = {
-          id: r.trade_id,
-          amount_usdt: r.amount_usdt,
-          amount_rub: r.amount_rub,
-          price_rub: r.price_rub,
-          status: "pending",
-          expires_at: r.expires_at,
-          qr_aggregator_trade: true,
-          payment_url: r.payment_url,
-          payment_requisite: r.payment_requisite,
-          qr_data: r.qr_data,
-          card_number: r.card_number,
-          requisite: { type: "qr_aggregator", value: "auto", name: (offer.offer_type === "card" || offer.qr_method === "transgrant") ? "Банковская карта" : "СБП (QR-код)" },
-          requisites: [],
-        };
-        setTrade(tradeObj);
       } else {
-        // Regular P2P trade
+        // Regular P2P: use trades/direct
         response = await axios.post(`${API}/trades/direct`, {
           offer_id: offer.id,
           amount_usdt: amountUsdt,
@@ -206,15 +189,14 @@ export default function DirectBuyPage() {
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        setTrade(response.data);
       }
+      
+      setTrade(response.data);
       setStep("paying");
       fetchMessages();
       toast.success("Сделка создана!");
     } catch (error) {
-      const detail = error.response?.data?.detail;
-      const msg = Array.isArray(detail) ? detail.map(e => e.msg || e.message || JSON.stringify(e)).join(", ") : (typeof detail === "string" ? detail : "Ошибка создания сделки");
-      toast.error(msg);
+      toast.error(error.response?.data?.detail || "Ошибка создания сделки");
     } finally {
       setCreating(false);
     }
@@ -229,7 +211,7 @@ export default function DirectBuyPage() {
       setTrade({ ...trade, status: "paid" });
       toast.success("Отмечено как оплачено");
     } catch (error) {
-      toast.error(typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Ошибка");
+      toast.error(error.response?.data?.detail || "Ошибка");
     }
   };
 
@@ -245,22 +227,7 @@ export default function DirectBuyPage() {
       setTrade({ ...trade, status: "disputed" });
       toast.success("Спор открыт");
     } catch (error) {
-      toast.error(typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Ошибка");
-    }
-  };
-
-  const handlePaymentFailed = async () => {
-    if (!trade) return;
-    if (!confirm("Открыть спор? Оплата не прошла?")) return;
-    try {
-      const endpoint = trade.is_qr_aggregator
-        ? `${API}/qr-aggregator/trades/${trade.id}/dispute-public`
-        : `${API}/trades/${trade.id}/dispute-public`;
-      await axios.post(endpoint, { reason: "Оплата не прошла" });
-      setTrade({ ...trade, status: "disputed" });
-      toast.success("Спор открыт: оплата не прошла");
-    } catch (error) {
-      toast.error(typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Ошибка");
+      toast.error(error.response?.data?.detail || "Ошибка");
     }
   };
 
@@ -275,7 +242,7 @@ export default function DirectBuyPage() {
       setTrade({ ...trade, status: "cancelled" });
       toast.success("Сделка отменена");
     } catch (error) {
-      toast.error(typeof error.response?.data?.detail === "string" ? error.response.data.detail : "Ошибка");
+      toast.error(error.response?.data?.detail || "Ошибка");
     }
   };
 
@@ -361,7 +328,7 @@ export default function DirectBuyPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div className="bg-[#0A0A0A] rounded-xl p-3">
                 <div className="text-[#71717A]">Курс</div>
                 <div className="text-white font-bold font-['JetBrains_Mono']">{offer.price_rub} ₽/USDT</div>
@@ -373,7 +340,7 @@ export default function DirectBuyPage() {
             </div>
 
             <div className="mt-3 text-xs text-[#71717A]">
-              Лимит: {parseFloat(offer.min_amount || 1).toFixed(2)} - {parseFloat(offer.max_amount || offer.available_usdt).toFixed(2)} USDT
+              Лимит: {offer.min_amount || 1} - {offer.max_amount || offer.available_usdt} USDT
             </div>
 
             {offer.conditions && (
@@ -391,7 +358,7 @@ export default function DirectBuyPage() {
             <label className="text-[#A1A1AA] text-sm mb-2 block">Сумма покупки (USDT)</label>
             <Input
               type="number"
-              placeholder={`${parseFloat(offer.min_amount || 1).toFixed(2)} - ${parseFloat(offer.max_amount || offer.available_usdt).toFixed(2)}`}
+              placeholder={`${offer.min_amount || 1} - ${offer.max_amount || offer.available_usdt}`}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               className="bg-[#0A0A0A] border-white/10 text-white h-14 rounded-xl text-lg font-['JetBrains_Mono']"
@@ -404,53 +371,8 @@ export default function DirectBuyPage() {
             )}
           </div>
 
-          {/* Requisite Selection or QR Aggregator Info */}
-          {offer?.is_qr_aggregator ? (
-            offer.offer_type === "card" || offer.qr_method === "transgrant" ? (
-            <div className="bg-[#2563EB]/10 border border-[#2563EB]/30 rounded-2xl p-4 mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-[#2563EB]/20 flex items-center justify-center border border-[#2563EB]/30">
-                  <svg className="w-5 h-5 text-[#60A5FA]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                </div>
-                <div>
-                  <div className="text-[#60A5FA] font-semibold flex items-center gap-2">
-                    Банковская карта
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2563EB]/20 text-[#60A5FA]">Авто</span>
-                  </div>
-                  <div className="text-xs text-[#A1A1AA] mt-0.5">
-                    Оплата любой банковской картой (Visa, Mastercard, МИР). Подтверждение по SMS.
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2563EB]/15 text-[#60A5FA] border border-[#2563EB]/20">Visa</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2563EB]/15 text-[#60A5FA] border border-[#2563EB]/20">Mastercard</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#2563EB]/15 text-[#60A5FA] border border-[#2563EB]/20">МИР</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            ) : (
-            <div className="bg-[#059669]/10 border border-[#059669]/30 rounded-2xl p-4 mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-[#059669]/20 flex items-center justify-center border border-[#059669]/30">
-                  <svg className="w-5 h-5 text-[#34D399]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zm4 0h3v3h-3zm-4 4h3v3h-3zm4 4h3v-3h-3z"/></svg>
-                </div>
-                <div>
-                  <div className="text-[#34D399] font-semibold flex items-center gap-2">
-                    СБП (QR-код)
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#059669]/20 text-[#34D399]">Авто</span>
-                  </div>
-                  <div className="text-xs text-[#A1A1AA] mt-0.5">
-                    Оплата через приложение любого банка по QR-коду. Мгновенное зачисление.
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#059669]/15 text-[#34D399] border border-[#059669]/20">СБП</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#059669]/15 text-[#34D399] border border-[#059669]/20">QR-код</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            )
-          ) : (
+          {/* Requisite Selection - hidden for QR aggregator offers */}
+          {!offer.is_qr_aggregator && (
           <div className="bg-[#121212] border border-white/5 rounded-2xl p-4 mb-6">
             <label className="text-[#A1A1AA] text-sm mb-2 block">Способ оплаты ({(offer.requisites || []).length})</label>
             <div className="space-y-1.5 max-h-[240px] overflow-y-auto pr-1">
@@ -473,8 +395,8 @@ export default function DirectBuyPage() {
                   <div className="text-left flex-1 min-w-0">
                     <div className="text-white text-sm font-medium truncate">
                       {req.type === "card" && `${req.data?.bank_name} •••• ${req.data?.card_number?.slice(-4) || ""}`}
-                      {req.type === "sbp" && `СБП ${req.data?.bank_name || ""}`}
-                      {req.type === "qr" && `QR ${req.data?.bank_name || "код"}`}
+                      {req.type === "sbp" && `СБП ${req.data?.bank_name}`}
+                      {req.type === "qr" && `QR ${req.data?.bank_name}`}
                       {req.type === "sim" && req.data?.operator}
                     </div>
                   </div>
@@ -490,7 +412,7 @@ export default function DirectBuyPage() {
           {/* Create Button */}
           <Button
             onClick={handleCreateTrade}
-            disabled={!amount || (!offer?.is_qr_aggregator && !selectedRequisite) || creating}
+            disabled={!amount || (!offer.is_qr_aggregator && !selectedRequisite) || creating}
             className="w-full h-14 bg-[#10B981] hover:bg-[#059669] rounded-xl font-semibold text-lg disabled:opacity-50"
             data-testid="create-trade-btn"
           >
@@ -504,8 +426,7 @@ export default function DirectBuyPage() {
   // Step 2: Paying - show requisites and chat
   if (step === "paying" && trade) {
     const requisite = trade.requisite || selectedRequisite;
-    const amountRub = trade.amount_rub ? Math.round(trade.amount_rub) : (trade.amount_usdt * offer.price_rub).toFixed(0);
-    const isQrAggregatorTrade = trade.qr_aggregator_trade || offer?.is_qr_aggregator;
+    const amountRub = (trade.amount_usdt * offer.price_rub).toFixed(0);
     
     return (
       <div className="min-h-screen bg-[#0A0A0A] px-4 py-8">
@@ -527,9 +448,6 @@ export default function DirectBuyPage() {
               {trade.status === "paid" && "Оплачено"}
               {trade.status === "completed" && "Завершено"}
               {trade.status === "disputed" && "Спор"}
-              {trade.is_qr_aggregator_dispute && (
-                <span className="ml-1 text-[9px] bg-[#F97316] px-1 py-0.5 rounded">QR</span>
-              )}
               {trade.status === "cancelled" && "Отменено"}
             </div>
           </div>
@@ -558,55 +476,7 @@ export default function DirectBuyPage() {
               </div>
 
               {/* Requisite */}
-              {/* QR Aggregator Payment Details */}
-              {isQrAggregatorTrade && trade.payment_url ? (
-                <div className={(offer?.offer_type === "card" || offer?.qr_method === "transgrant") ? "bg-[#2563EB]/10 border border-[#2563EB]/30 rounded-2xl p-4" : "bg-[#059669]/10 border border-[#059669]/30 rounded-2xl p-4"}>
-                  <div className="text-[#A1A1AA] text-sm mb-3 flex items-center gap-2">
-                    {(offer?.offer_type === "card" || offer?.qr_method === "transgrant") ? (
-                      <svg className="w-4 h-4 text-[#60A5FA]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                    ) : (
-                      <svg className="w-4 h-4 text-[#34D399]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    )}
-                    Оплата через {(offer?.offer_type === "card" || offer?.qr_method === "transgrant") ? "Банковскую карту" : "СБП (QR-код)"}
-                  </div>
-                  
-                  <a 
-                    href={trade.payment_url} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className={(offer?.offer_type === "card" || offer?.qr_method === "transgrant") ? "block w-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-center py-3 px-4 rounded-xl font-semibold transition-colors mb-3" : "block w-full bg-[#059669] hover:bg-[#047857] text-white text-center py-3 px-4 rounded-xl font-semibold transition-colors mb-3"}
-                  >
-                    Перейти к оплате →
-                  </a>
-                  
-                  {trade.qr_data && (
-                    <div className="flex justify-center my-3">
-                      <img 
-                        src={`data:image/png;base64,${trade.qr_data}`}
-                        alt="QR код для оплаты" 
-                        className="w-48 h-48 rounded-lg bg-white p-2"
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
-                    </div>
-                  )}
-
-                  {trade.card_number && (
-                    <div className="mt-3">
-                      <div className="text-xs text-[#52525B]">Номер карты</div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-white font-mono text-lg">{trade.card_number}</div>
-                        <button onClick={() => copyToClipboard(trade.card_number)} className="p-1 hover:bg-white/10 rounded">
-                          <Copy className="w-4 h-4 text-[#7C3AED]" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="text-xs text-[#71717A] mt-3 text-center">
-                    После оплаты сделка будет подтверждена автоматически
-                  </div>
-                </div>
-              ) : requisite && (
+              {requisite && (
                 <div className="bg-[#121212] border border-white/5 rounded-2xl p-4">
                   <div className="text-[#71717A] text-sm mb-3">Реквизиты для оплаты</div>
                   
@@ -696,12 +566,10 @@ export default function DirectBuyPage() {
               {/* Actions */}
               {trade.status === "pending" && (
                 <div className="space-y-2">
-                  {!isQrAggregatorTrade && (
-                    <Button onClick={handleMarkPaid} className="w-full h-12 bg-[#10B981] hover:bg-[#059669] rounded-xl" data-testid="mark-paid-btn" title="Подтвердить что оплата отправлена">
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Я оплатил
-                    </Button>
-                  )}
+                  <Button onClick={handleMarkPaid} className="w-full h-12 bg-[#10B981] hover:bg-[#059669] rounded-xl" data-testid="mark-paid-btn" title="Подтвердить что оплата отправлена">
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Я оплатил
+                  </Button>
                   <Button onClick={handleCancelTrade} variant="outline" className="w-full h-10 border-white/10 text-[#A1A1AA] rounded-xl" title="Отменить сделку">
                     Отменить
                   </Button>
@@ -713,9 +581,6 @@ export default function DirectBuyPage() {
                   <div className="bg-[#3B82F6]/10 border border-[#3B82F6]/20 rounded-xl p-4 text-center">
                     <div className="text-[#3B82F6]">Ожидайте подтверждения от трейдера</div>
                   </div>
-                  <Button onClick={handlePaymentFailed} variant="outline" className="w-full h-10 border-[#F97316]/50 text-[#F97316] rounded-xl mb-2" title="Оплата не прошла - открыть спор">
-                    Оплата не прошла
-                  </Button>
                   <Button onClick={handleOpenDispute} variant="outline" className="w-full h-10 border-[#EF4444]/50 text-[#EF4444] rounded-xl" title="Открыть спор по сделке">
                     <AlertTriangle className="w-4 h-4 mr-2" />
                     Открыть спор
