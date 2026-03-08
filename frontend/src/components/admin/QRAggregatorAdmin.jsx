@@ -24,6 +24,7 @@ export default function QRAggregatorAdmin() {
   const [providers, setProviders] = useState([]);
   const [settings, setSettings] = useState(null);
   const [stats, setStats] = useState(null);
+  const [disputes, setDisputes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
@@ -44,6 +45,11 @@ export default function QRAggregatorAdmin() {
       setProviders(provRes.data.providers || []);
       setSettings(setRes.data);
       setStats(statRes.data);
+      // Fetch disputes separately (non-blocking)
+      try {
+        const dispRes = await axios.get(`${API}/admin/qr-aggregator/disputes`, { headers });
+        setDisputes(dispRes.data.disputes || dispRes.data || []);
+      } catch (_) { /* disputes endpoint may not exist yet */ }
     } catch (e) { toast.error("Ошибка загрузки данных"); }
     finally { setLoading(false); }
   }, []);
@@ -124,6 +130,7 @@ export default function QRAggregatorAdmin() {
       <div className="flex gap-2 border-b border-gray-700 pb-2">
         {[
           { key: "providers", label: "Провайдеры", icon: Users },
+          { key: "disputes", label: `Споры${disputes.length ? ` (${disputes.length})` : ""}`, icon: AlertTriangle },
           { key: "settings", label: "Настройки", icon: Settings },
           { key: "stats", label: "Статистика", icon: BarChart3 },
         ].map(t => (
@@ -166,6 +173,11 @@ export default function QRAggregatorAdmin() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Disputes Tab */}
+      {activeTab === "disputes" && (
+        <DisputesTab disputes={disputes} onRefresh={fetchAll} />
       )}
 
       {/* Settings Tab */}
@@ -664,6 +676,78 @@ function ProviderCard({ provider, expanded, editing, onToggleExpand, onEdit, onU
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ==================== Disputes Tab ====================
+function DisputesTab({ disputes, onRefresh }) {
+  const statusColors = {
+    open: "bg-[#EF4444]/20 text-[#EF4444]",
+    resolved: "bg-[#10B981]/20 text-[#10B981]",
+    disputed: "bg-[#F59E0B]/20 text-[#F59E0B]",
+  };
+
+  const handleGoToChat = (dispute) => {
+    // Navigate to All Chats > P2P disputes and open the conversation
+    const convId = dispute.conversation_id || dispute.id;
+    window.location.hash = `#/admin/chats?conv=${convId}&category=p2p_dispute`;
+  };
+
+  if (disputes.length === 0) {
+    return (
+      <div className="bg-[#1A1A2E] border border-gray-700 rounded-lg p-8 text-center">
+        <AlertTriangle className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+        <p className="text-gray-400">Нет активных споров по QR-агрегатору</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-white font-medium">Споры QR-агрегатора ({disputes.length})</h3>
+        <Button variant="ghost" size="sm" onClick={onRefresh}>
+          <RefreshCw className="w-4 h-4 text-gray-400" />
+        </Button>
+      </div>
+      <div className="space-y-2">
+        {disputes.map((d) => (
+          <div key={d.trade_id || d.id}
+            onClick={() => handleGoToChat(d)}
+            className="bg-[#1A1A2E] border border-gray-700 rounded-lg p-4 cursor-pointer hover:bg-[#1E1E36] transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="bg-[#F97316] text-white text-[9px] px-1.5 py-0.5 rounded font-bold">QR</span>
+                <span className="text-white text-sm font-medium">
+                  {d.trade_id ? d.trade_id.slice(0, 8) + "..." : "—"}
+                </span>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded ${statusColors[d.status] || statusColors.open}`}>
+                {d.status === "resolved" ? "Решён" : d.status === "open" ? "Открыт" : d.status || "Спор"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div>
+                <span className="text-gray-400">Транзакция:</span>
+                <span className="text-white ml-1">{d.transaction_id ? d.transaction_id.slice(0, 12) + "..." : "—"}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Сумма:</span>
+                <span className="text-white ml-1">{d.amount_rub ? `${d.amount_rub} ₽` : d.amount_usdt ? `${d.amount_usdt} USDT` : "—"}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Создан:</span>
+                <span className="text-white ml-1">{d.disputed_at || d.created_at ? new Date(d.disputed_at || d.created_at).toLocaleString("ru-RU") : "—"}</span>
+              </div>
+              <div>
+                <span className="text-gray-400">Провайдер:</span>
+                <span className="text-white ml-1">{d.provider_name || d.provider_id?.slice(0, 8) || "—"}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

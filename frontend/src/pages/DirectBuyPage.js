@@ -237,13 +237,36 @@ export default function DirectBuyPage() {
     }
   };
 
+  // Check if dispute button should be shown for QR trades
+  const canOpenQrDispute = () => {
+    if (!trade) return false;
+    const isQr = trade.qr_aggregator_trade || trade.is_qr_aggregator;
+    if (!isQr) return false;
+    if (trade.status === "disputed" || trade.status === "completed") return false;
+    // Cancelled — always eligible
+    if (trade.status === "cancelled") return true;
+    // Active (pending/paid) — only if >60 min old
+    if (trade.status === "pending" || trade.status === "paid") {
+      if (!trade.created_at) return false;
+      const created = new Date(trade.created_at);
+      const now = new Date();
+      const minutesPassed = (now - created) / 60000;
+      return minutesPassed >= 60;
+    }
+    return false;
+  };
+
   const handleOpenDispute = async () => {
     if (!trade) return;
+    const isQr = trade.qr_aggregator_trade || trade.is_qr_aggregator;
     const reason = prompt("Укажите причину спора:");
     if (!reason) return;
     
     try {
-      await axios.post(`${API}/trades/${trade.id}/dispute`, { reason }, {
+      const url = isQr
+        ? `${API}/qr-aggregator/trades/${trade.id}/dispute`
+        : `${API}/trades/${trade.id}/dispute`;
+      await axios.post(url, { reason }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTrade({ ...trade, status: "disputed" });
@@ -708,10 +731,13 @@ export default function DirectBuyPage() {
                   <div className="bg-[#3B82F6]/10 border border-[#3B82F6]/20 rounded-xl p-4 text-center">
                     <div className="text-[#3B82F6]">Ожидайте подтверждения от трейдера</div>
                   </div>
-                  <Button onClick={handleOpenDispute} variant="outline" className="w-full h-10 border-[#EF4444]/50 text-[#EF4444] rounded-xl" title="Открыть спор по сделке">
-                    <AlertTriangle className="w-4 h-4 mr-2" />
-                    Открыть спор
-                  </Button>
+                  {/* For regular P2P: always show dispute on paid; for QR: only if >60min */}
+                  {(!(trade.qr_aggregator_trade || trade.is_qr_aggregator) || canOpenQrDispute()) && (
+                    <Button onClick={handleOpenDispute} variant="outline" className="w-full h-10 border-[#EF4444]/50 text-[#EF4444] rounded-xl" title="Открыть спор по сделке">
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      Открыть спор
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -723,13 +749,25 @@ export default function DirectBuyPage() {
                 </div>
               )}
 
+              {trade.status === "cancelled" && canOpenQrDispute() && (
+                <div className="space-y-2">
+                  <div className="bg-[#52525B]/10 border border-[#52525B]/20 rounded-xl p-4 text-center">
+                    <div className="text-[#A1A1AA]">Сделка отменена</div>
+                  </div>
+                  <Button onClick={handleOpenDispute} variant="outline" className="w-full h-10 border-[#EF4444]/50 text-[#EF4444] rounded-xl" title="Открыть спор по отменённой сделке">
+                    <AlertTriangle className="w-4 h-4 mr-2" />
+                    Открыть спор
+                  </Button>
+                </div>
+              )}
+
               {trade.status === "disputed" && (
                 <div className="bg-[#EF4444]/10 border border-[#EF4444]/20 rounded-xl p-4 text-center">
                   <AlertTriangle className="w-8 h-8 text-[#EF4444] mx-auto mb-2" />
                   <div className="text-[#EF4444] font-semibold">Спор открыт</div>
                   {trade.disputed_by_role && (
                     <div className="text-[#EF4444] text-sm font-bold mt-1">
-                      Спор открыт {trade.disputed_by_role}
+                      Спор открыт: {trade.disputed_by_role}
                     </div>
                   )}
                   <div className="text-sm text-[#EF4444]/70 mt-1">Администратор рассмотрит ваше обращение</div>

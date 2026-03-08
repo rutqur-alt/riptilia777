@@ -1124,24 +1124,51 @@ async def _complete_qr_trade(operation: dict, provider_id: str):
         return
 
     trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
-    if not trade or trade["status"] in ("completed", "cancelled"):
+    if not trade or trade["status"] in ("completed",):
         return
 
     now = datetime.now(timezone.utc).isoformat()
     base_rate = await _get_base_rate()
+    was_disputed = trade.get("status") == "disputed"
 
-    # Mark trade completed
-    if trade["status"] == "pending":
+    # Mark trade completed (handle disputed trades too — auto-close dispute per spec)
+    if trade["status"] in ("pending", "disputed"):
         await db.trades.update_one(
             {"id": trade_id}, {"$set": {"status": "paid", "paid_at": now}}
         )
 
     result = await db.trades.update_one(
-        {"id": trade_id, "status": {"$in": ["paid", "pending"]}},
+        {"id": trade_id, "status": {"$in": ["paid", "pending", "disputed"]}},
         {"$set": {"status": "completed", "completed_at": now}}
     )
     if result.modified_count == 0:
         return
+
+    # Auto-close dispute if trade was disputed (per spec: provider callback auto-resolves)
+    if was_disputed:
+        await db.unified_conversations.update_one(
+            {"related_id": trade_id, "type": "p2p_dispute"},
+            {"$set": {
+                "resolved": True, "resolved_at": now,
+                "resolved_by": "system_auto", "status": "resolved",
+            }}
+        )
+        conv = await db.unified_conversations.find_one(
+            {"related_id": trade_id, "type": "p2p_dispute"}, {"_id": 0}
+        )
+        if conv:
+            await db.unified_messages.insert_one({
+                "id": str(uuid.uuid4()), "conversation_id": conv["id"],
+                "sender_id": "system", "sender_role": "system",
+                "sender_name": "Система",
+                "content": "Спор автоматически закрыт: провайдер подтвердил оплату. Сделка завершена.",
+                "is_system": True, "is_deleted": False, "created_at": now,
+            })
+        await _audit_log_dispute("dispute_auto_closed", trade_id, "system", "system", {
+            "reason": "provider_callback_completed"
+        })
+        logger.info(f"[QR Dispute] Auto-closed dispute for trade {trade_id} (provider callback)")
+
 
     amount_usdt = trade.get("amount_usdt", 0)
     amount_rub = operation.get("amount_rub", 0)
@@ -1368,118 +1395,500 @@ async def _cancel_qr_trade(operation: dict):
 
 
 # ==================== QR Aggregator Dispute System ====================
+# Per spec: disputes only for QR aggregator trades
+# Who can open: merchant or exchange trader (buyer via stakan)
+# Conditions: active >60min OR cancelled status
+# One active dispute per trade
+# Freeze provider funds on open, unfreeze on cancel resolution
+# Auto-close dispute if provider callback completes the trade
 
 class QRDisputeRequest(BaseModel):
     reason: str = Field(default="", max_length=500)
 
+
+async def _audit_log_dispute(action: str, trade_id: str, user_id: str, user_role: str, details: dict = None):
+    """Write audit log entry for dispute action"""
+    await db.dispute_audit_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": action,
+        "trade_id": trade_id,
+        "user_id": user_id,
+        "user_role": user_role,
+        "details": details or {},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def _build_dispute_system_message(trade: dict, opener: str, reason: str, now: str) -> str:
+    """Build detailed first system message with full trade info per spec section 10"""
+    provider_id = trade.get("provider_id", "N/A")
+    merchant_id = trade.get("merchant_id", "N/A")
+    buyer_id = trade.get("buyer_id") or trade.get("client_id") or "N/A"
+    trader_id = trade.get("trader_id", "N/A")
+
+    lines = [
+        "--- СПОР QR-АГРЕГАТОРА ---",
+        f"ID сделки: {trade.get('id')}",
+        f"Тип сделки: QR-агрегатор",
+        f"Признак QR-агрегатора: Да",
+        f"Покупатель: {buyer_id}",
+        f"Продавец (провайдер): {provider_id}",
+        f"Мерчант: {merchant_id}",
+        f"Трейдер: {trader_id}",
+        f"Дата создания сделки: {trade.get('created_at', 'N/A')}",
+        f"Дата открытия спора: {now}",
+        f"Сумма оплаты: {trade.get('amount_rub', 0)} RUB",
+        f"Сумма в USDT: {trade.get('amount_usdt', 0)} USDT",
+        f"Сумма зачисления мерчанту: {trade.get('merchant_receives_usdt', 'N/A')} USDT",
+        f"Валюта: RUB / USDT",
+        f"Платёжный метод: {trade.get('qr_method', 'qr')}",
+        f"Статус платежа: {trade.get('status', 'N/A')}",
+        f"ID транзакции: {trade.get('trustgain_operation_id') or trade.get('qr_operation_id', 'N/A')}",
+        f"ID мерчанта: {merchant_id}",
+        f"ID провайдера: {provider_id}",
+        f"Комиссия платформы: {trade.get('platform_commission_usdt', 0)} USDT",
+        f"Комиссия мерчанта: {trade.get('merchant_commission_usdt', 0)} USDT",
+        f"Заморожено у провайдера: {trade.get('total_freeze_usdt', 0)} USDT",
+        f"",
+        f"Спор открыт: {opener}",
+        f"Причина: {reason}",
+    ]
+    return "\n".join(lines)
+
+
+def _check_dispute_eligibility(trade: dict) -> tuple:
+    """Check if trade is eligible for dispute per spec sections 2 and 5.
+    Returns (eligible: bool, error_message: str)"""
+    # Must be QR aggregator trade
+    if not trade.get("qr_aggregator_trade") and not trade.get("is_qr_aggregator"):
+        return False, "Спор доступен только для сделок QR-агрегатора"
+
+    status = trade.get("status", "")
+
+    # Already disputed
+    if status == "disputed":
+        return False, "Спор уже открыт по этой сделке"
+
+    # Already completed — no dispute needed
+    if status == "completed":
+        return False, "Сделка уже завершена"
+
+    # Condition 1: cancelled status — eligible
+    if status == "cancelled":
+        return True, ""
+
+    # Condition 2: active (pending/paid) and >60 minutes old
+    if status in ("pending", "paid", "active"):
+        created_at = trade.get("created_at")
+        if created_at:
+            try:
+                created_time = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                minutes_passed = (now - created_time).total_seconds() / 60
+                if minutes_passed < 60:
+                    remaining = int(60 - minutes_passed)
+                    return False, f"Спор можно открыть через {remaining} мин. (активная сделка должна быть старше 60 минут)"
+                return True, ""
+            except Exception:
+                pass
+        return True, ""
+
+    return False, f"Спор невозможен для сделки со статусом '{status}'"
+
+
 @router.post("/qr-aggregator/trades/{trade_id}/dispute")
 async def open_qr_dispute(trade_id: str, data: QRDisputeRequest = Body(...), user: dict = Depends(get_current_user)):
-    """Open dispute on QR aggregator trade (authenticated user)"""
+    """Open dispute on QR aggregator trade (authenticated user).
+    Per spec: only merchant or exchange trader (buyer) can open.
+    Conditions: active >60min OR cancelled status.
+    """
     trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
     if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    if not trade.get("is_qr_aggregator"):
-        raise HTTPException(status_code=400, detail="Not a QR aggregator trade")
-    if trade["status"] == "disputed":
-        raise HTTPException(status_code=400, detail="Already disputed")
-    if trade["status"] in ("completed", "cancelled"):
-        raise HTTPException(status_code=400, detail="Trade already finished")
+        raise HTTPException(status_code=404, detail="Сделка не найдена")
+
+    # Check eligibility (QR only, status conditions)
+    eligible, err = _check_dispute_eligibility(trade)
+    if not eligible:
+        raise HTTPException(status_code=400, detail=err)
+
+    # Check no existing active dispute
+    existing_dispute = await db.unified_conversations.find_one(
+        {"related_id": trade_id, "type": "p2p_dispute", "status": {"$nin": ["resolved", "closed"]}},
+        {"_id": 0}
+    )
+    if existing_dispute:
+        raise HTTPException(status_code=400, detail="По этой сделке уже есть активный спор")
 
     user_id = user["id"]
     user_role = user.get("role", "")
-    valid_ids = [trade.get("trader_id"), trade.get("buyer_id"), trade.get("merchant_id"), trade.get("provider_id")]
-    valid_ids = [x for x in valid_ids if x]
     is_admin = user.get("admin_role") in ("admin", "owner", "mod_p2p")
-    if user_id not in valid_ids and not is_admin:
-        raise HTTPException(status_code=403, detail="Not a participant")
 
-    if user_id == trade.get("provider_id") or user_role == "qr_provider":
-        opener = "QR provider"
-    elif user_id == trade.get("merchant_id") or user_role == "merchant":
-        opener = "merchant"
-    elif is_admin:
-        opener = "admin"
+    # Per spec section 4: only merchant or exchange trader (buyer) can open
+    is_merchant = user_id == trade.get("merchant_id") or user_role == "merchant"
+    is_buyer_trader = (
+        user_role == "trader" and
+        user_id == trade.get("buyer_id") and
+        not trade.get("merchant_id")  # exchange trade (stakan), no merchant
+    )
+
+    if not is_merchant and not is_buyer_trader and not is_admin:
+        raise HTTPException(status_code=403, detail="Только мерчант или покупатель (трейдер на бирже) могут открыть спор")
+
+    if is_merchant:
+        opener = "мерчант"
+        opener_en = "merchant"
+    elif is_buyer_trader:
+        opener = "покупатель (трейдер)"
+        opener_en = "trader"
     else:
-        opener = "buyer"
+        opener = "администратор"
+        opener_en = "admin"
 
-    reason = data.reason or "Payment issue"
+    reason = data.reason or "Проблема с оплатой"
     now = datetime.now(timezone.utc).isoformat()
 
+    # Freeze provider funds (if not already frozen from trade creation)
+    provider_id = trade.get("provider_id")
+    total_freeze_usdt = trade.get("total_freeze_usdt", 0)
+    freeze_applied = False
+    if provider_id and total_freeze_usdt > 0 and trade.get("status") == "cancelled":
+        # On cancelled trades, funds were already unfrozen by _cancel_qr_trade.
+        # Re-freeze them for the dispute period.
+        result = await db.qr_providers.update_one(
+            {"id": provider_id, "balance_usdt": {"$gte": total_freeze_usdt}},
+            {"$inc": {"frozen_usdt": total_freeze_usdt}}
+        )
+        freeze_applied = result.modified_count > 0
+        if freeze_applied:
+            logger.info(f"[QR Dispute] Re-frozen {total_freeze_usdt:.4f} USDT for provider {provider_id} (dispute on cancelled trade)")
+    elif provider_id and total_freeze_usdt > 0:
+        # For active trades, funds are already frozen from trade creation — keep them frozen
+        freeze_applied = True
+        logger.info(f"[QR Dispute] Funds already frozen for provider {provider_id} (active trade dispute)")
+
+    # Update trade status
     await db.trades.update_one(
         {"id": trade_id},
         {"$set": {
             "status": "disputed", "disputed_at": now,
             "dispute_reason": reason, "disputed_by": user_id,
-            "disputed_by_role": opener, "has_dispute": True,
+            "disputed_by_role": opener_en, "has_dispute": True,
             "is_qr_aggregator_dispute": True,
+            "dispute_freeze_applied": freeze_applied,
+            "previous_status": trade.get("status"),
         }}
     )
+
+    # Create conversation in existing P2P chat system
     conv = await _create_qr_dispute_conversation(trade, reason, opener, user_id)
 
+    # Build detailed system message per spec section 10
+    detail_content = _build_dispute_system_message(trade, opener, reason, now)
     system_msg = {
         "id": str(uuid.uuid4()), "trade_id": trade_id,
         "sender_id": "system", "sender_type": "system",
         "is_system": True, "sender_role": "system",
-        "content": f"Dispute opened by {opener}. Reason: {reason}. Admin will join.",
+        "content": detail_content,
         "created_at": now
     }
     await db.trade_messages.insert_one(system_msg)
-    logger.info(f"[QR Dispute] Trade {trade_id} disputed by {opener} ({user_id}): {reason}")
+
+    # Audit log
+    await _audit_log_dispute("dispute_opened", trade_id, user_id, opener_en, {
+        "reason": reason, "freeze_applied": freeze_applied,
+        "total_freeze_usdt": total_freeze_usdt,
+        "previous_status": trade.get("status"),
+    })
+
+    # Webhook to merchant
+    try:
+        from routes.trades import send_merchant_webhook_on_trade
+        await send_merchant_webhook_on_trade(trade, "disputed", {
+            "trade_id": trade_id, "reason": reason,
+            "disputed_at": now, "disputed_by": opener_en,
+            "is_qr_aggregator": True,
+        })
+    except Exception as e:
+        logger.error(f"[QR Dispute] Webhook error: {e}")
+
+    logger.info(f"[QR Dispute] Trade {trade_id} disputed by {opener_en} ({user_id}): {reason}")
     return {"status": "dispute_opened", "conversation_id": conv["id"], "trade_id": trade_id}
 
 
 @router.post("/qr-aggregator/trades/{trade_id}/dispute-public")
 async def open_qr_dispute_public(trade_id: str, data: QRDisputeRequest = Body(...)):
-    """Open dispute on QR trade without auth (client clicks Payment Failed)"""
+    """Open dispute on QR trade without auth (merchant's client scenario).
+    Per spec: client of merchant cannot open dispute directly.
+    This endpoint is kept for backward compat but now returns guidance.
+    """
     trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
     if not trade:
-        raise HTTPException(status_code=404, detail="Trade not found")
-    if not trade.get("is_qr_aggregator"):
-        raise HTTPException(status_code=400, detail="Not a QR aggregator trade")
+        raise HTTPException(status_code=404, detail="Сделка не найдена")
+
+    if not trade.get("qr_aggregator_trade") and not trade.get("is_qr_aggregator"):
+        raise HTTPException(status_code=400, detail="Не является сделкой QR-агрегатора")
+
     if trade["status"] == "disputed":
-        return {"status": "already_disputed", "message": "Already disputed"}
-    if trade["status"] in ("completed", "cancelled"):
-        raise HTTPException(status_code=400, detail="Trade already finished")
+        return {"status": "already_disputed", "message": "Спор уже открыт"}
 
-    reason = data.reason or "Payment failed"
-    opener = "client"
+    # Per spec: client cannot open dispute. Instruct to contact merchant.
+    return {
+        "status": "not_allowed",
+        "message": "Клиент мерчанта не может открыть спор напрямую. Обратитесь к мерчанту для открытия спора."
+    }
+
+
+class QRDisputeResolveRequest(BaseModel):
+    resolution: str = Field(..., description="'complete' to complete trade, 'cancel' to cancel and unfreeze")
+    reason: str = Field(default="", max_length=500)
+
+
+@router.post("/qr-aggregator/trades/{trade_id}/resolve-dispute")
+async def resolve_qr_dispute(
+    trade_id: str,
+    data: QRDisputeResolveRequest = Body(...),
+    user: dict = Depends(get_current_user)
+):
+    """Resolve QR aggregator dispute (admin/moderator only).
+    Per spec section 12:
+    - 'complete': complete trade with standard calculations, close dispute
+    - 'cancel': cancel trade, unfreeze provider funds, close dispute
+    """
+    is_admin = user.get("admin_role") in ("admin", "owner", "mod_p2p")
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Только администратор или модератор может разрешить спор")
+
+    trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
+    if not trade:
+        raise HTTPException(status_code=404, detail="Сделка не найдена")
+    if trade.get("status") not in ("disputed",):
+        raise HTTPException(status_code=400, detail="Сделка не в статусе спора")
+
+    resolution = data.resolution
+    resolve_reason = data.reason or ""
     now = datetime.now(timezone.utc).isoformat()
+    provider_id = trade.get("provider_id")
+    total_freeze_usdt = trade.get("total_freeze_usdt", 0)
 
-    await db.trades.update_one(
-        {"id": trade_id},
+    if resolution == "complete":
+        # --- COMPLETE TRADE: standard financial calculations ---
+        base_rate = await _get_base_rate()
+        amount_usdt = trade.get("amount_usdt", 0)
+        amount_rub = trade.get("amount_rub", 0)
+        platform_commission_usdt = trade.get("platform_commission_usdt", 0)
+
+        platform_total_usdt = platform_commission_usdt
+
+        if trade.get("merchant_id"):
+            merchant = await db.merchants.find_one({"id": trade["merchant_id"]}, {"_id": 0})
+            if merchant:
+                commission_rate = merchant.get("commission_rate", 5.0)
+                merchant_commission_usdt = round(amount_usdt * commission_rate / 100, 6)
+                merchant_receives_usdt = round(amount_usdt - merchant_commission_usdt, 6)
+                platform_total_usdt = round(platform_commission_usdt + merchant_commission_usdt, 6)
+
+                await db.trades.update_one(
+                    {"id": trade_id},
+                    {"$set": {
+                        "merchant_receives_usdt": merchant_receives_usdt,
+                        "merchant_commission_usdt": merchant_commission_usdt,
+                        "platform_receives_usdt": platform_total_usdt,
+                    }}
+                )
+                await db.merchants.update_one(
+                    {"id": trade["merchant_id"]},
+                    {"$inc": {"balance_usdt": merchant_receives_usdt}}
+                )
+                logger.info(f"[QR Dispute Resolve] Merchant {trade['merchant_id']} credited {merchant_receives_usdt:.4f} USDT")
+        else:
+            # Exchange trade: credit buyer
+            buyer_id = trade.get("buyer_id")
+            if buyer_id:
+                await db.traders.update_one(
+                    {"id": buyer_id},
+                    {"$inc": {"balance_usdt": amount_usdt}}
+                )
+                logger.info(f"[QR Dispute Resolve] Buyer {buyer_id} credited {amount_usdt:.4f} USDT")
+
+            await db.trades.update_one(
+                {"id": trade_id},
+                {"$set": {
+                    "platform_receives_usdt": platform_total_usdt,
+                    "buyer_receives_usdt": amount_usdt,
+                }}
+            )
+
+        # Provider: unfreeze and deduct (same as normal completion)
+        if provider_id and total_freeze_usdt > 0:
+            result = await db.qr_providers.update_one(
+                {"id": provider_id, "frozen_usdt": {"$gte": total_freeze_usdt}, "balance_usdt": {"$gte": total_freeze_usdt}},
+                {"$inc": {"frozen_usdt": -total_freeze_usdt, "balance_usdt": -total_freeze_usdt}}
+            )
+            if result.modified_count == 0:
+                prov = await db.qr_providers.find_one({"id": provider_id})
+                if prov:
+                    new_frozen = max(0, prov.get("frozen_usdt", 0) - total_freeze_usdt)
+                    new_bal = max(0, prov.get("balance_usdt", 0) - total_freeze_usdt)
+                    await db.qr_providers.update_one(
+                        {"id": provider_id},
+                        {"$set": {"frozen_usdt": new_frozen, "balance_usdt": new_bal}}
+                    )
+
+        # Platform balance
+        await db.settings.update_one(
+            {"type": "platform_balance"},
+            {"$inc": {"balance_usdt": platform_total_usdt}},
+            upsert=True
+        )
+
+        # Update trade status
+        await db.trades.update_one(
+            {"id": trade_id},
+            {"$set": {
+                "status": "completed", "completed_at": now,
+                "dispute_resolved_at": now, "dispute_resolved_by": user["id"],
+                "dispute_resolution": "completed",
+            }}
+        )
+
+        # Update invoice
+        if trade.get("invoice_id"):
+            await db.merchant_invoices.update_one(
+                {"id": trade["invoice_id"]}, {"$set": {"status": "completed", "completed_at": now}}
+            )
+
+        message = f"Спор разрешён: сделка завершена. Стандартные расчёты выполнены. {resolve_reason}"
+
+        # Webhook
+        try:
+            from routes.trades import send_merchant_webhook_on_trade
+            updated_trade = await db.trades.find_one({"id": trade_id}, {"_id": 0}) or trade
+            await send_merchant_webhook_on_trade(updated_trade, "completed", {
+                "trade_id": trade_id, "completed_at": now,
+                "qr_aggregator": True, "resolved_from_dispute": True,
+                "rate": base_rate,
+                "merchant_amount_usdt": updated_trade.get("merchant_receives_usdt"),
+            })
+        except Exception as e:
+            logger.error(f"[QR Dispute Resolve] Webhook error: {e}")
+
+    elif resolution == "cancel":
+        # --- CANCEL TRADE: unfreeze provider funds, no calculations ---
+        if provider_id and total_freeze_usdt > 0:
+            result = await db.qr_providers.update_one(
+                {"id": provider_id, "frozen_usdt": {"$gte": total_freeze_usdt}},
+                {"$inc": {"frozen_usdt": -total_freeze_usdt}}
+            )
+            if result.modified_count == 0:
+                prov = await db.qr_providers.find_one({"id": provider_id})
+                if prov:
+                    new_frozen = max(0, prov.get("frozen_usdt", 0) - total_freeze_usdt)
+                    await db.qr_providers.update_one(
+                        {"id": provider_id},
+                        {"$set": {"frozen_usdt": new_frozen}}
+                    )
+            logger.info(f"[QR Dispute Resolve] Unfrozen {total_freeze_usdt:.4f} USDT for provider {provider_id}")
+
+        await db.trades.update_one(
+            {"id": trade_id},
+            {"$set": {
+                "status": "cancelled", "cancelled_at": now,
+                "dispute_resolved_at": now, "dispute_resolved_by": user["id"],
+                "dispute_resolution": "cancelled",
+            }}
+        )
+
+        if trade.get("invoice_id"):
+            await db.merchant_invoices.update_one(
+                {"id": trade["invoice_id"]}, {"$set": {"status": "cancelled"}}
+            )
+
+        message = f"Спор разрешён: сделка отменена. Средства провайдера разморожены. {resolve_reason}"
+
+        # Webhook
+        try:
+            from routes.trades import send_merchant_webhook_on_trade
+            await send_merchant_webhook_on_trade(trade, "cancelled", {
+                "trade_id": trade_id, "cancelled_at": now,
+                "qr_aggregator": True, "resolved_from_dispute": True,
+            })
+        except Exception as e:
+            logger.error(f"[QR Dispute Resolve] Webhook error: {e}")
+
+    else:
+        raise HTTPException(status_code=400, detail="Допустимые значения: 'complete' или 'cancel'")
+
+    # Close the unified conversation
+    await db.unified_conversations.update_one(
+        {"related_id": trade_id, "type": "p2p_dispute"},
         {"$set": {
-            "status": "disputed", "disputed_at": now,
-            "dispute_reason": reason, "disputed_by": "client",
-            "disputed_by_role": opener, "has_dispute": True,
-            "is_qr_aggregator_dispute": True,
+            "resolved": True, "resolved_at": now,
+            "resolved_by": user["id"], "status": "resolved",
         }}
     )
-    conv = await _create_qr_dispute_conversation(trade, reason, opener, "client")
 
-    system_msg = {
+    # System message in trade chat
+    sys_msg = {
         "id": str(uuid.uuid4()), "trade_id": trade_id,
         "sender_id": "system", "sender_type": "system",
         "is_system": True, "sender_role": "system",
-        "content": f"Dispute opened by client. Reason: {reason}. Admin will join.",
-        "created_at": now
+        "content": message, "created_at": now,
     }
-    await db.trade_messages.insert_one(system_msg)
+    await db.trade_messages.insert_one(sys_msg)
 
-    try:
-        from routes.trades import send_merchant_webhook_on_trade
-        await send_merchant_webhook_on_trade(trade, "disputed", {
-            "trade_id": trade_id, "reason": reason,
-            "disputed_at": now, "disputed_by": opener, "is_qr_aggregator": True,
+    # System message in unified conversation
+    conv = await db.unified_conversations.find_one({"related_id": trade_id, "type": "p2p_dispute"}, {"_id": 0})
+    if conv:
+        await db.unified_messages.insert_one({
+            "id": str(uuid.uuid4()), "conversation_id": conv["id"],
+            "sender_id": "system", "sender_role": "system",
+            "sender_name": "System", "content": message,
+            "is_system": True, "is_deleted": False, "created_at": now,
         })
-    except Exception as e:
-        logger.error(f"[QR Dispute] Webhook error: {e}")
 
-    logger.info(f"[QR Dispute] Trade {trade_id} disputed publicly (client): {reason}")
-    return {"status": "dispute_opened", "conversation_id": conv["id"], "trade_id": trade_id}
+    # Audit log
+    await _audit_log_dispute("dispute_resolved", trade_id, user["id"], user.get("admin_role", "admin"), {
+        "resolution": resolution, "reason": resolve_reason,
+    })
+
+    logger.info(f"[QR Dispute Resolve] Trade {trade_id} resolved as '{resolution}' by {user['id']}")
+    return {"status": resolution, "trade_id": trade_id}
+
+
+@router.get("/qr-aggregator/trades/{trade_id}/dispute-status")
+async def get_qr_dispute_status(trade_id: str):
+    """Get dispute eligibility and status for a QR trade (public endpoint for UI)"""
+    trade = await db.trades.find_one({"id": trade_id}, {"_id": 0})
+    if not trade:
+        raise HTTPException(status_code=404, detail="Сделка не найдена")
+
+    is_qr = trade.get("qr_aggregator_trade") or trade.get("is_qr_aggregator")
+    eligible, reason = _check_dispute_eligibility(trade) if is_qr else (False, "Не QR-агрегатор")
+
+    conv = await db.unified_conversations.find_one(
+        {"related_id": trade_id, "type": "p2p_dispute"},
+        {"_id": 0, "id": 1, "status": 1}
+    )
+
+    return {
+        "trade_id": trade_id,
+        "is_qr_aggregator": is_qr,
+        "status": trade.get("status"),
+        "dispute_eligible": eligible,
+        "dispute_reason": reason if not eligible else None,
+        "has_active_dispute": trade.get("status") == "disputed",
+        "conversation_id": conv.get("id") if conv else None,
+        "conv_status": conv.get("status") if conv else None,
+        "created_at": trade.get("created_at"),
+    }
 
 
 async def _create_qr_dispute_conversation(trade: dict, reason: str, opener: str, opened_by: str) -> dict:
-    """Create or reuse unified conversation for QR aggregator dispute"""
+    """Create or reuse unified conversation for QR aggregator dispute.
+    Uses existing P2P chat system (unified_conversations + unified_messages).
+    Per spec section 9: participants are merchant, provider, trader (if exchange), moderator, admin, super-admin.
+    Client of merchant does NOT participate.
+    """
     trade_id = trade["id"]
     now = datetime.now(timezone.utc).isoformat()
 
@@ -1491,47 +1900,71 @@ async def _create_qr_dispute_conversation(trade: dict, reason: str, opener: str,
     participants = []
     unread = {}
 
+    # Provider
     provider_id = trade.get("provider_id")
     if provider_id:
         provider = await db.qr_providers.find_one({"id": provider_id}, {"_id": 0})
         pname = provider.get("login", provider.get("name", "QR Provider")) if provider else "QR Provider"
         participants.append({"user_id": provider_id, "role": "qr_provider", "name": pname})
-        unread[provider_id] = 0
+        unread[provider_id] = 1
 
+    # Merchant
     merchant_id = trade.get("merchant_id")
     if merchant_id:
         merchant = await db.merchants.find_one({"id": merchant_id}, {"_id": 0})
         mname = merchant.get("company_name", merchant.get("login", "Merchant")) if merchant else "Merchant"
         participants.append({"user_id": merchant_id, "role": "merchant", "name": mname})
-        unread[merchant_id] = 0
+        unread[merchant_id] = 1
 
+    # Trader/buyer (only if exchange trade — no merchant)
     buyer_id = trade.get("buyer_id") or trade.get("client_id")
-    if buyer_id and buyer_id != merchant_id:
+    if buyer_id and buyer_id != merchant_id and buyer_id != "anonymous_client":
         buyer = await db.traders.find_one({"id": buyer_id}, {"_id": 0})
-        bname = buyer.get("nickname", buyer.get("login", "Buyer")) if buyer else "Buyer"
-        participants.append({"user_id": buyer_id, "role": "p2p_buyer", "name": bname})
-        unread[buyer_id] = 0
+        if buyer:
+            bname = buyer.get("nickname", buyer.get("login", "Buyer"))
+            participants.append({"user_id": buyer_id, "role": "p2p_buyer", "name": bname})
+            unread[buyer_id] = 1
 
+    # Trader (seller) if not qr_aggregator placeholder
     trader_id = trade.get("trader_id")
     if trader_id and trader_id != "qr_aggregator":
         trader = await db.traders.find_one({"id": trader_id}, {"_id": 0})
         if trader:
             tname = trader.get("nickname", trader.get("login", "Trader"))
             participants.append({"user_id": trader_id, "role": "p2p_seller", "name": tname})
-            unread[trader_id] = 0
+            unread[trader_id] = 1
 
+    # Moderator
     moderator = await db.admins.find_one({"admin_role": "mod_p2p", "is_active": True}, {"_id": 0})
     if not moderator:
         moderator = await db.admins.find_one({"admin_role": {"$in": ["admin", "owner"]}}, {"_id": 0})
-
     if moderator:
         mod_id = moderator["id"]
         mod_name = moderator.get("login", "Moderator")
         participants.append({"user_id": mod_id, "role": "mod_p2p", "name": mod_name, "joined_at": now})
-        unread[mod_id] = 0
+        unread[mod_id] = 1
+
+    # Admin/super-admin (add all admins and owners as participants)
+    admins = await db.admins.find(
+        {"admin_role": {"$in": ["admin", "owner"]}, "is_active": True},
+        {"_id": 0}
+    ).to_list(10)
+    existing_ids = {p["user_id"] for p in participants}
+    for adm in admins:
+        if adm["id"] not in existing_ids:
+            participants.append({
+                "user_id": adm["id"], "role": adm.get("admin_role", "admin"),
+                "name": adm.get("login", "Admin"), "joined_at": now,
+            })
+            unread[adm["id"]] = 1
+
+    # Opener gets 0 unread (they already see it)
+    if opened_by in unread:
+        unread[opened_by] = 0
 
     amount_usdt = trade.get("amount_usdt", 0)
-    title = f"QR Dispute: {amount_usdt:.4f} USDT"
+    amount_rub = trade.get("amount_rub", 0)
+    title = f"Спор QR-агрегатора: {amount_rub:.0f} RUB ({amount_usdt:.2f} USDT)"
 
     if existing:
         await db.unified_conversations.update_one(
@@ -1546,6 +1979,7 @@ async def _create_qr_dispute_conversation(trade: dict, reason: str, opener: str,
             }}
         )
         conv = existing
+        conv["id"] = existing["id"]
     else:
         conv_id = str(uuid.uuid4())
         conv = {
@@ -1559,19 +1993,21 @@ async def _create_qr_dispute_conversation(trade: dict, reason: str, opener: str,
         }
         await db.unified_conversations.insert_one(conv)
 
+    # Detailed system message with full trade info (spec section 10)
+    detail_msg = _build_dispute_system_message(trade, opener, reason, now)
     msgs = [
         {
             "id": str(uuid.uuid4()), "conversation_id": conv["id"],
             "sender_id": "system", "sender_role": "system",
-            "sender_name": "System",
-            "content": f"QR Aggregator dispute opened by {opener}. Reason: {reason}",
+            "sender_name": "Система",
+            "content": detail_msg,
             "is_system": True, "is_deleted": False, "created_at": now
         },
         {
             "id": str(uuid.uuid4()), "conversation_id": conv["id"],
             "sender_id": "system", "sender_role": "system",
-            "sender_name": "System",
-            "content": "P2P Moderator joined. QR Aggregator Dispute.",
+            "sender_name": "Система",
+            "content": "Модератор P2P подключён к спору QR-агрегатора.",
             "is_system": True, "is_deleted": False, "created_at": now
         }
     ]
@@ -1587,8 +2023,11 @@ async def get_provider_disputes(user: dict = Depends(get_current_user)):
 
     provider_id = user["id"]
     trades = await db.trades.find(
-        {"provider_id": provider_id, "is_qr_aggregator": True,
-         "$or": [{"status": "disputed"}, {"has_dispute": True}]},
+        {"provider_id": provider_id,
+         "$and": [
+             {"$or": [{"qr_aggregator_trade": True}, {"is_qr_aggregator": True}]},
+             {"$or": [{"status": "disputed"}, {"has_dispute": True}]},
+         ]},
         {"_id": 0}
     ).sort("disputed_at", -1).to_list(100)
 
@@ -1618,7 +2057,7 @@ async def get_provider_disputes(user: dict = Depends(get_current_user)):
             "dispute_reason": trade.get("dispute_reason", ""),
             "disputed_at": trade.get("disputed_at"),
             "disputed_by_role": trade.get("disputed_by_role", ""),
-            "dispute_resolved": trade.get("dispute_resolved", False),
+            "dispute_resolved": trade.get("dispute_resolution") is not None,
             "dispute_resolution": trade.get("dispute_resolution"),
             "unread_count": unread, "conv_status": conv_status,
             "created_at": trade.get("created_at"),
@@ -1630,13 +2069,18 @@ async def get_provider_disputes(user: dict = Depends(get_current_user)):
 @router.get("/qr-aggregator/admin/disputes")
 async def get_qr_disputes_admin(
     provider_id: str = None,
+    status: str = None,
     user: dict = Depends(require_admin_level(50))
 ):
-    """Admin: Get all QR aggregator disputes"""
-    query = {"is_qr_aggregator": True,
-             "$or": [{"status": "disputed"}, {"has_dispute": True}]}
+    """Admin: Get all QR aggregator disputes with filters"""
+    query = {"$and": [
+        {"$or": [{"qr_aggregator_trade": True}, {"is_qr_aggregator": True}]},
+        {"$or": [{"status": "disputed"}, {"has_dispute": True}]},
+    ]}
     if provider_id:
         query["provider_id"] = provider_id
+    if status:
+        query["status"] = status
 
     trades = await db.trades.find(query, {"_id": 0}).sort("disputed_at", -1).to_list(200)
 
@@ -1670,7 +2114,7 @@ async def get_qr_disputes_admin(
             "dispute_reason": trade.get("dispute_reason", ""),
             "disputed_at": trade.get("disputed_at"),
             "disputed_by_role": trade.get("disputed_by_role", ""),
-            "dispute_resolved": trade.get("dispute_resolved", False),
+            "dispute_resolved": trade.get("dispute_resolution") is not None,
             "dispute_resolution": trade.get("dispute_resolution"),
             "is_qr_aggregator_dispute": True,
             "conv_status": conv.get("status") if conv else None,
@@ -1678,6 +2122,19 @@ async def get_qr_disputes_admin(
         })
 
     return {"disputes": disputes, "total": len(disputes)}
+
+
+@router.get("/qr-aggregator/admin/dispute-audit-log")
+async def get_dispute_audit_log(
+    trade_id: str = None,
+    user: dict = Depends(require_admin_level(50))
+):
+    """Admin: Get audit log for dispute actions"""
+    query = {}
+    if trade_id:
+        query["trade_id"] = trade_id
+    logs = await db.dispute_audit_log.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"logs": logs, "total": len(logs)}
 
 # ==================== Order Book (Stakan) Integration ====================
 

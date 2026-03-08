@@ -130,6 +130,9 @@ function ConversationItem({ conv, isSelected, onClick, showArchive, onDelete }) 
             <span className={`text-sm font-medium truncate ${isCryptoDispute ? "text-[#EF4444]" : "text-white"}`}>
               {conv.title}
             </span>
+            {conv.is_qr_aggregator_dispute && (
+              <span className="bg-[#F97316] text-white text-[9px] px-1.5 py-0.5 rounded">QR</span>
+            )}
             {(conv.status === "disputed" || conv.status === "dispute") && (
               <span className="bg-[#EF4444] text-white text-[9px] px-1.5 py-0.5 rounded animate-pulse">СПОР</span>
             )}
@@ -141,7 +144,7 @@ function ConversationItem({ conv, isSelected, onClick, showArchive, onDelete }) 
             )}
           </div>
           <p className={`text-xs truncate ${isCryptoDispute ? "text-[#EF4444]/70" : "text-[#71717A]"}`}>
-            {conv.subtitle}
+            {conv.is_qr_aggregator_dispute ? "Спор QR-агрегатора" : conv.subtitle}
           </p>
           {showArchive && conv.category_label && (
             <p className="text-[#F59E0B]/70 text-[10px] mt-0.5">{conv.category_label}</p>
