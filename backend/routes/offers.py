@@ -516,17 +516,12 @@ async def get_operators_for_payment(
             {"available_usdt": {"$gte": filter_amount_usdt}}
         ]
     
-    offers = await db.offers.find(query, {"_id": 0}).sort("price_rub", 1).to_list(50)
+    offers = await db.offers.find(query, {"_id": 0}).sort("price_rub", 1).to_list(100)
     
     operators = []
-    seen_traders = set()  # Один трейдер - один оффер (лучший)
     
     for offer in offers:
         trader_id = offer.get("trader_id")
-        
-        # Пропускаем если уже добавили оффер этого трейдера
-        if trader_id in seen_traders:
-            continue
         
         # Получаем информацию о трейдере
         trader = await db.traders.find_one(
@@ -560,7 +555,7 @@ async def get_operators_for_payment(
             if max_amt and filter_amount_usdt > max_amt and filter_amount_usdt > available:
                 continue
         
-        seen_traders.add(trader_id)
+        # (no per-trader dedup — show all matching offers)
         
         # Проверяем онлайн статус
         is_online = False
