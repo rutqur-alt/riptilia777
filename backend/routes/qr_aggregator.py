@@ -2057,7 +2057,8 @@ async def qr_aggregator_buy(data: QRAggregatorBuyRequest, background_tasks: Back
     # Step 3: Two-level price calculation
     provider_rate = base_rate * (1 + provider_markup_pct / 100)
     qr_price = round(provider_rate * (1 + platform_markup_pct / 100), 2)
-    amount_rub = round(data.amount_usdt * qr_price, 2)
+    amount_usdt = data.amount_usdt
+    amount_rub = round(amount_usdt * qr_price, 2)
 
     # Step 4: Calculate platform commission in USDT
     # Platform gets: amount_usdt * platform_markup_pct / 100
