@@ -173,42 +173,34 @@ export default function DirectBuyPage() {
     try {
       let response;
       if (isQr) {
-        // QR aggregator: use dedicated endpoint
+        // QR aggregator: use dedicated endpoint (same flow as merchant payment page)
         response = await axios.post(`${API}/qr-aggregator/buy`, {
           amount_usdt: amountUsdt,
           method: offer.qr_method || "qr"
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        // Normalize QR response to trade format
         const qrData = response.data;
-        const qrRequisite = qrData.payment_requisite || {};
-        const normalizedTrade = {
+        // Save trade info for the waiting page
+        const qrTrade = {
           id: qrData.trade_id,
-          status: qrData.status || "pending",
+          status: "pending",
           amount_usdt: qrData.amount_usdt,
           amount_rub: qrData.amount_rub,
           price_rub: qrData.price_rub,
           payment_url: qrData.payment_url,
-          qr_data: qrData.qr_data,
           is_qr_trade: true,
-          requisite: {
-            type: qrRequisite.card_number ? "card" : "qr",
-            data: {
-              bank_name: qrRequisite.bank_name || "",
-              card_number: qrRequisite.card_number || "",
-              holder_name: qrRequisite.cardholder_name || "",
-              phone: qrRequisite.sbp || "",
-              qr_data: qrData.qr_data || "",
-            }
-          },
           expires_at: qrData.expires_at,
           expires_in: qrData.expires_in || 1800,
         };
-        setTrade(normalizedTrade);
+        setTrade(qrTrade);
         if (qrData.expires_in) setTimeLeft(qrData.expires_in);
         setStep("paying");
-        toast.success("Сделка создана!");
+        toast.success("Сделка создана! Переход к оплате...");
+        // Auto-redirect to TrustGain payment page (same as merchant client flow)
+        if (qrData.payment_url) {
+          window.open(qrData.payment_url, "_blank");
+        }
         return;
       } else {
         // Regular P2P: use trades/direct
@@ -456,8 +448,113 @@ export default function DirectBuyPage() {
   // Step 2: Paying - show requisites and chat
   if (step === "paying" && trade) {
     const requisite = trade.requisite || selectedRequisite;
-    const amountRub = (trade.amount_usdt * offer.price_rub).toFixed(0);
-    
+    const amountRub = trade.amount_rub ? trade.amount_rub.toFixed(0) : (trade.amount_usdt * offer.price_rub).toFixed(0);
+
+    // ===== QR AGGREGATOR TRADE: simplified view (same flow as merchant payment page) =====
+    if (trade.is_qr_trade) {
+      return (
+        <div className="min-h-screen bg-[#0A0A0A] px-4 py-8">
+          <div className="max-w-lg mx-auto">
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-8">
+              <Link to="/" className="p-2 rounded-xl bg-white/5 hover:bg-white/10">
+                <ArrowLeft className="w-5 h-5 text-white" />
+              </Link>
+              <div>
+                <h1 className="text-xl font-bold text-white font-['Unbounded']">Сделка #{trade.id?.slice(0, 8)}</h1>
+                <p className="text-sm text-[#71717A]">Покупка {trade.amount_usdt} USDT через QR-агрегатор</p>
+              </div>
+            </div>
+
+            {/* Status */}
+            <div className={`rounded-2xl p-4 text-center mb-6 ${
+              trade.status === "pending" ? "bg-[#F59E0B]/10 border border-[#F59E0B]/20" :
+              trade.status === "completed" ? "bg-[#10B981]/10 border border-[#10B981]/20" :
+              trade.status === "cancelled" ? "bg-[#EF4444]/10 border border-[#EF4444]/20" :
+              "bg-[#3B82F6]/10 border border-[#3B82F6]/20"
+            }`}>
+              {trade.status === "pending" && (
+                <>
+                  <Clock className="w-8 h-8 text-[#F59E0B] mx-auto mb-2" />
+                  <div className="text-2xl font-bold text-[#F59E0B] font-['JetBrains_Mono'] mb-1">
+                    {formatTime(timeLeft)}
+                  </div>
+                  <div className="text-sm text-[#F59E0B]/70">Ожидание оплаты</div>
+                </>
+              )}
+              {trade.status === "completed" && (
+                <>
+                  <CheckCircle className="w-8 h-8 text-[#10B981] mx-auto mb-2" />
+                  <div className="text-[#10B981] font-semibold text-lg">Сделка завершена!</div>
+                  <div className="text-sm text-[#10B981]/70 mt-1">{trade.amount_usdt} USDT зачислены на ваш баланс</div>
+                </>
+              )}
+              {trade.status === "cancelled" && (
+                <>
+                  <XCircle className="w-8 h-8 text-[#EF4444] mx-auto mb-2" />
+                  <div className="text-[#EF4444] font-semibold">Сделка отменена</div>
+                </>
+              )}
+            </div>
+
+            {/* Amount Info */}
+            <div className="bg-[#121212] border border-white/5 rounded-2xl p-6 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="text-[#71717A] text-sm">Сумма</div>
+                  <div className="text-white font-bold text-xl font-['JetBrains_Mono']">{trade.amount_usdt} USDT</div>
+                </div>
+                <div>
+                  <div className="text-[#71717A] text-sm">К оплате</div>
+                  <div className="text-white font-bold text-xl font-['JetBrains_Mono']">{parseInt(amountRub).toLocaleString()} ₽</div>
+                </div>
+              </div>
+              {trade.price_rub && (
+                <div className="mt-3 text-xs text-[#52525B]">
+                  Курс: {trade.price_rub} ₽/USDT
+                </div>
+              )}
+            </div>
+
+            {/* Payment Button */}
+            {trade.status === "pending" && trade.payment_url && (
+              <div className="space-y-3 mb-6">
+                <a href={trade.payment_url} target="_blank" rel="noopener noreferrer" className="block">
+                  <Button className="w-full h-14 bg-[#7C3AED] hover:bg-[#6D28D9] rounded-xl font-semibold text-lg">
+                    Перейти к оплате
+                  </Button>
+                </a>
+                <div className="bg-[#121212] border border-white/5 rounded-2xl p-4">
+                  <div className="flex items-start gap-3">
+                    <Info className="w-5 h-5 text-[#7C3AED] flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-[#A1A1AA]">
+                      <p>Оплатите на странице платёжной системы. После подтверждения оплаты USDT будут автоматически зачислены на ваш баланс.</p>
+                      <p className="mt-2 text-[#71717A]">Не нужно нажимать "Я оплатил" — подтверждение происходит автоматически.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Cancel Button */}
+            {trade.status === "pending" && (
+              <Button onClick={handleCancelTrade} variant="outline" className="w-full h-10 border-white/10 text-[#A1A1AA] rounded-xl mb-6">
+                Отменить сделку
+              </Button>
+            )}
+
+            <Link to="/">
+              <Button variant="ghost" className="w-full text-[#71717A]">
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Вернуться на главную
+              </Button>
+            </Link>
+          </div>
+        </div>
+      );
+    }
+
+    // ===== REGULAR P2P TRADE: full view with requisites + chat =====
     return (
       <div className="min-h-screen bg-[#0A0A0A] px-4 py-8">
         <div className="max-w-4xl mx-auto">
@@ -573,15 +670,6 @@ export default function DirectBuyPage() {
                     </div>
                   )}
 
-                  {/* QR aggregator auto-payment */}
-                  {requisite.type === "qr_aggregator" && (
-                    <div className="space-y-3">
-                      <div className="bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl p-3 text-center">
-                        <div className="text-[#10B981] text-sm font-medium">Автоматическая оплата через {requisite.value === "auto" ? "агрегатор" : requisite.name}</div>
-                      </div>
-                    </div>
-                  )}
-
                   {requisite.type === "sim" && (
                     <div className="space-y-3">
                       <div>
@@ -605,13 +693,6 @@ export default function DirectBuyPage() {
               {/* Actions */}
               {trade.status === "pending" && (
                 <div className="space-y-2">
-                  {trade.payment_url && (
-                    <a href={trade.payment_url} target="_blank" rel="noopener noreferrer" className="block">
-                      <Button className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] rounded-xl font-semibold">
-                        Перейти к оплате
-                      </Button>
-                    </a>
-                  )}
                   <Button onClick={handleMarkPaid} className="w-full h-12 bg-[#10B981] hover:bg-[#059669] rounded-xl" data-testid="mark-paid-btn" title="Подтвердить что оплата отправлена">
                     <CheckCircle className="w-4 h-4 mr-2" />
                     Я оплатил
