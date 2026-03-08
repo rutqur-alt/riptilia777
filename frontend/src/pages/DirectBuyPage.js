@@ -180,6 +180,36 @@ export default function DirectBuyPage() {
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        // Normalize QR response to trade format
+        const qrData = response.data;
+        const qrRequisite = qrData.payment_requisite || {};
+        const normalizedTrade = {
+          id: qrData.trade_id,
+          status: qrData.status || "pending",
+          amount_usdt: qrData.amount_usdt,
+          amount_rub: qrData.amount_rub,
+          price_rub: qrData.price_rub,
+          payment_url: qrData.payment_url,
+          qr_data: qrData.qr_data,
+          is_qr_trade: true,
+          requisite: {
+            type: qrRequisite.card_number ? "card" : "qr",
+            data: {
+              bank_name: qrRequisite.bank_name || "",
+              card_number: qrRequisite.card_number || "",
+              holder_name: qrRequisite.cardholder_name || "",
+              phone: qrRequisite.sbp || "",
+              qr_data: qrData.qr_data || "",
+            }
+          },
+          expires_at: qrData.expires_at,
+          expires_in: qrData.expires_in || 1800,
+        };
+        setTrade(normalizedTrade);
+        if (qrData.expires_in) setTimeLeft(qrData.expires_in);
+        setStep("paying");
+        toast.success("Сделка создана!");
+        return;
       } else {
         // Regular P2P: use trades/direct
         response = await axios.post(`${API}/trades/direct`, {
@@ -543,6 +573,15 @@ export default function DirectBuyPage() {
                     </div>
                   )}
 
+                  {/* QR aggregator auto-payment */}
+                  {requisite.type === "qr_aggregator" && (
+                    <div className="space-y-3">
+                      <div className="bg-[#10B981]/10 border border-[#10B981]/20 rounded-xl p-3 text-center">
+                        <div className="text-[#10B981] text-sm font-medium">Автоматическая оплата через {requisite.value === "auto" ? "агрегатор" : requisite.name}</div>
+                      </div>
+                    </div>
+                  )}
+
                   {requisite.type === "sim" && (
                     <div className="space-y-3">
                       <div>
@@ -566,6 +605,13 @@ export default function DirectBuyPage() {
               {/* Actions */}
               {trade.status === "pending" && (
                 <div className="space-y-2">
+                  {trade.payment_url && (
+                    <a href={trade.payment_url} target="_blank" rel="noopener noreferrer" className="block">
+                      <Button className="w-full h-12 bg-[#7C3AED] hover:bg-[#6D28D9] rounded-xl font-semibold">
+                        Перейти к оплате
+                      </Button>
+                    </a>
+                  )}
                   <Button onClick={handleMarkPaid} className="w-full h-12 bg-[#10B981] hover:bg-[#059669] rounded-xl" data-testid="mark-paid-btn" title="Подтвердить что оплата отправлена">
                     <CheckCircle className="w-4 h-4 mr-2" />
                     Я оплатил
