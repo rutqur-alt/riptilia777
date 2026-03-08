@@ -140,7 +140,7 @@ from routes.invoice_api import router as invoice_api_router
 from routes.referral import router as referral_router
 from routes.merchant_api import router as merchant_api_router
 from routes.event_notifications import router as event_notifications_router
-from routes.wallet_api import router as wallet_api_router
+from routes.wallet import router as wallet_api_router
 api_router.include_router(auth_router)
 api_router.include_router(traders_router)
 api_router.include_router(merchants_router)
