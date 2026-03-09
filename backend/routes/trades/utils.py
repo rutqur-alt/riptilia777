@@ -21,7 +21,7 @@ async def send_merchant_webhook_on_trade(trade: dict, status: str, extra_data: d
     try:
         # Try Invoice API webhook first (new system)
         if trade.get("invoice_id"):
-            from routes.invoice_api import send_webhook_notification
+            from routes.invoice.webhook_routes import send_webhook_notification
             
             # Sync invoice status with trade status
             await db.merchant_invoices.update_one(

@@ -136,7 +136,7 @@ from routes.admin_dashboard import router as admin_dashboard_router
 from routes.merchant_messages import router as merchant_messages_router
 from routes.chat_management import router as chat_management_router
 from routes.admin_management import router as admin_management_router
-from routes.invoice_api import router as invoice_api_router
+from routes.invoice import router as invoice_api_router
 from routes.referral import router as referral_router
 from routes.merchant_api import router as merchant_api_router
 from routes.event_notifications import router as event_notifications_router
