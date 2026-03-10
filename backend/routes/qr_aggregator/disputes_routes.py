@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 
-from core.auth import get_current_user
+from core.auth import get_current_user, require_admin_level
 from core.database import db
 
 from .router import logger, router

@@ -111,34 +111,18 @@ from routes.requisites import router as requisites_router
 from routes.offers import router as offers_router
 from routes.trades import router as trades_router
 from routes.payment_links import router as payment_links_router
-from routes.admin import router as admin_router
-from routes.super_admin import router as super_admin_router
-from routes.support import router as support_router
-from routes.shop import router as shop_router
-from routes.marketplace import router as marketplace_router
+from routes.administration.router import router as administration_router
+from routes.messaging import router as messaging_router
+from routes.market import router as market_router
 from routes.guarantor import router as guarantor_router
 from routes.merchant import router as merchant_router
 from routes.forum import router as forum_router
 from routes.reviews import router as reviews_router
 from routes.notifications import router as notifications_router
 from routes.transfers import router as transfers_router
-from routes.private_messaging import router as private_messaging_router
-from routes.crypto_payouts import router as crypto_payouts_router
-from routes.unified_messaging import router as unified_messaging_router
-from routes.trade_chats import router as trade_chats_router
-from routes.staff_admin import router as staff_admin_router
-from routes.admin_chats import router as admin_chats_router
-from routes.user_chats import router as user_chats_router
-from routes.admin_users import router as admin_users_router
-from routes.broadcast import router as broadcast_router
-from routes.staff_templates import router as staff_templates_router
-from routes.admin_dashboard import router as admin_dashboard_router
-from routes.merchant_messages import router as merchant_messages_router
-from routes.chat_management import router as chat_management_router
-from routes.admin_management import router as admin_management_router
 from routes.invoice import router as invoice_api_router
 from routes.referral import router as referral_router
-from routes.merchant_api import router as merchant_api_router
+from routes.merchant import router as merchant_api_router
 from routes.event_notifications import router as event_notifications_router
 from routes.wallet import router as wallet_api_router
 api_router.include_router(auth_router)
@@ -148,38 +132,20 @@ api_router.include_router(requisites_router)
 api_router.include_router(offers_router)
 api_router.include_router(trades_router)
 api_router.include_router(payment_links_router)
-api_router.include_router(admin_router)
-api_router.include_router(super_admin_router)
-api_router.include_router(support_router)
-api_router.include_router(shop_router)
-api_router.include_router(marketplace_router)
+api_router.include_router(administration_router)
+api_router.include_router(messaging_router)
+api_router.include_router(market_router)
 api_router.include_router(guarantor_router)
 api_router.include_router(merchant_router)
 api_router.include_router(forum_router)
 api_router.include_router(reviews_router)
 api_router.include_router(notifications_router)
 api_router.include_router(transfers_router)
-api_router.include_router(private_messaging_router)
-api_router.include_router(crypto_payouts_router)
-api_router.include_router(unified_messaging_router)
-api_router.include_router(trade_chats_router)
-api_router.include_router(staff_admin_router)
-api_router.include_router(admin_chats_router)
-api_router.include_router(user_chats_router)
-api_router.include_router(admin_users_router)
-api_router.include_router(broadcast_router)
-api_router.include_router(staff_templates_router)
-api_router.include_router(admin_dashboard_router)
-api_router.include_router(merchant_messages_router)
-api_router.include_router(chat_management_router)
-api_router.include_router(admin_management_router)
 api_router.include_router(invoice_api_router)
 api_router.include_router(referral_router)
 api_router.include_router(merchant_api_router)
 api_router.include_router(event_notifications_router)
 api_router.include_router(wallet_api_router)
-from routes.shop_api import router as shop_api_router
-api_router.include_router(shop_api_router)
 from routes.qr_aggregator import router as qr_aggregator_router
 api_router.include_router(qr_aggregator_router)
 

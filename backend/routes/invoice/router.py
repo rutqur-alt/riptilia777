@@ -4,7 +4,7 @@ from .operator_routes import router as operator_router
 from .payment_routes import router as payment_router
 from .stats_routes import router as stats_router
 from .dispute_routes import router as dispute_router
-from .webhook_routes import test_webhook_receiver, get_test_webhooks, clear_test_webhooks
+from .webhook_routes import router as webhook_router
 
 router = APIRouter(prefix="/v1/invoice", tags=["Invoice API v1"])
 
@@ -14,6 +14,7 @@ router.include_router(operator_router)
 router.include_router(payment_router)
 router.include_router(stats_router)
 router.include_router(dispute_router)
+router.include_router(webhook_router)
 
 # Webhook testing endpoints (were at the end of invoice_api.py)
 # We need to add them to the router manually or create a separate router for them

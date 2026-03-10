@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 import uuid
 from bson import ObjectId
 from core.database import db
+from pydantic import BaseModel
+from typing import Optional, Dict, List
 
 try:
     from routes.ws_routes import ws_manager
@@ -113,3 +115,30 @@ def _clean_doc(doc):
         return str(doc)
     else:
         return doc
+
+class TradeResponse(BaseModel):
+    id: str
+    offer_id: str
+    trader_id: str
+    buyer_id: str
+    amount_usdt: float
+    amount_rub: float
+    rate: float
+    status: str
+    created_at: datetime
+    payment_method: str
+    requisites: Optional[Dict] = None
+    chat_id: Optional[str] = None
+    dispute_id: Optional[str] = None
+    is_buyer: bool = False
+    can_dispute: bool = False
+    can_cancel: bool = False
+    can_confirm: bool = False
+    qr_aggregator_trade: bool = False
+    trade_number: Optional[str] = None
+
+class DirectTradeCreate(BaseModel):
+    offer_id: str
+    amount_usdt: float
+    requisite_id: Optional[str] = None
+    payment_method: Optional[str] = None

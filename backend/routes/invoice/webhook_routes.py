@@ -2,10 +2,13 @@ import logging
 import httpx
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List
+from fastapi import APIRouter, Request
 from core.database import db
 from .utils import generate_id, generate_signature
 
 logger = logging.getLogger(__name__)
+
+router = APIRouter()
 
 # Retry intervals для webhook (в секундах)
 WEBHOOK_RETRY_INTERVALS = [60, 300, 900, 3600, 7200, 14400, 43200, 86400]
@@ -124,3 +127,37 @@ async def send_webhook_notification(invoice_id: str, new_status: str, extra_data
         
     except Exception as e:
         logger.error(f"Error sending webhook for invoice {invoice_id}: {e}")
+
+# Test endpoints
+@router.post("/test-webhook-receiver")
+async def test_webhook_receiver(request: Request):
+    """Тестовый эндпоинт для приема вебхуков"""
+    try:
+        body = await request.json()
+        headers = dict(request.headers)
+        
+        await db.test_webhooks.insert_one({
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "headers": headers,
+            "body": body
+        })
+        
+        return {"status": "ok", "message": "Webhook received"}
+    except Exception as e:
+        logger.error(f"Error in test webhook receiver: {e}")
+        return {"status": "error", "message": str(e)}
+
+@router.get("/test-webhooks")
+async def get_test_webhooks():
+    """Получить список полученных тестовых вебхуков"""
+    webhooks = await db.test_webhooks.find().sort("received_at", -1).limit(20).to_list(20)
+    for w in webhooks:
+        if "_id" in w:
+            w["_id"] = str(w["_id"])
+    return webhooks
+
+@router.delete("/test-webhooks")
+async def clear_test_webhooks():
+    """Очистить историю тестовых вебхуков"""
+    await db.test_webhooks.delete_many({})
+    return {"status": "ok", "message": "Cleared"}
