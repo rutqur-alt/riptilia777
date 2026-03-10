@@ -442,8 +442,8 @@ async def startup():
 async def auto_cancel_expired_trades():
     """Background task to auto-cancel trades and invoices that have expired"""
     # Import webhook senders
-    from routes.merchant_api import send_merchant_webhook
-    from routes.invoice_api import send_webhook_notification
+    from routes.merchant import send_merchant_webhook
+    from routes.invoice import send_webhook_notification
     
     while True:
         try:
