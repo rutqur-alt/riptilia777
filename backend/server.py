@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add backend directory to sys.path to allow imports from models, routes, core, etc.
+sys.path.append(str(Path(__file__).parent))
+
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Body, Request, File, UploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from dotenv import load_dotenv
@@ -121,8 +127,9 @@ from routes.reviews import router as reviews_router
 from routes.notifications import router as notifications_router
 from routes.transfers import router as transfers_router
 from routes.invoice import router as invoice_api_router
+from routes.crypto_payouts import router as crypto_payouts_router
 from routes.referral import router as referral_router
-from routes.merchant import router as merchant_api_router
+# from routes.merchant import router as merchant_api_router # Duplicate import
 from routes.event_notifications import router as event_notifications_router
 from routes.wallet import router as wallet_api_router
 api_router.include_router(auth_router)
@@ -142,8 +149,9 @@ api_router.include_router(reviews_router)
 api_router.include_router(notifications_router)
 api_router.include_router(transfers_router)
 api_router.include_router(invoice_api_router)
+api_router.include_router(crypto_payouts_router)
 api_router.include_router(referral_router)
-api_router.include_router(merchant_api_router)
+# api_router.include_router(merchant_api_router) # Duplicate include
 api_router.include_router(event_notifications_router)
 api_router.include_router(wallet_api_router)
 from routes.qr_aggregator import router as qr_aggregator_router
