@@ -378,7 +378,7 @@ async def merchant_open_dispute_jwt(trade_id: str, data: dict = Body(default={})
         await db.unified_conversations.insert_one(new_conv)
 
     try:
-        from routes.ws_routes import ws_manager
+        from routes.websockets import ws_manager
         if ws_manager:
             await ws_manager.broadcast(f"trade_{trade_id}", {
                 "type": "status_update", "status": "disputed", "trade_id": trade_id
@@ -440,7 +440,7 @@ async def merchant_send_dispute_message_jwt(trade_id: str, data: dict = Body(...
     await db.trade_messages.insert_one(msg)
 
     try:
-        from routes.ws_routes import ws_manager
+        from routes.websockets import ws_manager
         if ws_manager:
             await ws_manager.broadcast(f"trade_{trade_id}", {
                 "type": "new_message",

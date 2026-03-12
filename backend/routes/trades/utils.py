@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 
 try:
-    from routes.ws_routes import ws_manager
+    from routes.websockets import ws_manager
 except ImportError:
     ws_manager = None
 

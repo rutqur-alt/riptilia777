@@ -166,7 +166,7 @@ from core.websocket import manager
 
 # ==================== WEBSOCKET REAL-TIME MESSAGING ====================
 from fastapi import WebSocket, WebSocketDisconnect
-from routes.ws_routes import ws_manager
+from routes.websockets import ws_manager
 
 @app.websocket("/ws/trade/{trade_id}")
 async def ws_trade(websocket: WebSocket, trade_id: str):

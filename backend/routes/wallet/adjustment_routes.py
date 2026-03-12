@@ -95,7 +95,7 @@ async def notify_balance_update(
         raise HTTPException(status_code=403, detail="Invalid internal key")
     
     try:
-        from routes.ws_routes import ws_manager
+        from routes.websockets import ws_manager
         await ws_manager.broadcast(f"user_{data.user_id}", {
             "type": "balance_update",
             "amount": data.amount,

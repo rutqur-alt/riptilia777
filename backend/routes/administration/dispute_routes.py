@@ -129,7 +129,7 @@ async def resolve_trade_dispute(trade_id: str, data: dict = Body(...), user: dic
         raise HTTPException(status_code=400, detail="Invalid decision. Use 'favor_buyer' or 'favor_seller'")
     
     try:
-        from routes.ws_routes import ws_manager
+        from routes.websockets import ws_manager
     except ImportError:
         ws_manager = None
     

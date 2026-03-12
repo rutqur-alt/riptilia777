@@ -13,7 +13,7 @@ from .utils import (
 from .models import SendMessageRequest
 
 try:
-    from routes.ws_routes import ws_manager
+    from routes.websockets import ws_manager
 except ImportError:
     ws_manager = None
 

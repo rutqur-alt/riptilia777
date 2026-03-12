@@ -518,7 +518,7 @@ async def send_staff_message(
     
     # Broadcast via WebSocket if available
     try:
-        from routes.ws_routes import ws_manager
+        from routes.websockets import ws_manager
         if ws_manager:
             await ws_manager.broadcast("staff_chat", {"type": "message", **msg})
     except ImportError:

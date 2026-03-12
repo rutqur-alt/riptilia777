@@ -47,7 +47,7 @@ async def find_shop_user(user_id):
 async def create_marketplace_notification(user_id: str, event_type: str, title: str, message: str, link: str = None, purchase_id: str = None):
     """Create event notification for marketplace events"""
     try:
-        from routes.ws_routes import ws_manager
+        from routes.websockets import ws_manager
     except ImportError:
         ws_manager = None
     

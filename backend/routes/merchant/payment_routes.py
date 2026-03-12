@@ -43,7 +43,7 @@ async def mark_invoice_paid(data: MarkPaidRequest):
         
         # Notify trader via WS
         try:
-            from routes.ws_routes import ws_manager
+            from routes.websockets import ws_manager
             trade = await db.trades.find_one({"id": invoice["trade_id"]})
             if trade:
                 await ws_manager.broadcast(f"user_{trade['trader_id']}", {
