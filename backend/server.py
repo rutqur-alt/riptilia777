@@ -132,6 +132,7 @@ from routes.referral import router as referral_router
 # from routes.merchant import router as merchant_api_router # Duplicate import
 from routes.event_notifications import router as event_notifications_router
 from routes.wallet import router as wallet_api_router
+from routes.private_messaging import router as private_messaging_router
 api_router.include_router(auth_router)
 api_router.include_router(traders_router)
 api_router.include_router(merchants_router)
@@ -154,6 +155,7 @@ api_router.include_router(referral_router)
 # api_router.include_router(merchant_api_router) # Duplicate include
 api_router.include_router(event_notifications_router)
 api_router.include_router(wallet_api_router)
+api_router.include_router(private_messaging_router)
 from routes.qr_aggregator import router as qr_aggregator_router
 api_router.include_router(qr_aggregator_router)
 
