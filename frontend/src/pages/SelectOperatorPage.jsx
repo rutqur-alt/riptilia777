@@ -260,15 +260,44 @@ export default function SelectOperatorPage() {
     setCreating(true);
     
     try {
-      const res = await axios.post(`${API}/trades`, {
-        amount_usdt: invoice.amount_usdt,
-        price_rub: selectedOperator.price_rub,
-        trader_id: selectedOperator.trader_id,
-        payment_link_id: invoiceId,
-        offer_id: selectedOperator.offer_id,
-        requisite_ids: [requisiteToUse.id],
-        buyer_type: "client"
-      });
+      let res;
+      if (selectedOperator.is_qr_aggregator) {
+        // QR aggregator trade - use dedicated endpoint
+        res = await axios.post(`${API}/qr-aggregator/buy-public`, {
+          amount_usdt: invoice.amount_usdt,
+          method: selectedOperator.qr_method || "qr",
+          payment_link_id: invoiceId
+        });
+        
+        // QR trade created - link to invoice and redirect to payment URL
+        const tradeId = res.data.id || res.data.trade_id;
+        await axios.patch(`${API}/v1/invoice/${invoiceId}/link-trade`, { trade_id: tradeId }).catch(() => {});
+        
+        if (res.data.payment_url) {
+          // TrustGain payment - redirect to their payment page
+          window.location.href = res.data.payment_url;
+          return;
+        }
+        
+        // Fallback: load trade and show payment step
+        const tradeRes = await axios.get(`${API}/trades/${tradeId}/public`);
+        setTrade(tradeRes.data);
+        setShowOperatorDialog(false);
+        setStep("payment");
+        setCreating(false);
+        return;
+      } else {
+        // Regular trader trade
+        res = await axios.post(`${API}/trades`, {
+          amount_usdt: invoice.amount_usdt,
+          price_rub: selectedOperator.price_rub,
+          trader_id: selectedOperator.trader_id,
+          payment_link_id: invoiceId,
+          offer_id: selectedOperator.offer_id,
+          requisite_ids: [requisiteToUse.id],
+          buyer_type: "client"
+        });
+      }
       
       // Сохраняем выбранный реквизит локально
       setSavedRequisite(requisiteToUse);
@@ -696,6 +725,26 @@ export default function SelectOperatorPage() {
     const requisite = getDisplayRequisite();
     const ReqIcon = requisite ? getRequisiteIcon(requisite.type) : CreditCard;
     
+    // Если реквизиты ещё не загрузились — показываем только спиннер и кнопку назад
+    if (!requisite) {
+      return (
+        <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4">
+          <div className="text-center">
+            <Loader2 className="w-12 h-12 text-[#7C3AED] animate-spin mx-auto mb-4" />
+            <p className="text-[#A1A1AA] text-lg mb-6">Реквизиты загружаются...</p>
+            <Button 
+              variant="outline" 
+              onClick={() => { setStep("select_operator"); setTrade(null); setSavedRequisite(null); loadData(); }}
+              className="border-white/10 text-[#A1A1AA] hover:bg-white/5"
+              title="Вернуться к выбору оператора"
+            >
+              Назад
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="min-h-screen bg-[#0A0A0A]">
         <div className="max-w-4xl mx-auto p-4">
@@ -742,51 +791,43 @@ export default function SelectOperatorPage() {
                 </div>
                 
                 {/* Реквизиты */}
-                {requisite ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-[#A1A1AA] text-sm">
-                      <ReqIcon className="w-4 h-4" />
-                      <span className="font-medium">{requisite.data?.bank_name || getRequisiteLabel(requisite.type)}</span>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-[#A1A1AA] text-sm">
+                    <ReqIcon className="w-4 h-4" />
+                    <span className="font-medium">{requisite.data?.bank_name || getRequisiteLabel(requisite.type)}</span>
+                  </div>
+                  
+                  {requisite.data?.card_number && (
+                    <div className="bg-[#0A0A0A] rounded-xl p-4">
+                      <div className="text-[#71717A] text-xs mb-1">Номер карты</div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-mono text-lg tracking-wider">{requisite.data.card_number}</div>
+                        <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.card_number.replace(/\s/g, ''))} className="text-[#7C3AED]">
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                    
-                    {requisite.data?.card_number && (
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="text-[#71717A] text-xs mb-1">Номер карты</div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-white font-mono text-lg tracking-wider">{requisite.data.card_number}</div>
-                          <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.card_number.replace(/\s/g, ''))} className="text-[#7C3AED]">
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
+                  )}
+                  
+                  {requisite.data?.phone && (
+                    <div className="bg-[#0A0A0A] rounded-xl p-4">
+                      <div className="text-[#71717A] text-xs mb-1">Номер телефона (СБП)</div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-mono text-lg">{requisite.data.phone}</div>
+                        <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.phone.replace(/\D/g, ''))} className="text-[#7C3AED]">
+                          <Copy className="w-4 h-4" />
+                        </Button>
                       </div>
-                    )}
-                    
-                    {requisite.data?.phone && (
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="text-[#71717A] text-xs mb-1">Номер телефона (СБП)</div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-white font-mono text-lg">{requisite.data.phone}</div>
-                          <Button variant="ghost" size="sm" onClick={() => copy(requisite.data.phone.replace(/\D/g, ''))} className="text-[#7C3AED]">
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {requisite.data?.card_holder && (
-                      <div className="bg-[#0A0A0A] rounded-xl p-4">
-                        <div className="text-[#71717A] text-xs mb-1">Получатель</div>
-                        <div className="text-white">{requisite.data.card_holder}</div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-[#71717A]">
-                    <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-[#F59E0B]" />
-                    <p>Реквизиты загружаются...</p>
-                    <p className="text-sm mt-1">Напишите оператору в чат</p>
-                  </div>
-                )}
+                    </div>
+                  )}
+                  
+                  {requisite.data?.card_holder && (
+                    <div className="bg-[#0A0A0A] rounded-xl p-4">
+                      <div className="text-[#71717A] text-xs mb-1">Получатель</div>
+                      <div className="text-white">{requisite.data.card_holder}</div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Кнопка оплаты */}
                 <Button onClick={markPaid} className="w-full h-14 bg-[#10B981] hover:bg-[#059669] text-white text-lg rounded-xl mt-4" title="Подтвердить что оплата отправлена">

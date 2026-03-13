@@ -55,8 +55,16 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         
         if role == "trader":
             user = await db.traders.find_one({"id": user_id}, {"_id": 0})
+            # Update last_seen
+            if user:
+                await db.traders.update_one(
+                    {"id": user_id},
+                    {"$set": {"last_seen": datetime.now(timezone.utc).isoformat()}}
+                )
         elif role == "merchant":
             user = await db.merchants.find_one({"id": user_id}, {"_id": 0})
+        elif role == "qr_provider":
+            user = await db.qr_providers.find_one({"id": user_id}, {"_id": 0})
         elif role == "admin":
             user = await db.admins.find_one({"id": user_id}, {"_id": 0})
         else:

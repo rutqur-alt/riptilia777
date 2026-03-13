@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Wallet, User, CheckCircle, MessageCircle, Store, Circle, DollarSign } from "lucide-react";
+import { Wallet, User, CheckCircle, MessageCircle, Store, Circle, DollarSign, Download } from "lucide-react";
 import { useAuth, API } from "@/App";
 import axios from "axios";
 import { PAYMENT_METHODS, getPaymentMethod, PAYMENT_METHOD_OPTIONS } from "@/config/paymentMethods";
@@ -66,6 +66,7 @@ export default function Landing() {
       case "card": return "💳";
       case "sbp": return "⚡";
       case "qr": return "📱";
+      case "qr_code": return "📱";
       case "sim": return "📞";
       case "cis": return "🌍";
       default: return "💰";
@@ -77,7 +78,7 @@ export default function Landing() {
     if (req.type === "card") return "Банковская карта";
     if (req.type === "sbp") return "СБП";
     if (req.type === "sim") return "Сотовая связь";
-    if (req.type === "qr") return "QR-код";
+    if (req.type === "qr" || req.type === "qr_code") return "QR-код";
     if (req.type === "cis") return "Перевод СНГ";
     return req.type;
   };
@@ -130,6 +131,16 @@ export default function Landing() {
                   Маркет
                 </Button>
               </Link>
+              <a href="/downloads/reptiloid-messenger.apk" download>
+                <Button 
+                  data-testid="nav-messenger-btn"
+                  variant="ghost" 
+                  className="text-[#A1A1AA] hover:text-white hover:bg-white/5 rounded-lg h-9 px-4 gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Messenger
+                </Button>
+              </a>
             </nav>
             
             <div className="flex items-center gap-3">
@@ -191,6 +202,17 @@ export default function Landing() {
                 Маркет
               </Button>
             </Link>
+            <a href="/downloads/reptiloid-messenger.apk" download className="flex-1">
+              <Button 
+                data-testid="nav-messenger-btn-mobile"
+                variant="outline" 
+                size="sm"
+                className="w-full bg-transparent border-[#7C3AED]/30 text-[#A78BFA] hover:text-white hover:bg-[#7C3AED]/10 rounded-lg gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Messenger
+              </Button>
+            </a>
           </div>
         </div>
       </header>

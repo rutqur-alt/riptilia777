@@ -26,6 +26,7 @@ export const ROLE_CONFIG = {
   p2p_seller: { color: 'bg-white text-black border border-gray-300', name: 'Продавец', marker: 'bg-white border border-gray-400' },
   shop_owner: { color: 'bg-white text-black border border-gray-300', name: 'Магазин', marker: 'bg-[#8B5CF6]' },
   merchant: { color: 'bg-white text-black border border-gray-300', name: 'Мерчант', marker: 'bg-[#F97316]' },
+  qr_provider: { color: 'bg-[#A855F7] text-white', name: 'QR Провайдер', marker: 'bg-[#A855F7]' },
   mod_p2p: { color: 'bg-[#F59E0B] text-white', name: 'Модератор P2P', marker: 'bg-[#F59E0B]' },
   mod_market: { color: 'bg-[#F59E0B] text-white', name: 'Гарант', marker: 'bg-[#F59E0B]' },
   support: { color: 'bg-[#3B82F6] text-white', name: 'Поддержка', marker: 'bg-[#3B82F6]' },

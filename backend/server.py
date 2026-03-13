@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add backend directory to sys.path to allow imports from models, routes, core, etc.
+sys.path.append(str(Path(__file__).parent))
+
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Body, Request, File, UploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from dotenv import load_dotenv
@@ -111,36 +117,22 @@ from routes.requisites import router as requisites_router
 from routes.offers import router as offers_router
 from routes.trades import router as trades_router
 from routes.payment_links import router as payment_links_router
-from routes.admin import router as admin_router
-from routes.super_admin import router as super_admin_router
-from routes.support import router as support_router
-from routes.shop import router as shop_router
-from routes.marketplace import router as marketplace_router
+from routes.administration.router import router as administration_router
+from routes.messaging import router as messaging_router
+from routes.market import router as market_router
 from routes.guarantor import router as guarantor_router
 from routes.merchant import router as merchant_router
 from routes.forum import router as forum_router
 from routes.reviews import router as reviews_router
 from routes.notifications import router as notifications_router
 from routes.transfers import router as transfers_router
-from routes.private_messaging import router as private_messaging_router
+from routes.invoice import router as invoice_api_router
 from routes.crypto_payouts import router as crypto_payouts_router
-from routes.unified_messaging import router as unified_messaging_router
-from routes.trade_chats import router as trade_chats_router
-from routes.staff_admin import router as staff_admin_router
-from routes.admin_chats import router as admin_chats_router
-from routes.user_chats import router as user_chats_router
-from routes.admin_users import router as admin_users_router
-from routes.broadcast import router as broadcast_router
-from routes.staff_templates import router as staff_templates_router
-from routes.admin_dashboard import router as admin_dashboard_router
-from routes.merchant_messages import router as merchant_messages_router
-from routes.chat_management import router as chat_management_router
-from routes.admin_management import router as admin_management_router
-from routes.invoice_api import router as invoice_api_router
 from routes.referral import router as referral_router
-from routes.merchant_api import router as merchant_api_router
+# from routes.merchant import router as merchant_api_router # Duplicate import
 from routes.event_notifications import router as event_notifications_router
-from routes.wallet_api import router as wallet_api_router
+from routes.wallet import router as wallet_api_router
+from routes.private_messaging import router as private_messaging_router
 api_router.include_router(auth_router)
 api_router.include_router(traders_router)
 api_router.include_router(merchants_router)
@@ -148,38 +140,24 @@ api_router.include_router(requisites_router)
 api_router.include_router(offers_router)
 api_router.include_router(trades_router)
 api_router.include_router(payment_links_router)
-api_router.include_router(admin_router)
-api_router.include_router(super_admin_router)
-api_router.include_router(support_router)
-api_router.include_router(shop_router)
-api_router.include_router(marketplace_router)
+api_router.include_router(administration_router)
+api_router.include_router(messaging_router)
+api_router.include_router(market_router)
 api_router.include_router(guarantor_router)
 api_router.include_router(merchant_router)
 api_router.include_router(forum_router)
 api_router.include_router(reviews_router)
 api_router.include_router(notifications_router)
 api_router.include_router(transfers_router)
-api_router.include_router(private_messaging_router)
-api_router.include_router(crypto_payouts_router)
-api_router.include_router(unified_messaging_router)
-api_router.include_router(trade_chats_router)
-api_router.include_router(staff_admin_router)
-api_router.include_router(admin_chats_router)
-api_router.include_router(user_chats_router)
-api_router.include_router(admin_users_router)
-api_router.include_router(broadcast_router)
-api_router.include_router(staff_templates_router)
-api_router.include_router(admin_dashboard_router)
-api_router.include_router(merchant_messages_router)
-api_router.include_router(chat_management_router)
-api_router.include_router(admin_management_router)
 api_router.include_router(invoice_api_router)
+api_router.include_router(crypto_payouts_router)
 api_router.include_router(referral_router)
-api_router.include_router(merchant_api_router)
+# api_router.include_router(merchant_api_router) # Duplicate include
 api_router.include_router(event_notifications_router)
 api_router.include_router(wallet_api_router)
-from routes.shop_api import router as shop_api_router
-api_router.include_router(shop_api_router)
+api_router.include_router(private_messaging_router)
+from routes.qr_aggregator import router as qr_aggregator_router
+api_router.include_router(qr_aggregator_router)
 
 # Import shared WebSocket manager
 from core.websocket import manager
@@ -188,7 +166,7 @@ from core.websocket import manager
 
 # ==================== WEBSOCKET REAL-TIME MESSAGING ====================
 from fastapi import WebSocket, WebSocketDisconnect
-from routes.ws_routes import ws_manager
+from routes.websockets import ws_manager
 
 @app.websocket("/ws/trade/{trade_id}")
 async def ws_trade(websocket: WebSocket, trade_id: str):
@@ -302,114 +280,18 @@ class RequisiteCIS(BaseModel):
     is_primary: bool = False
 
 # ==================== AUTH HELPERS ====================
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-def verify_password(password: str, hashed: str) -> bool:
-    import hashlib
-    # Try bcrypt first
-    try:
-        if hashed.startswith("$2"):  # bcrypt hash
-            return bcrypt.checkpw(password.encode(), hashed.encode())
-    except:
-        pass
-    
-    # Try SHA256
-    sha_hash = hashlib.sha256(password.encode()).hexdigest()
-    if sha_hash == hashed:
-        return True
-    
-    return False
-
-def create_token(user_id: str, role: str) -> str:
-    payload = {
-        "user_id": user_id,
-        "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        token = credentials.credentials
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("user_id")
-        role = payload.get("role")
-        
-        if role == "trader":
-            user = await db.traders.find_one({"id": user_id}, {"_id": 0})
-        elif role == "merchant":
-            user = await db.merchants.find_one({"id": user_id}, {"_id": 0})
-        elif role == "admin":
-            user = await db.admins.find_one({"id": user_id}, {"_id": 0})
-        else:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        
-        user["role"] = role
-        return user
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-def require_role(allowed_roles: List[str]):
-    async def role_checker(user: dict = Depends(get_current_user)):
-        if user.get("role") not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
-        return user
-    return role_checker
-
-def require_admin_level(min_level: int = 30):
-    """Require minimum admin level: owner=100, admin=80, mod=50, support=30"""
-    async def admin_checker(user: dict = Depends(get_current_user)):
-        role = user.get("role", "")
-        # Check if user is staff member
-        if role in ADMIN_ROLES:
-            if ADMIN_ROLES[role] >= min_level:
-                return user
-        # Check if regular admin
-        if role == "admin":
-            admin = await db.admins.find_one({"id": user["id"]}, {"_id": 0})
-            if admin:
-                admin_role = admin.get("admin_role", "admin")
-                if ADMIN_ROLES.get(admin_role, 0) >= min_level:
-                    return user
-        raise HTTPException(status_code=403, detail="Insufficient admin permissions")
-    return admin_checker
-
-async def log_admin_action(admin_id: str, action: str, target_type: str, target_id: str, details: dict = None):
-    """Log admin actions for audit trail"""
-    await db.admin_logs.insert_one({
-        "id": str(uuid.uuid4()),
-        "admin_id": admin_id,
-        "action": action,
-        "target_type": target_type,
-        "target_id": target_id,
-        "details": details or {},
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
-
-# API Key authentication for merchants
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-async def get_merchant_by_api_key(api_key: str = Depends(api_key_header)):
-    """Authenticate merchant by API key"""
-    if not api_key:
-        raise HTTPException(status_code=401, detail="API key required")
-    
-    merchant = await db.merchants.find_one({"api_key": api_key}, {"_id": 0})
-    if not merchant:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    
-    if merchant.get("status") != "approved":
-        raise HTTPException(status_code=403, detail="Merchant not approved")
-    
-    merchant["role"] = "merchant"
-    return merchant
+# NOTE: centralized auth helpers to avoid duplication across modules.
+# Keep all auth logic in one place: backend/core/auth.py
+from core.auth import (
+    hash_password,
+    verify_password,
+    create_token,
+    get_current_user,
+    require_role,
+    require_admin_level,
+    log_admin_action,
+    get_merchant_by_api_key,
+)
 
 # ==================== WEBSOCKET MANAGER ====================
 # WebSocket manager is now imported from core/websocket.py
@@ -570,8 +452,8 @@ async def startup():
 async def auto_cancel_expired_trades():
     """Background task to auto-cancel trades and invoices that have expired"""
     # Import webhook senders
-    from routes.merchant_api import send_merchant_webhook
-    from routes.invoice_api import send_webhook_notification
+    from routes.merchant import send_merchant_webhook
+    from routes.invoice import send_webhook_notification
     
     while True:
         try:

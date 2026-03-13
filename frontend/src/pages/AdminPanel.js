@@ -56,6 +56,8 @@ import CryptoPayoutsComponent from "@/components/admin/CryptoPayouts";
 import AdminMessagesToStaffComponent from "@/components/admin/AdminMessagesToStaff";
 import ReferralSettingsComponent from "@/components/admin/ReferralSettings";
 import AdminFinancePage from "./finance/AdminFinancePage";
+import AccountingPageComponent from "@/components/admin/AccountingPage";
+import QRAggregatorAdminComponent from "@/components/admin/QRAggregatorAdmin";
 
 // ==================== MAIN ADMIN PANEL ====================
 export default function AdminPanel() {
@@ -107,6 +109,13 @@ export default function AdminPanel() {
 
   const allSections = [
     {
+      title: "Бухгалтерия",
+      items: [
+        { path: "/admin/accounting", icon: DollarSign, label: "Доходы", roles: ["owner", "admin"] },
+      ],
+      roles: ["owner", "admin"]
+    },
+    {
       title: "Управление",
       items: [
         { path: "/admin", icon: LayoutDashboard, label: "Обзор", roles: ["owner", "admin"] },
@@ -130,6 +139,13 @@ export default function AdminPanel() {
         { path: "/admin/merchants/payouts", icon: ArrowDownRight, label: "Выплаты" },
         { path: "/admin/merchants/payout-rules", icon: FileText, label: "Правила выплат" },
       ]
+    },
+    {
+      title: "QR Агрегатор",
+      items: [
+        { path: "/admin/qr-aggregator", icon: Activity, label: "Провайдеры", roles: ["owner", "admin"] },
+      ],
+      roles: ["owner", "admin"]
     },
     {
       title: "Маркетплейс",
@@ -357,6 +373,8 @@ export default function AdminPanel() {
           <Route path="settings/referral" element={<ReferralSettingsComponent />} />
           <Route path="settings/system" element={<SystemSettingsComponent />} />
           <Route path="logs" element={<ActivityLogsComponent />} />
+          <Route path="accounting" element={<AccountingPageComponent />} />
+          <Route path="qr-aggregator" element={<QRAggregatorAdminComponent />} />
         </Routes>
       </main>
     </div>
