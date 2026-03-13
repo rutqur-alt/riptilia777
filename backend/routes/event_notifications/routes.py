@@ -6,7 +6,7 @@ from core.auth import get_current_user
 
 router = APIRouter()
 
-@router.get("")
+@router.get("/")
 async def get_event_notifications(
     user: dict = Depends(get_current_user),
     limit: int = 50,

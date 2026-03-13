@@ -10,7 +10,7 @@ import math
 
 from .models import OfferCreate, OfferUpdate, OfferResponse
 from .utils import get_payment_details_for_offer, get_trader_nickname
-from routes.qr_aggregator.utils import get_base_rate_rub
+from routes.qr_aggregator.utils import get_base_rate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
