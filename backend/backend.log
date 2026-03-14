@@ -1,0 +1,12 @@
+INFO:     Started server process [782192]
+INFO:     Waiting for application startup.
+2026-03-13 12:20:24,950 - root - INFO - Started USDT/RUB rate update background task (every 5 min)
+2026-03-13 12:20:24,950 - root - INFO - Started guarantor auto-complete background task
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+2026-03-13 12:20:25,115 - httpx - INFO - HTTP Request: GET https://api.rapira.net/open/market/rates "HTTP/1.1 200 "
+2026-03-13 12:20:25,116 - routes.rate_service.service - INFO - Rapira rate: 81.18 RUB/USDT (bid=81.18, ask=81.19)
+2026-03-13 12:20:25,118 - routes.rate_service.service - INFO - Base rate updated: 81.18 RUB/USDT from Rapira
+INFO:     ('127.0.0.1', 46270) - "WebSocket /ws/global" 403
+INFO:     connection rejected (403 Forbidden)
+INFO:     connection closed
