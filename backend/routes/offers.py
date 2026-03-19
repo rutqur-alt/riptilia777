@@ -358,6 +358,106 @@ async def get_public_offers(
             offer["trader_display_name"] = offer.get("trader_login", "")
             offer["is_online"] = False
     
+    # === Add QR aggregator providers to order book ===
+    try:
+        qr_settings = await db.qr_aggregator_settings.find_one({"type": "main"}, {"_id": 0})
+        if qr_settings and qr_settings.get("is_enabled", True):
+            # Fetch exchange rate for QR pricing
+            _payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+            exchange_rate = _payout_settings.get("base_rate", 78.0) if _payout_settings else 78.0
+            if not exchange_rate or exchange_rate <= 0:
+                _comm = await db.commission_settings.find_one({}, {"_id": 0})
+                exchange_rate = _comm.get("default_price_rub", 78.0) if _comm else 78.0
+            
+            qr_providers = await db.qr_providers.find({"is_active": True, "balance_usdt": {"$gt": 0}}, {"_id": 0}).to_list(50)
+            
+            # Auto-hide: skip QR offers if total available balance < 20 USDT
+            _total_available = sum(p.get("balance_usdt", 0) - p.get("frozen_usdt", 0) for p in qr_providers)
+            if _total_available < 20.0:
+                qr_providers = []  # Hide all QR offers
+            
+            for qrp in qr_providers:
+                available_balance = qrp.get("balance_usdt", 0) - qrp.get("frozen_usdt", 0)
+                if available_balance <= 0:
+                    continue
+                
+                # Check online status
+                is_online = False
+                if qrp.get("last_seen"):
+                    try:
+                        last_seen = datetime.fromisoformat(str(qrp["last_seen"]).replace("Z", "+00:00"))
+                        diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                        is_online = diff_minutes < 5
+                    except:
+                        pass
+                
+                # QR aggregator offers always show unified platform name
+                display_name = "MAGNAT"
+                
+                for method_key in ["qr", "sng"]:
+                    tg_method = "nspk" if method_key == "qr" else "transgrant"
+                    if not qrp.get(f"{tg_method}_enabled", False):
+                        continue
+                    
+                    provider_markup = qrp.get(f"{tg_method}_commission_percent", 5.0)
+                    platform_markup = qr_settings.get(f"{tg_method}_commission_percent", 5.0)
+                    provider_price_rub = round(exchange_rate * (1 + provider_markup / 100) * (1 + platform_markup / 100), 2)
+                    
+                    if method_key == "qr":
+                        method_label = "QR"
+                        method_name = "СБП (QR-код)"
+                        req_type = "qr_code"
+                        pm_type = "qr_code"
+                    else:
+                        method_label = "СНГ"
+                        method_name = "Банковская карта"
+                        req_type = "card"
+                        pm_type = "card"
+                    
+                    min_amt = qr_settings.get(f"{tg_method}_min_amount", 100)
+                    max_amt = qr_settings.get(f"{tg_method}_max_amount", 100000)
+                    min_usdt = round(min_amt / provider_price_rub, 2) if provider_price_rub > 0 else 1
+                    max_usdt = min(round(max_amt / provider_price_rub, 2), available_balance)
+                    
+                    if payment_method and payment_method != "all":
+                        if payment_method != pm_type:
+                            continue
+                    
+                    qr_offer = {
+                        "id": f"qr_provider_{qrp['id']}_{method_key}",
+                        "offer_id": f"qr_provider_{qrp['id']}_{method_key}",
+                        "trader_id": qrp["id"],
+                        "trader_login": "MAGNAT",
+                        "trader_display_name": f"{display_name} ({method_label})",
+                        "type": "sell",
+                        "price_rub": provider_price_rub,
+                        "available_usdt": round(available_balance, 2),
+                        "min_amount": min_usdt,
+                        "max_amount": max_usdt,
+                        "payment_methods": [pm_type],
+                        "requisites": [{"id": f"qr_{qrp['id']}_{method_key}", "type": req_type, "data": {"bank_name": method_name, "phone": "Автоматический" if method_key == "qr" else "", "card_number": "" if method_key == "sng" else ""}}],
+                        "is_active": True,
+                        "is_online": is_online,
+                        "success_rate": qrp.get("success_rate", 100),
+                        "trades_count": qrp.get("total_operations", 0),
+                        "is_qr_aggregator": True,
+                        "qr_provider_id": qrp["id"],
+                        "qr_method": method_key,
+                        "conditions": f"Автоматическая оплата через {method_name}",
+                    }
+                    offers.append(qr_offer)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+    
+    # Re-sort after adding QR providers
+    if sort_by == "price" or sort_field == "price_rub":
+        offers.sort(key=lambda x: x.get("price_rub", 0))
+    elif sort_by == "amount":
+        offers.sort(key=lambda x: x.get("available_usdt", 0), reverse=True)
+    elif sort_by == "rating":
+        offers.sort(key=lambda x: x.get("success_rate", 0), reverse=True)
+    
     return offers
 
 
@@ -417,17 +517,12 @@ async def get_operators_for_payment(
             {"available_usdt": {"$gte": filter_amount_usdt}}
         ]
     
-    offers = await db.offers.find(query, {"_id": 0}).sort("price_rub", 1).to_list(50)
+    offers = await db.offers.find(query, {"_id": 0}).sort("price_rub", 1).to_list(100)
     
     operators = []
-    seen_traders = set()  # Один трейдер - один оффер (лучший)
     
     for offer in offers:
         trader_id = offer.get("trader_id")
-        
-        # Пропускаем если уже добавили оффер этого трейдера
-        if trader_id in seen_traders:
-            continue
         
         # Получаем информацию о трейдере
         trader = await db.traders.find_one(
@@ -461,7 +556,7 @@ async def get_operators_for_payment(
             if max_amt and filter_amount_usdt > max_amt and filter_amount_usdt > available:
                 continue
         
-        seen_traders.add(trader_id)
+        # (no per-trader dedup — show all matching offers)
         
         # Проверяем онлайн статус
         is_online = False
@@ -528,6 +623,133 @@ async def get_operators_for_payment(
             "conditions": offer.get("conditions", ""),
             "amount_to_pay_rub": amount_to_pay_rub
         })
+    
+    # ===== Добавляем QR-агрегатор провайдеров (каждый метод = отдельное объявление) =====
+    try:
+        # Загружаем настройки платформы для комиссий
+        qr_settings = await db.qr_aggregator_settings.find_one({"type": "main"}, {"_id": 0}) or {}
+        platform_nspk_percent = qr_settings.get("nspk_commission_percent", 5.5)
+        platform_transgrant_percent = qr_settings.get("transgrant_commission_percent", 5.0)
+        
+        qr_query = {"is_active": True}
+        qr_providers = await db.qr_providers.find(qr_query, {"_id": 0, "password_hash": 0, "password": 0}).to_list(20)
+        
+        # Auto-hide: skip QR offers if total available balance < 20 USDT
+        _total_available_ops = sum(p.get("balance_usdt", 0) - p.get("frozen_usdt", 0) for p in qr_providers)
+        if _total_available_ops < 20.0:
+            qr_providers = []  # Hide all QR offers from payment page
+        
+        for qrp in qr_providers:
+            if not qrp.get("is_active"):
+                continue
+            balance = qrp.get("balance_usdt", 0) or 0
+            if balance <= 0:
+                continue
+            
+            methods = qrp.get("methods", {})
+            if not methods:
+                continue
+            
+            # Онлайн статус (общий для всех методов провайдера)
+            is_online = False
+            if qrp.get("last_seen"):
+                try:
+                    last_seen = datetime.fromisoformat(str(qrp["last_seen"]).replace("Z", "+00:00"))
+                    diff_minutes = (datetime.now(timezone.utc) - last_seen).total_seconds() / 60
+                    is_online = diff_minutes < 15
+                except:
+                    pass
+            if qrp.get("api_available") or qrp.get("nspk_api_available") or qrp.get("transgrant_api_available"):
+                is_online = True
+            
+            # Каждый включённый метод = отдельное объявление в стакане
+            for method_key, method_cfg in methods.items():
+                if not method_cfg.get("enabled"):
+                    continue
+                
+                min_amt = method_cfg.get("min_amount", 0)
+                max_amt = method_cfg.get("max_amount", 1000000)
+                
+                # Проверяем лимиты суммы
+                if filter_amount_rub > 0:
+                    if filter_amount_rub < min_amt or filter_amount_rub > max_amt:
+                        continue
+                
+                # Проверяем баланс USDT
+                if filter_amount_usdt > 0 and balance < filter_amount_usdt * 0.99:
+                    continue
+                
+                # Рассчитываем РЕАЛЬНУЮ цену с наценками провайдера И платформы
+                # QR/NSPK: курс × (1 + провайдер%) × (1 + платформа%)
+                # СНГ/TransGrant: курс × (1 + провайдер%) × (1 + платформа%)
+                if method_key == "qr":
+                    provider_markup = qrp.get("nspk_commission_percent", 12.5) / 100
+                    platform_markup = platform_nspk_percent / 100
+                elif method_key == "sng":
+                    provider_markup = qrp.get("transgrant_commission_percent", 10.0) / 100
+                    platform_markup = platform_transgrant_percent / 100
+                else:
+                    provider_markup = method_cfg.get("markup_percent", 0) / 100
+                    platform_markup = 0
+                
+                # Курс для клиента = базовый × (1 + провайдер) × (1 + платформа)
+                provider_price_rub = round(exchange_rate * (1 + provider_markup) * (1 + platform_markup), 2)
+                if filter_amount_rub > 0:
+                    amount_to_pay = round(filter_amount_rub * (1 + provider_markup) * (1 + platform_markup), 2)
+                else:
+                    amount_to_pay = 0
+                
+                # Определяем название и тип для метода
+                if method_key == "qr":
+                    method_name = "СБП (QR-код)"
+                    method_label = "QR"
+                    req_type = "qr_code"
+                elif method_key == "sng":
+                    method_name = "Банковская карта"
+                    method_label = "СНГ"
+                    req_type = "card"
+                else:
+                    method_name = method_key
+                    method_label = method_key.upper()
+                    req_type = "sbp"
+                
+                requisite = {
+                    "id": f"qr_{qrp['id']}_{method_key}",
+                    "type": req_type,
+                    "data": {"bank_name": method_name, "phone": "Автоматический"},
+                    "is_qr_aggregator": True,
+                    "qr_method": method_key
+                }
+                
+                # QR aggregator offers always show unified platform name
+                display_name = "MAGNAT"
+                
+                operators.append({
+                    "trader_id": qrp["id"],
+                    "offer_id": f"qr_provider_{qrp['id']}_{method_key}",
+                    "trader_login": "MAGNAT",
+                    "nickname": f"{display_name} ({method_label})",
+                    "is_online": is_online,
+                    "trades_count": qrp.get("total_operations", 0),
+                    "success_rate": qrp.get("success_rate", 100),
+                    "price_rub": round(provider_price_rub, 2),
+                    "min_amount": min_amt,
+                    "max_amount": min(max_amt, balance * exchange_rate),
+                    "available_usdt": balance,
+                    "payment_methods": [req_type],
+                    "requisites": [requisite],
+                    "payment_details": [requisite],
+                    "requisite_ids": [requisite["id"]],
+                    "payment_detail_ids": [requisite["id"]],
+                    "conditions": f"Автоматическая оплата через {method_name}",
+                    "amount_to_pay_rub": amount_to_pay,
+                    "is_qr_aggregator": True,
+                    "qr_provider_id": qrp["id"],
+                    "qr_method": method_key
+                })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
     
     # Сортируем: онлайн вверху, потом по рейтингу
     operators.sort(key=lambda x: (-int(x["is_online"]), -x["success_rate"], x["price_rub"]))

@@ -8,6 +8,7 @@ import uuid
 
 from core.auth import require_role, get_current_user
 from core.database import db
+from routes.messaging_utils import get_staff_display_name, STAFF_ROLE_DISPLAY_EN
 
 try:
     from routes.ws_routes import ws_manager
@@ -61,8 +62,8 @@ MSG_ROLE_ICONS = {"p2p_seller": "💱", "mod_market": "⚖️", "shop_owner": "�
 MSG_ROLE_NAMES = {
     "user": "Пользователь", "buyer": "Покупатель", "p2p_seller": "Продавец",
     "shop_owner": "Магазин", "merchant": "Мерчант",
-    "mod_p2p": "Модератор P2P", "mod_market": "Гарант",
-    "support": "Поддержка", "admin": "Администратор", "owner": "Владелец",
+    "mod_p2p": "P2P Moderator", "mod_market": "Market Moderator",
+    "support": "Support", "admin": "Admin", "owner": "Super Admin",
     "system": "Система"
 }
 
@@ -337,7 +338,7 @@ async def send_message_to_conv(
     
     if user.get("admin_role"):
         sender_role = user["admin_role"]
-        sender_name = user.get("login", "Admin")
+        sender_name = get_staff_display_name(user)
     
     msg = {
         "id": str(uuid.uuid4()),
@@ -479,14 +480,29 @@ async def get_admin_disputes(user: dict = Depends(require_role(["admin", "mod_p2
     
     result = []
     for trade in trades:
+        # Check if this is a QR aggregator dispute
+        is_qr = trade.get("is_qr_aggregator", False)
+        # Try to get conversation to check is_qr_aggregator_dispute flag
+        conv = await db.unified_conversations.find_one(
+            {"type": "p2p_dispute", "related_id": trade.get("id")},
+            {"_id": 0, "is_qr_aggregator_dispute": 1, "id": 1}
+        )
+        if not conv:
+            conv = await db.unified_conversations.find_one(
+                {"type": "p2p_dispute", "trade_id": trade.get("id")},
+                {"_id": 0, "is_qr_aggregator_dispute": 1, "id": 1}
+            )
+        is_qr_dispute = is_qr or (conv.get("is_qr_aggregator_dispute", False) if conv else False)
+        conv_id = conv.get("id") if conv else None
         result.append({
-            "id": trade.get("id"),
+            "id": conv_id or trade.get("id"),
             "trade": trade,
-            "title": f"Спор: {trade.get('amount', 0)} USDT",
+            "title": f"Спор: {trade.get('amount_usdt', trade.get('amount', 0))} USDT",
             "subtitle": f"@{trade.get('buyer_nickname', 'покупатель')} vs @{trade.get('seller_nickname', trade.get('trader_login', 'продавец'))}",
             "type": "p2p_dispute",
             "status": trade.get("status"),
-            "created_at": trade.get("created_at")
+            "created_at": trade.get("created_at"),
+            "is_qr_aggregator_dispute": is_qr_dispute
         })
     
     return result
@@ -1032,7 +1048,7 @@ async def send_staff_message(data: dict = Body(...), user: dict = Depends(requir
     msg = {
         "id": str(uuid.uuid4()),
         "sender_id": user["id"],
-        "sender_login": user.get("login", "Unknown"),
+        "sender_login": get_staff_display_name(user),
         "sender_role": user.get("admin_role", "admin"),
         "message": message,
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -1103,7 +1119,7 @@ async def send_staff_private_message(staff_id: str, data: dict = Body(...), user
     msg = {
         "id": str(uuid.uuid4()),
         "sender_id": user["id"],
-        "sender_login": user.get("login", "Unknown"),
+        "sender_login": get_staff_display_name(user),
         "sender_role": user.get("admin_role", "admin"),
         "recipient_id": staff_id,
         "message": message,

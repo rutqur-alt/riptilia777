@@ -65,6 +65,24 @@ ROLE_DISPLAY_NAMES = {
 }
 
 
+# Staff Role Display Names (English)
+STAFF_ROLE_DISPLAY_EN = {
+    "owner": "Owner",
+    "admin": "Admin",
+    "mod_p2p": "P2P Moderator",
+    "mod_market": "Market Moderator",
+    "support": "Support",
+}
+
+
+def get_staff_display_name(user: dict) -> str:
+    """Get display name for a staff user based on admin_role"""
+    admin_role = user.get("admin_role", "")
+    role_label = STAFF_ROLE_DISPLAY_EN.get(admin_role, admin_role)
+    nickname = user.get("nickname") or user.get("login") or "Staff"
+    return f"{nickname} [{role_label}]"
+
+
 # ==================== DELETE PERMISSION LOGIC ====================
 
 def check_delete_permission(

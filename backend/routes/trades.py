@@ -438,7 +438,7 @@ async def get_trader_purchases_history(user: dict = Depends(require_role(["trade
         {
             "buyer_id": user["id"],
             "buyer_type": "trader",
-            "status": {"$in": ["completed", "cancelled", "refunded"]}
+            "status": {"$in": ["completed", "cancelled", "refunded", "disputed"]}
         },
         {"_id": 0}
     ).sort("created_at", -1).to_list(100)
@@ -725,12 +725,19 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         })
     
     # Send webhook to merchant (COMPLETED)
-    await send_merchant_webhook_on_trade(trade, "completed", {
+    # Re-read trade to get freshly calculated merchant_receives_usdt
+    updated_trade = await db.trades.find_one({"id": trade_id}, {"_id": 0}) or trade
+    # Get base_rate for webhook (may have been calculated above for merchant trades)
+    payout_settings_for_wh = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    wh_base_rate = payout_settings_for_wh.get("base_rate", 78.5) if payout_settings_for_wh else 78.5
+    await send_merchant_webhook_on_trade(updated_trade, "completed", {
         "trade_id": trade_id,
-        "amount_usdt": trade["amount_usdt"],
-        "client_amount_rub": trade.get("client_amount_rub"),
-        "merchant_receives_rub": trade.get("merchant_receives_rub"),
-        "merchant_receives_usdt": trade.get("merchant_receives_usdt"),
+        "amount_usdt": updated_trade.get("amount_usdt", trade["amount_usdt"]),
+        "client_amount_rub": updated_trade.get("client_amount_rub"),
+        "merchant_receives_rub": updated_trade.get("merchant_receives_rub"),
+        "merchant_receives_usdt": updated_trade.get("merchant_receives_usdt"),
+        "rate": wh_base_rate,
+        "merchant_amount_usdt": updated_trade.get("merchant_receives_usdt"),
         "completed_at": now
     })
     
@@ -1404,7 +1411,9 @@ async def get_trade_chat_history(trade_id: str, user: dict = Depends(get_current
             "disputed_by_role": trade.get("disputed_by_role"),
             "seller_nickname": seller.get("nickname", seller.get("login", "")) if seller else "",
             "buyer_nickname": buyer.get("nickname", buyer.get("login", "")) if buyer else "Клиент",
-            "requisites": trade.get("requisites", [])
+            "requisites": trade.get("requisites", []),
+            "qr_aggregator_trade": trade.get("qr_aggregator_trade", False),
+            "is_qr_aggregator": trade.get("is_qr_aggregator", False)
         },
         "messages": messages
     }

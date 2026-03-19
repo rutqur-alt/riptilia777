@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { 
   MessageCircle, Copy, Clock, User, Bot, Shield, 
-  CreditCard, AlertTriangle, Loader2, X
+  CreditCard, AlertTriangle, Loader2, X, Send
 } from "lucide-react";
 import axios from "axios";
 import { API, useAuth } from "@/App";
@@ -21,18 +21,28 @@ const ROLE_CONFIG = {
 
 const getRoleInfo = (role) => ROLE_CONFIG[role] || ROLE_CONFIG.user;
 
-export function TradeChatModal({ isOpen, onClose, tradeId }) {
+export function TradeChatModal({ isOpen, onClose, tradeId, onDisputeOpened }) {
   const { token, user: currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [trade, setTrade] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [openingDispute, setOpeningDispute] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     if (isOpen && tradeId) {
       fetchChatHistory();
+      // Poll for new messages in disputes
+      const interval = setInterval(() => {
+        if (trade && ['dispute', 'disputed'].includes(trade.status)) {
+          fetchChatHistory(true);
+        }
+      }, 5000);
+      return () => clearInterval(interval);
     }
-  }, [isOpen, tradeId]);
+  }, [isOpen, tradeId, trade?.status]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -40,8 +50,8 @@ export function TradeChatModal({ isOpen, onClose, tradeId }) {
     }
   }, [messages]);
 
-  const fetchChatHistory = async () => {
-    setLoading(true);
+  const fetchChatHistory = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await axios.get(`${API}/trades/${tradeId}/chat-history`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -49,9 +59,48 @@ export function TradeChatModal({ isOpen, onClose, tradeId }) {
       setTrade(res.data.trade);
       setMessages(res.data.messages || []);
     } catch (err) {
-      toast.error("Ошибка загрузки истории чата");
+      if (!silent) toast.error("Ошибка загрузки истории чата");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  };
+
+  const isQrTrade = trade?.qr_aggregator_trade || trade?.is_qr_aggregator;
+
+  const handleOpenDispute = async () => {
+    if (!window.confirm("Вы уверены что хотите открыть спор по этой сделке?")) return;
+    setOpeningDispute(true);
+    try {
+      const url = isQrTrade
+        ? `${API}/qr-aggregator/trades/${tradeId}/dispute`
+        : `${API}/trades/${tradeId}/dispute`;
+      await axios.post(url, { reason: "Спор открыт покупателем" }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success("Спор открыт");
+      if (onDisputeOpened) onDisputeOpened();
+      await fetchChatHistory();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Ошибка открытия спора");
+    } finally {
+      setOpeningDispute(false);
+    }
+  };
+
+  const sendDisputeMessage = async () => {
+    if (!newMessage.trim() || !tradeId) return;
+    setSendingMessage(true);
+    try {
+      await axios.post(`${API}/trades/${tradeId}/messages`, 
+        { content: newMessage.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setNewMessage('');
+      await fetchChatHistory(true);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Ошибка отправки сообщения');
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -206,6 +255,53 @@ export function TradeChatModal({ isOpen, onClose, tradeId }) {
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Message Input for Disputes */}
+            {trade && ['dispute', 'disputed'].includes(trade.status) && (
+              <div className="px-4 pb-3 pt-2 border-t border-white/5">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendDisputeMessage()}
+                    placeholder="Написать сообщение в спор..."
+                    className="flex-1 px-4 py-2.5 bg-[#0A0A0A] border border-white/10 rounded-xl text-white text-sm placeholder-[#52525B] focus:outline-none focus:border-[#7C3AED]/50"
+                  />
+                  <button
+                    onClick={sendDisputeMessage}
+                    disabled={!newMessage.trim() || sendingMessage}
+                    className="px-4 py-2.5 bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white rounded-xl transition-colors"
+                  >
+                    {sendingMessage ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Open Dispute button — for QR trades: cancelled eligible; for regular: paid */}
+            {trade && !['dispute', 'disputed', 'completed'].includes(trade.status) && (
+              (isQrTrade ? trade.status === 'cancelled' : trade.status === 'paid') && (
+                <div className="px-4 pb-3 pt-2 border-t border-white/5">
+                  <button
+                    onClick={handleOpenDispute}
+                    disabled={openingDispute}
+                    className="w-full flex items-center justify-center gap-2 bg-[#EF4444] hover:bg-[#DC2626] disabled:opacity-50 text-white h-10 rounded-xl transition-colors font-medium text-sm"
+                  >
+                    {openingDispute ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4" />
+                    )}
+                    Открыть спор
+                  </button>
+                </div>
+              )
+            )}
           </div>
         ) : (
           <div className="text-center py-8 text-[#71717A]">

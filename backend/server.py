@@ -180,6 +180,8 @@ api_router.include_router(event_notifications_router)
 api_router.include_router(wallet_api_router)
 from routes.shop_api import router as shop_api_router
 api_router.include_router(shop_api_router)
+from routes.qr_aggregator import router as qr_aggregator_router
+api_router.include_router(qr_aggregator_router)
 
 # Import shared WebSocket manager
 from core.websocket import manager
@@ -341,6 +343,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             user = await db.traders.find_one({"id": user_id}, {"_id": 0})
         elif role == "merchant":
             user = await db.merchants.find_one({"id": user_id}, {"_id": 0})
+        elif role == "qr_provider":
+            user = await db.qr_providers.find_one({"id": user_id}, {"_id": 0})
         elif role == "admin":
             user = await db.admins.find_one({"id": user_id}, {"_id": 0})
         else:
