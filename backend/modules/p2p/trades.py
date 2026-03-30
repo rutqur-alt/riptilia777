@@ -203,6 +203,9 @@ async def create_trade(data: TradeCreate):
             raise HTTPException(status_code=400, detail="Insufficient trader balance")
     
     amount_rub = round(data.amount_usdt * data.price_rub)  # Без копеек - целое число
+    # Ensure amount_rub matches client_pays_rub when provided (avoids rounding discrepancy)
+    if data.client_pays_rub:
+        amount_rub = round(data.client_pays_rub)
     trader_commission = data.amount_usdt * (settings["trader_commission"] / 100)
     trader_commission = max(trader_commission, settings["minimum_commission"])
     
