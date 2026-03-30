@@ -685,10 +685,13 @@ async def transfer_shop_balance(
     if target_user["id"] == user["id"]:
         raise HTTPException(status_code=400, detail="Нельзя перевести самому себе")
 
-    await db.traders.update_one(
-        {"id": user["id"]},
+    # ATOMIC: Check and deduct shop_balance to prevent race conditions
+    deduct_result = await db.traders.update_one(
+        {"id": user["id"], "shop_balance": {"$gte": amount}},
         {"$inc": {"shop_balance": -amount}}
     )
+    if deduct_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Недостаточно средств (параллельный запрос)")
 
     await db.traders.update_one(
         {"id": target_user["id"]},
@@ -731,11 +734,13 @@ async def request_shop_withdrawal(
     if trader.get("shop_balance", 0) < amount:
         raise HTTPException(status_code=400, detail=f"Недостаточно средств. Баланс: {trader.get('shop_balance', 0)} USDT")
 
-    # Transfer to account balance directly
-    await user_col.update_one(
-        {"id": user["id"]},
+    # ATOMIC: Transfer to account balance with balance check to prevent race conditions
+    withdraw_result = await user_col.update_one(
+        {"id": user["id"], "shop_balance": {"$gte": amount}},
         {"$inc": {"shop_balance": -amount, "balance_usdt": amount}}
     )
+    if withdraw_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Недостаточно средств (параллельный запрос)")
 
     withdrawal_doc = {
         "id": str(uuid.uuid4()),

@@ -325,6 +325,21 @@ async def buy_product(
     if buyer.get("balance_usdt", 0) < required_amount:
         raise HTTPException(status_code=400, detail=f"Недостаточно средств. Необходимо: {required_amount:.2f} USDT, у вас: {buyer.get('balance_usdt', 0):.2f} USDT")
 
+    # Atomic balance deduction to prevent race conditions
+    buyer_db = db.traders if buyer_collection == "traders" else db.merchants
+    if purchase_type == "instant":
+        deduct_result = await buyer_db.update_one(
+            {"id": user["id"], "balance_usdt": {"$gte": total_price}},
+            {"$inc": {"balance_usdt": -total_price}}
+        )
+    else:
+        deduct_result = await buyer_db.update_one(
+            {"id": user["id"], "balance_usdt": {"$gte": total_with_guarantor}},
+            {"$inc": {"balance_usdt": -total_with_guarantor, "balance_escrow": total_with_guarantor}}
+        )
+    if deduct_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Недостаточно средств (параллельный запрос)")
+
     commission_rate = seller.get("shop_settings", {}).get("commission_rate", 5.0)
     platform_commission = total_price * (commission_rate / 100)
     seller_receives = total_price - platform_commission
@@ -351,12 +366,7 @@ async def buy_product(
             {"$inc": {"quantity": -quantity, "sold_count": quantity}}
         )
 
-        # Deduct from buyer (could be trader or merchant)
-        buyer_db = db.traders if buyer_collection == "traders" else db.merchants
-        await buyer_db.update_one(
-            {"id": user["id"]},
-            {"$inc": {"balance_usdt": -total_price}}
-        )
+        # Balance already deducted atomically above
 
         await db.traders.update_one(
             {"id": seller_id},
@@ -436,12 +446,7 @@ async def buy_product(
             {"$inc": {"reserved_count": quantity}}
         )
 
-        # Deduct from buyer (could be trader or merchant)
-        buyer_db = db.traders if buyer_collection == "traders" else db.merchants
-        await buyer_db.update_one(
-            {"id": user["id"]},
-            {"$inc": {"balance_usdt": -total_with_guarantor, "balance_escrow": total_with_guarantor}}
-        )
+        # Balance already deducted and escrowed atomically above
 
         auto_complete_at = now + timedelta(days=guarantor_auto_days)
 
@@ -581,11 +586,16 @@ async def confirm_guarantor_purchase(purchase_id: str, user: dict = Depends(get_
     if purchase["buyer_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Вы не являетесь покупателем")
 
-    if purchase["status"] != "pending_confirmation":
-        raise HTTPException(status_code=400, detail="Покупка уже завершена или отменена")
-
     if purchase["purchase_type"] != "guarantor":
         raise HTTPException(status_code=400, detail="Эта покупка не через гаранта")
+
+    # ATOMIC: Update status to prevent double-confirmation
+    confirm_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "status": "pending_confirmation", "buyer_id": user["id"]},
+        {"$set": {"status": "completing"}}
+    )
+    if confirm_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Покупка уже завершена или отменена")
 
     now = datetime.now(timezone.utc)
     product_id = purchase["product_id"]
@@ -638,7 +648,7 @@ async def confirm_guarantor_purchase(purchase_id: str, user: dict = Depends(get_
         "seller_id": seller_id,
         "seller_type": "trader",
         "amount": platform_commission,
-        "commission_rate": purchase["commission_rate"],
+        "commission_rate": purchase.get("commission_rate", 5.0),
         "type": "marketplace_guarantor_platform",
         "created_at": now.isoformat()
     })
@@ -699,11 +709,21 @@ async def cancel_guarantor_purchase(purchase_id: str, reason: str = "", user: di
     if not is_buyer and not is_admin:
         raise HTTPException(status_code=403, detail="Только покупатель или администратор может отменить заказ")
 
-    if purchase["status"] != "pending_confirmation":
-        raise HTTPException(status_code=400, detail="Покупку нельзя отменить - она уже завершена или отменена")
-
     if purchase["purchase_type"] != "guarantor":
         raise HTTPException(status_code=400, detail="Мгновенные покупки нельзя отменить")
+
+    # ATOMIC: Update status to prevent double-cancel/double-refund
+    cancel_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "status": "pending_confirmation"},
+        {"$set": {
+            "status": "cancelled",
+            "cancelled_at": datetime.now(timezone.utc).isoformat(),
+            "cancelled_by": user["id"],
+            "cancel_reason": reason
+        }}
+    )
+    if cancel_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Покупку нельзя отменить - она уже завершена или отменена")
 
     now = datetime.now(timezone.utc)
     product_id = purchase["product_id"]
@@ -718,16 +738,6 @@ async def cancel_guarantor_purchase(purchase_id: str, reason: str = "", user: di
     await db.traders.update_one(
         {"id": purchase["buyer_id"]},
         {"$inc": {"balance_escrow": -total_with_guarantor, "balance_usdt": total_with_guarantor}}
-    )
-
-    await db.marketplace_purchases.update_one(
-        {"id": purchase_id},
-        {"$set": {
-            "status": "cancelled",
-            "cancelled_at": now.isoformat(),
-            "cancelled_by": user["id"],
-            "cancel_reason": reason
-        }}
     )
 
     seller_id = purchase["seller_id"]
@@ -764,16 +774,14 @@ async def open_purchase_dispute(purchase_id: str, reason: str, user: dict = Depe
     if not is_buyer and not is_seller:
         raise HTTPException(status_code=403, detail="Только участники сделки могут открыть спор")
 
-    if purchase["status"] not in ["pending_confirmation", "completed"]:
-        raise HTTPException(status_code=400, detail="Спор можно открыть только для активных или завершённых заказов")
-
     if purchase["purchase_type"] != "guarantor":
         raise HTTPException(status_code=400, detail="Споры доступны только для покупок через гаранта")
 
     now = datetime.now(timezone.utc)
 
-    await db.marketplace_purchases.update_one(
-        {"id": purchase_id},
+    # ATOMIC: Update status to prevent double-dispute
+    dispute_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "status": {"$in": ["pending_confirmation", "completed"]}},
         {"$set": {
             "status": "disputed",
             "dispute_opened_at": now.isoformat(),
@@ -781,6 +789,8 @@ async def open_purchase_dispute(purchase_id: str, reason: str, user: dict = Depe
             "dispute_reason": reason
         }}
     )
+    if dispute_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Спор можно открыть только для активных или завершённых заказов")
 
     other_party_id = purchase["seller_id"] if is_buyer else purchase["buyer_id"]
 
@@ -818,14 +828,19 @@ async def resolve_purchase_dispute(
     if not purchase:
         raise HTTPException(status_code=404, detail="Покупка не найдена")
 
-    if purchase["status"] != "disputed":
-        raise HTTPException(status_code=400, detail="Заказ не находится в споре")
-
     now = datetime.now(timezone.utc)
     product_id = purchase["product_id"]
     quantity = purchase["quantity"]
     total_with_guarantor = purchase.get("total_with_guarantor", purchase["total_price"])
     seller_receives = purchase["seller_receives"]
+
+    # ATOMIC: Lock status to prevent double-resolution
+    resolve_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "status": "disputed"},
+        {"$set": {"status": "resolving"}}
+    )
+    if resolve_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Заказ не находится в споре или уже разрешается")
 
     if resolution == "refund_buyer":
         await db.shop_products.update_one(

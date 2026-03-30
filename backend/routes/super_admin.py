@@ -309,7 +309,16 @@ async def adjust_user_balance(user_id: str, data: dict = None, user: dict = Depe
         if new_balance < 0:
             raise HTTPException(status_code=400, detail="Resulting balance cannot be negative")
         
-        await db.traders.update_one({"id": user_id}, {"$inc": {"balance_usdt": amount}})
+        # ATOMIC: Check balance condition for negative adjustments to prevent race conditions
+        if amount < 0:
+            result = await db.traders.update_one(
+                {"id": user_id, "balance_usdt": {"$gte": abs(amount)}},
+                {"$inc": {"balance_usdt": amount}}
+            )
+            if result.modified_count == 0:
+                raise HTTPException(status_code=400, detail="Insufficient balance (concurrent modification)")
+        else:
+            await db.traders.update_one({"id": user_id}, {"$inc": {"balance_usdt": amount}})
         
         tx_doc = {
             "id": str(uuid.uuid4()),
@@ -331,7 +340,16 @@ async def adjust_user_balance(user_id: str, data: dict = None, user: dict = Depe
         if new_balance < 0:
             raise HTTPException(status_code=400, detail="Resulting balance cannot be negative")
         
-        await db.merchants.update_one({"id": user_id}, {"$inc": {"balance_usdt": amount}})
+        # ATOMIC: Check balance condition for negative adjustments to prevent race conditions
+        if amount < 0:
+            result = await db.merchants.update_one(
+                {"id": user_id, "balance_usdt": {"$gte": abs(amount)}},
+                {"$inc": {"balance_usdt": amount}}
+            )
+            if result.modified_count == 0:
+                raise HTTPException(status_code=400, detail="Insufficient balance (concurrent modification)")
+        else:
+            await db.merchants.update_one({"id": user_id}, {"$inc": {"balance_usdt": amount}})
         await log_admin_action(user["id"], "adjust_balance", "merchant", user_id, {"amount": amount, "reason": reason})
         return {"status": "success", "new_balance": new_balance}
     

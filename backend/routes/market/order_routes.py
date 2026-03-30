@@ -84,6 +84,21 @@ async def buy_product(
     if buyer.get("balance_usdt", 0) < required_amount:
         raise HTTPException(status_code=400, detail=f"Недостаточно средств. Необходимо: {required_amount:.2f} USDT, у вас: {buyer.get('balance_usdt', 0):.2f} USDT")
 
+    # Atomic balance deduction to prevent race conditions
+    buyer_db = db.traders if buyer_collection == "traders" else db.merchants
+    if purchase_type == "instant":
+        deduct_result = await buyer_db.update_one(
+            {"id": user["id"], "balance_usdt": {"$gte": total_price}},
+            {"$inc": {"balance_usdt": -total_price}}
+        )
+    else:
+        deduct_result = await buyer_db.update_one(
+            {"id": user["id"], "balance_usdt": {"$gte": total_with_guarantor}},
+            {"$inc": {"balance_usdt": -total_with_guarantor, "balance_escrow": total_with_guarantor}}
+        )
+    if deduct_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Недостаточно средств (параллельный запрос)")
+
     commission_rate = seller.get("shop_settings", {}).get("commission_rate", 5.0)
     platform_commission = total_price * (commission_rate / 100)
     seller_receives = total_price - platform_commission
@@ -110,12 +125,7 @@ async def buy_product(
             {"$inc": {"quantity": -quantity, "sold_count": quantity}}
         )
 
-        # Deduct from buyer (could be trader or merchant)
-        buyer_db = db.traders if buyer_collection == "traders" else db.merchants
-        await buyer_db.update_one(
-            {"id": user["id"]},
-            {"$inc": {"balance_usdt": -total_price}}
-        )
+        # Balance already deducted atomically above
 
         await db.traders.update_one(
             {"id": seller_id},
@@ -195,12 +205,7 @@ async def buy_product(
             {"$inc": {"reserved_count": quantity}}
         )
 
-        # Deduct from buyer (could be trader or merchant)
-        buyer_db = db.traders if buyer_collection == "traders" else db.merchants
-        await buyer_db.update_one(
-            {"id": user["id"]},
-            {"$inc": {"balance_usdt": -total_with_guarantor, "balance_escrow": total_with_guarantor}}
-        )
+        # Balance already deducted and escrowed atomically above
 
         auto_complete_at = now + timedelta(days=guarantor_auto_days)
 

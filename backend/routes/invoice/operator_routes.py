@@ -241,6 +241,18 @@ async def select_operator_for_invoice(
             "message": "Оператор уже выбран или инвойс оплачен"
         })
     
+    # ATOMIC: Lock invoice status to prevent double-selection race condition
+    lock_result = await db.merchant_invoices.update_one(
+        {"id": invoice_id, "status": "waiting_requisites"},
+        {"$set": {"status": "selecting_operator"}}
+    )
+    if lock_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail={
+            "status": "error",
+            "code": "CONCURRENT_REQUEST",
+            "message": "Оператор уже выбирается (параллельный запрос)"
+        })
+    
     operator_id = request.operator_id
     
     # Handle QR Aggregator selection
@@ -283,7 +295,7 @@ async def select_operator_for_invoice(
             # Call the function directly
             result = await qr_aggregator_buy_public(buy_request, background_tasks)
             
-            # Update invoice status
+            # Update invoice status (already locked as selecting_operator)
             await db.merchant_invoices.update_one(
                 {"id": invoice_id},
                 {"$set": {
@@ -305,8 +317,18 @@ async def select_operator_for_invoice(
             }
             
         except HTTPException as e:
+            # Rollback invoice status on failure
+            await db.merchant_invoices.update_one(
+                {"id": invoice_id, "status": "selecting_operator"},
+                {"$set": {"status": "waiting_requisites"}}
+            )
             raise e
         except Exception as e:
+            # Rollback invoice status on failure
+            await db.merchant_invoices.update_one(
+                {"id": invoice_id, "status": "selecting_operator"},
+                {"$set": {"status": "waiting_requisites"}}
+            )
             logger.error(f"Error creating QR trade: {e}")
             raise HTTPException(status_code=500, detail="Failed to create QR trade")
 
@@ -347,6 +369,11 @@ async def select_operator_for_invoice(
             break
             
     if not selected_offer:
+        # Rollback invoice status
+        await db.merchant_invoices.update_one(
+            {"id": invoice_id, "status": "selecting_operator"},
+            {"$set": {"status": "waiting_requisites"}}
+        )
         raise HTTPException(status_code=400, detail={
             "status": "error",
             "code": "NO_SUITABLE_OFFER",
@@ -415,5 +442,10 @@ async def select_operator_for_invoice(
         }
         
     except Exception as e:
+        # Rollback invoice status on failure
+        await db.merchant_invoices.update_one(
+            {"id": invoice_id, "status": "selecting_operator"},
+            {"$set": {"status": "waiting_requisites"}}
+        )
         logger.error(f"Error creating trade for invoice {invoice_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -28,7 +28,7 @@ async def create_trade(data: TradeCreate):
     if not trader:
         raise HTTPException(status_code=404, detail="Trader not found")
     
-    # Check balance based on trade type
+    # Check balance based on trade type (preliminary check, atomic reserve below)
     offer = None
     if data.offer_id:
         offer = await db.offers.find_one({"id": data.offer_id}, {"_id": 0})
@@ -136,17 +136,23 @@ async def create_trade(data: TradeCreate):
     
     await db.trades.insert_one(trade_doc)
     
-    # Reserve funds
+    # Reserve funds (atomic check-and-decrement to prevent race conditions)
     if data.offer_id:
-        await db.offers.update_one(
-            {"id": data.offer_id},
+        reserve_result = await db.offers.update_one(
+            {"id": data.offer_id, "available_usdt": {"$gte": data.amount_usdt}},
             {"$inc": {"available_usdt": -data.amount_usdt}}
         )
+        if reserve_result.modified_count == 0:
+            await db.trades.delete_one({"id": trade_id})
+            raise HTTPException(status_code=400, detail="Insufficient offer balance (concurrent request)")
     else:
-        await db.traders.update_one(
-            {"id": data.trader_id},
+        reserve_result = await db.traders.update_one(
+            {"id": data.trader_id, "balance_usdt": {"$gte": data.amount_usdt}},
             {"$inc": {"balance_usdt": -data.amount_usdt}}
         )
+        if reserve_result.modified_count == 0:
+            await db.trades.delete_one({"id": trade_id})
+            raise HTTPException(status_code=400, detail="Insufficient trader balance (concurrent request)")
         # Notify seller about balance change
         await _ws_broadcast(f"user_{data.trader_id}", {
             "type": "balance_update",
@@ -531,11 +537,14 @@ async def create_direct_trade(data: DirectTradeCreate, user: dict = Depends(requ
     
     await db.trades.insert_one(trade_doc)
     
-    # Reserve USDT from offer
-    await db.offers.update_one(
-        {"id": offer["id"]},
+    # Reserve USDT from offer (atomic check-and-decrement to prevent race conditions)
+    reserve_result = await db.offers.update_one(
+        {"id": offer["id"], "available_usdt": {"$gte": data.amount_usdt}},
         {"$inc": {"available_usdt": -data.amount_usdt}}
     )
+    if reserve_result.modified_count == 0:
+        await db.trades.delete_one({"id": trade_id})
+        raise HTTPException(status_code=400, detail="Недостаточно средств (параллельный запрос)")
     
     # Get buyer info
     buyer = await db.traders.find_one({"id": user["id"]}, {"_id": 0})
