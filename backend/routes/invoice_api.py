@@ -587,9 +587,11 @@ async def get_operators_for_invoice(
     
     amount_rub = invoice.get("original_amount_rub") or invoice.get("amount_rub", 0)
     
-    # Get current exchange rate
-    rate_data = await db.exchange_rates.find_one({"key": "usdt_rub"}, {"_id": 0})
-    exchange_rate = rate_data.get("rate", 95) if rate_data else 95
+    # Get current exchange rate from Rapira (payout_settings) — единый источник курса
+    payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    exchange_rate = payout_settings.get("base_rate", 78.0) if payout_settings else 78.0
+    if not exchange_rate or exchange_rate <= 0:
+        exchange_rate = 78.0
     amount_usdt = amount_rub / exchange_rate
     
     # Find matching offers with STRICT validation
@@ -751,8 +753,11 @@ async def select_operator_for_invoice(
     
     # Calculate amounts
     amount_rub = invoice.get("original_amount_rub") or invoice.get("amount_rub", 0)
-    rate_data = await db.exchange_rates.find_one({"key": "usdt_rub"}, {"_id": 0})
-    exchange_rate = rate_data.get("rate", 95) if rate_data else 95
+    # Get current exchange rate from Rapira (payout_settings) — единый источник курса
+    payout_settings_rate = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+    exchange_rate = payout_settings_rate.get("base_rate", 78.0) if payout_settings_rate else 78.0
+    if not exchange_rate or exchange_rate <= 0:
+        exchange_rate = 78.0
     price_rub = offer.get("price_rub", exchange_rate)
     amount_usdt = amount_rub / price_rub
     
