@@ -602,14 +602,10 @@ async def create_invoice(
                             break
                     break
     
-    # 9. Add marker for payment identification
-    import random
-    marker = random.randint(5, 20)
-    
+    # 9. Amount calculation (marker removed - exact amount)
     original_amount = request.amount
-    
-    # Merchant pays fee, customer pays only amount + marker
-    total_amount = original_amount + marker
+    marker = 0
+    total_amount = original_amount
     
     usdt_amount = round(total_amount / exchange_rate, 4)
     
@@ -937,15 +933,21 @@ async def select_operator_for_invoice(
         raise HTTPException(status_code=400, detail={"status": "error", "message": f"Реквизиты для метода оплаты {request.payment_method} не найдены у этого оператора"})
     
     # Calculate amounts
-    amount_rub = invoice.get("original_amount_rub") or invoice.get("amount_rub", 0)
+    original_amount_rub = invoice.get("original_amount_rub") or invoice.get("amount_rub", 0)
     rate_data = await db.exchange_rates.find_one({"key": "usdt_rub"}, {"_id": 0})
     exchange_rate = rate_data.get("rate", 95) if rate_data else 95
     price_rub = offer.get("price_rub", exchange_rate)
-    amount_usdt = amount_rub / price_rub
+    amount_usdt = round(original_amount_rub / exchange_rate, 4)
+    # Client pays = original amount converted through trader rate
+    client_pays_rub = round(original_amount_rub * price_rub / exchange_rate)
     
     # Check available balance
     if offer.get("available_usdt", 0) < amount_usdt:
         raise HTTPException(status_code=400, detail={"status": "error", "message": "Недостаточно средств у оператора"})
+    
+    # Get trade number (unified for merchant and trader)
+    from modules.p2p.trades import get_next_trade_number
+    trade_number = await get_next_trade_number()
     
     # Create trade
     trade_id = f"trd_{secrets.token_hex(8)}"
@@ -953,15 +955,20 @@ async def select_operator_for_invoice(
     
     trade_doc = {
         "id": trade_id,
+        "trade_number": trade_number,
         "invoice_id": invoice_id,
         "offer_id": offer["id"],
         "trader_id": offer["trader_id"],
+        "trader_login": trader.get("login", ""),
         "buyer_type": "merchant_client",
         "merchant_id": merchant["id"],
-        "amount_usdt": round(amount_usdt, 4),
-        "amount_rub": amount_rub,
+        "amount_usdt": amount_usdt,
+        "amount_rub": client_pays_rub,
+        "client_pays_rub": client_pays_rub,
+        "original_amount_rub": original_amount_rub,
         "price_rub": price_rub,
         "payment_method": request.payment_method,
+        "payment_link_id": invoice_id,
         "requisites": [matching_req],
         "status": "pending",
         "created_at": now.isoformat(),
@@ -998,7 +1005,7 @@ async def select_operator_for_invoice(
         },
         "payment": {
             "method": request.payment_method,
-            "amount": amount_rub,
+            "amount": client_pays_rub,
             "requisites": {
                 "type": matching_req.get("type") or matching_req.get("payment_method"),
                 "bank": matching_req.get("bank", ""),
