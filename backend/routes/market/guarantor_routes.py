@@ -17,7 +17,12 @@ async def confirm_guarantor_purchase(purchase_id: str, user: dict = Depends(get_
     if not purchase:
         raise HTTPException(status_code=404, detail="Заказ не найден")
 
-    if purchase["status"] != "pending_confirmation":
+    # ATOMIC: Lock status to prevent double-confirmation race condition
+    confirm_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "buyer_id": user["id"], "status": "pending_confirmation"},
+        {"$set": {"status": "completing"}}
+    )
+    if confirm_result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Заказ не в статусе ожидания подтверждения")
 
     product_id = purchase["product_id"]
@@ -120,11 +125,10 @@ async def cancel_guarantor_purchase(purchase_id: str, user: dict = Depends(get_c
     if purchase["buyer_id"] != user["id"] and purchase["seller_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Нет доступа")
         
+    # ATOMIC: Check status atomically (no actual cancel logic, just dispute redirect)
     if purchase["status"] != "pending_confirmation":
         raise HTTPException(status_code=400, detail="Нельзя отменить заказ в этом статусе")
         
-    # Logic for cancellation would go here (refund buyer, release stock)
-    # For MVP, we'll rely on disputes for cancellation
     raise HTTPException(status_code=400, detail="Для отмены заказа откройте спор")
 
 
@@ -138,12 +142,17 @@ async def open_purchase_dispute(purchase_id: str, reason: str = Body(..., embed=
     if purchase["buyer_id"] != user["id"] and purchase["seller_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Нет доступа")
         
-    if purchase["status"] != "pending_confirmation":
-        raise HTTPException(status_code=400, detail="Спор можно открыть только для активного заказа")
-        
     # Create dispute
     dispute_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    
+    # ATOMIC: Update status to prevent double-dispute
+    dispute_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "status": "pending_confirmation"},
+        {"$set": {"status": "disputed", "dispute_id": dispute_id}}
+    )
+    if dispute_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Спор можно открыть только для активного заказа")
     
     dispute = {
         "id": dispute_id,
@@ -156,11 +165,6 @@ async def open_purchase_dispute(purchase_id: str, reason: str = Body(..., embed=
     }
     
     await db.marketplace_disputes.insert_one(dispute)
-    
-    await db.marketplace_purchases.update_one(
-        {"id": purchase_id},
-        {"$set": {"status": "disputed", "dispute_id": dispute_id}}
-    )
     
     # Notify admins
     # TODO: Notify admins
@@ -182,10 +186,15 @@ async def resolve_purchase_dispute(
     if not purchase:
         raise HTTPException(status_code=404, detail="Заказ не найден")
         
-    if purchase["status"] != "disputed":
-        raise HTTPException(status_code=400, detail="Заказ не в статусе спора")
-        
     now = datetime.now(timezone.utc)
+    
+    # ATOMIC: Lock status to prevent double-resolution
+    resolve_result = await db.marketplace_purchases.update_one(
+        {"id": purchase_id, "status": "disputed"},
+        {"$set": {"status": "resolving"}}
+    )
+    if resolve_result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Заказ не в статусе спора или уже разрешается")
     
     if decision == "refund_buyer":
         # Refund buyer
