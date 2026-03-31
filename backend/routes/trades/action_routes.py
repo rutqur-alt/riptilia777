@@ -61,18 +61,24 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         # Get original amount from invoice (what merchant requested, NOT what client paid)
         # This is the base for commission calculation
         original_amount_rub = None
+        invoice_exchange_rate = None
         if trade.get("invoice_id"):
             invoice = await db.merchant_invoices.find_one({"id": trade["invoice_id"]}, {"_id": 0})
             if invoice:
                 original_amount_rub = invoice.get("original_amount_rub")
+                invoice_exchange_rate = invoice.get("exchange_rate")
         
         # Fallback to trade amounts if no invoice found
         if not original_amount_rub:
             original_amount_rub = trade.get("client_amount_rub") or trade.get("amount_rub", 0)
         
-        # Get base exchange rate
-        payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
-        base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
+        # Use invoice exchange rate (fixed at creation) to avoid rate drift between
+        # invoice creation and trade confirmation. Fallback to current rate if no invoice.
+        if invoice_exchange_rate:
+            base_rate = invoice_exchange_rate
+        else:
+            payout_settings = await db.settings.find_one({"type": "payout_settings"}, {"_id": 0})
+            base_rate = payout_settings.get("base_rate", 78.5) if payout_settings else 78.5
         
         # Merchant receives: original_amount - commission%
         # Commission is calculated from ORIGINAL order amount, not what client paid
@@ -82,6 +88,7 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
         
         # Update trade with calculated amounts
         commission_usdt = platform_fee_rub / base_rate
+        trader_comm = trade.get("trader_commission", 0)
         await db.trades.update_one(
             {"id": trade_id},
             {"$set": {
@@ -90,7 +97,8 @@ async def confirm_trade(trade_id: str, user: dict = Depends(require_role(["trade
                 "platform_fee_rub": platform_fee_rub,
                 "merchant_receives_rub": merchant_receives_rub,
                 "merchant_receives_usdt": merchant_receives_usdt,
-                "merchant_commission": commission_usdt
+                "merchant_commission": commission_usdt,
+                "total_commission": round(trader_comm + commission_usdt, 4)
             }}
         )
         
